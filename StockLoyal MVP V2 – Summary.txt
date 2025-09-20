@@ -1,0 +1,85 @@
+
+# 📌 StockLoyal MVP V2 – Summary
+
+## 1. **Core Flow**
+
+* **Login / Create Account (Login.jsx)**
+
+  * Authenticates against PHP backend (`login.php`, `create-account.php`).
+  * Stores `memberId` in `localStorage` for later use.
+* **SelectBroker (SelectBroker.jsx)**
+
+  * User selects a broker and provides credentials.
+  * Submits via `store-broker-credentials.php`:
+
+    * Inserts/updates row in **broker\_credentials**.
+    * Updates `broker` column in **wallet**.
+* **Wallet (Wallet.jsx)**
+
+  * Fetches wallet + broker\_credentials from `get-wallet.php`.
+  * Displays points, balances, broker, and linked username.
+  * If broker is `"Not linked"` or `"unlinked"`, shows a **“Link Broker”** button → routes back to SelectBroker.
+
+---
+
+## 2. **Backend (PHP + MySQL)**
+
+* **Database Tables**
+
+  * `wallet`: holds member\_id, broker, balances, etc.
+  * `broker_credentials`: stores broker, username, encrypted password.
+* **API Endpoints**
+
+  * `login.php`: verifies credentials, returns `member_id`.
+  * `create-account.php`: creates wallet row + stub broker\_credentials row.
+  * `store-broker-credentials.php`: upserts broker\_credentials and updates wallet.broker.
+  * `get-wallet.php`: joins wallet + broker\_credentials for front end.
+
+---
+
+## 3. **Encryption**
+
+* AES-256-CBC implemented via:
+
+  * `ENCRYPTION_KEY` (32 bytes).
+  * `ENCRYPTION_IV` (16 bytes).
+* Defined in `config.php`.
+
+---
+
+## 4. **Portability & API Config**
+
+* Added centralized `config/api.js`:
+
+  ```js
+  export const API_BASE =
+    import.meta.env.VITE_API_BASE || "http://localhost/stockloyal-pwa/api";
+  ```
+* Allows swapping between **local XAMPP** and **AWS** or other providers with a `.env` setting.
+
+---
+
+## 5. **Debugging Improvements**
+
+* Standardized **error\_log** setup:
+
+  * XAMPP: `C:\xampp\php\logs\php_error_log`
+* Added `error_log()` calls to all PHP endpoints.
+* Frontend console logging for raw API responses.
+
+---
+
+## 6. **Enhancements**
+
+* Show/Hide password toggle added to Login & SelectBroker.
+* Wallet auto-refreshes broker info from backend.
+* “Link Broker” button in Wallet if no broker is set.
+* Next idea: change “Link Broker” → “Change Broker” if already linked.
+
+---
+
+✅ You now have a **working login → broker linking → wallet dashboard** pipeline with MySQL + PHP backend, React frontend, and portable API config.
+
+---
+
+Would you like me to **draft the new “StockLoyal MVP V3” chat kickoff** with this summary (so you just paste it in and continue there), or do you want me to condense it further into a **shorter checklist** version?
