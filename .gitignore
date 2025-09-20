@@ -1,4 +1,6 @@
+# -----------------------
 # Logs
+# -----------------------
 logs
 *.log
 npm-debug.log*
@@ -7,16 +9,36 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# -----------------------
+# Node / React (frontend)
+# -----------------------
 node_modules
 dist
 dist-ssr
 *.local
+.vite/
 
-# Editor directories and files
+# -----------------------
+# PHP (backend)
+# -----------------------
+api/config.php        # ✅ DB creds/secrets (do not push)
+vendor/
+
+# -----------------------
+# Environment / Secrets
+# -----------------------
+.env
+.env.local
+.env.*.local
+
+# -----------------------
+# Editor / OS junk
+# -----------------------
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
