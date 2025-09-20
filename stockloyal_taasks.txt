@@ -1,0 +1,13 @@
+Perfect 👍 that’s a really clean direction — frontend owns the logic, backend just persists state.
+
+When you’re ready to pick this up again, we can:
+
+Refactor Login.jsx to call wallet.php?action=create or update directly.
+
+Update OrderConfirmation.jsx to deduct via wallet.php?action=update.
+
+Simplify Wallet.jsx + PointsSelect.jsx to always pull fresh from wallet.php?action=get.
+
+That will eliminate duplication (earned_points.php, deduct_points.php) and keep the flow transparent.
+
+Want me to sketch a migration sequence/checklist for when you’re ready so you don’t miss a step?
