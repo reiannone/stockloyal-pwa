@@ -2,20 +2,65 @@
    Global reset
 ------------------------------ */
 html, body, #root {
+  height: 100%;
   margin: 0;
   padding: 0;
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
+  overflow-x: hidden;   /* prevent horizontal scroll */
 }
 
+body {
+  -webkit-overflow-scrolling: touch; /* smooth iOS scroll */
+  font-family: system-ui, sans-serif;
+}
+.body-text {
+  font-size: 1rem;
+  color: #9ca3af; /* gray-400 */
+}
+
+/* -----------------------------
+   Responsive app shell
+------------------------------ */
+:root {
+  --site-max-width: 780px;
+  --app-max-width: 780px;
+  --app-phone-width: 393px;
+  --app-padding: 3px;
+  --app-bg: #fff;
+}
+
+.page {
+  min-height: 100dvh;   /* dynamic viewport height (accounts for iOS bars) */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Common header styles for all pages */
+.page-title {
+  text-align: center;
+  font-size: 1.5rem;          /* large font */
+  color: #0056b3;           /* UBS-like blue tone, adjust as needed */
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+/* Common deck / lead paragraph under header */
+.page-deck {
+  text-align: center;
+  font-size: 1rem;          /* smaller than header */
+  color: #333;              /* dark neutral for readability */
+  font-weight: 400;
+  margin-bottom: 1.5rem;
+}
+
+.refresh-btn {
+  position:relative;
+  top: 0px;
+  width: 100px;
+  padding: "0.4rem 0.6rem" }
+
 /* Utility-like classes */
-.bg-blue {
-  background-color: #1d4ed8; /* blue-700 */
-}
-.text-white {
-  color: #ffffff;
-}
+.bg-blue { background-color: #1d4ed8; }
+.text-white { color: #ffffff; }
 .full-screen {
   min-height: 100vh;
   display: flex;
@@ -23,67 +68,65 @@ html, body, #root {
   justify-content: center;
 }
 
-/* -----------------------------
-   Responsive app shell (replaces fixed iPhone dev frame)
-   - Use .app-shell and .app-container at top-level.
-   - .iphone-frame is preserved for desktop preview but rendered
-     only when the .dev-frame class is present (see main.jsx snippet).
------------------------------- */
-
-:root {
-  --site-max-width: 920px;
-  --app-max-width: 780px;   /* how wide the "phone-like" container can be on big screens */
-  --app-phone-width: 420px; /* visual phone width at medium screens */
-  --app-padding: 16px;
-  --app-bg: #fff;
+/* Base iPhone frame */
+.iphone-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;                 /* always fill viewport */
+  background: var(--app-bg);
+  margin: 0 auto;
+  overflow: hidden;               /* no double scrollbars */
+  transition: box-shadow 220ms ease, border-color 220ms ease;
 }
 
-/* -----------------------------
-   Dev Frame OFF: center app as phone
-   Toggle by adding/removing class 'dev-frame-off' on <body>
-------------------------------*/
+/* Frame OFF (normal responsive app) */
+body:not(.dev-frame) .iphone-frame {
+  width: 100%;
+  max-width: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  height: 100dvh;
+}
 
-/* Only constrains width when dev-frame-off present */
-.dev-frame-off .app-container {
-  max-width: 420px;          /* phone-like width */
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 12px;
-  padding-right: 12px;
+/* Frame ON (simulated device preview) */
+body.dev-frame .iphone-frame {
+  width: var(--app-phone-width, 393px);
+  height: 900px;                  /* simulated viewport */
+  border-radius: 24px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  margin: 20px auto;
+}
+
+/* Fake iPhone status bar (only in dev-frame) */
+body.dev-frame .iphone-frame::before {
+  content: "9:41 AM       📶   📡   🔋"; /* time + icons in one line */
+  display: flex;
+  justify-content: space-between;   /* left = time, right = icons */
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  background: #000;
+  color: #fff;
+  border-radius: 24px 24px 0 0;     /* match frame corners */
+  width: 100%;
   box-sizing: border-box;
 }
 
-/* center the app-shell contents on large screens when off */
-.dev-frame-off .app-shell {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  background: var(--app-bg);
+
+/* Main scrollable content inside iPhone frame */
+.iphone-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--app-padding);
+  box-sizing: border-box;
 }
 
-/* ensure the iphone-frame (if present) is visually subtle when off */
-.dev-frame-off .iphone-frame {
-  width: 100%;
-  max-width: 420px;
-  margin: 12px auto;
-  border: 1px solid rgba(0,0,0,0.04);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
-  border-radius: 14px;
-}
 
-/* On narrow viewports keep full width behavior */
-@media (max-width: 480px) {
-  .dev-frame-off .app-container,
-  .dev-frame-off .iphone-frame {
-    width: 100%;
-    max-width: 100%;
-    margin: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-}
-
-/* Top-level responsive wrapper that fills the viewport on devices */
+/* App shell */
 .app-shell {
   min-height: 100vh;
   width: 100%;
@@ -94,14 +137,12 @@ html, body, #root {
   position: relative;
   align-items: stretch;
   justify-content: flex-start;
-
-  /* support iOS safe areas (notch / home bar) */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   -webkit-overflow-scrolling: touch;
 }
 
-/* App inner container: centers content and limits max width on desktop */
+/* App container */
 .app-container {
   width: 100%;
   max-width: var(--app-max-width);
@@ -114,36 +155,10 @@ html, body, #root {
   align-items: stretch;
 }
 
-/* The old .iphone-frame preserved visually for large desktop preview,
-   but it no longer forces small fixed sizes on real devices.
-   It is now applied ONLY when the page root/body has `.dev-frame` */
-.dev-frame .iphone-frame {
-  width: min(var(--app-phone-width), 100%);
-  margin: 20px auto;
-  border-radius: 24px;
-  background: #fff;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
-  -webkit-overflow-scrolling: touch;
-
-  display: flex;
-  flex-direction: column;   /* header, content, footer stacked */
-  position: relative;       /* splash / overlays use this */
-  overflow: hidden;         /* prevent double scrollbars */
-  border: 1px solid rgba(229,231,235,0.9);
-  transition: box-shadow 220ms ease;
-}
-
-/* optional visual boxed look on very large screens */
-@media (min-width: 1200px) {
-  .dev-frame .iphone-frame {
-    width: 420px;
-    height: 900px; /* purely visual */
-  }
-}
-
-/* content area that used to be .iphone-content */
-.app-content,
-.dev-frame .iphone-content {
+/* -----------------------------
+   Content area (✅ enforced width)
+------------------------------ */
+.app-content {
   flex: 1;
   overflow-y: auto;
   display: flex;
@@ -151,23 +166,36 @@ html, body, #root {
   align-items: stretch;
   text-align: left;
   -webkit-overflow-scrolling: touch;
+
+  /* ✅ constrain width globally */
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--app-padding);
+  padding-right: var(--app-padding);
+  box-sizing: border-box;
 }
 
-/* On small viewports, prefer full-bleed layout (remove the framed look)
-   This still only triggers when .dev-frame is present; if not present
-   the app is full-bleed by default. */
-@media (max-width: 900px) {
-  .dev-frame .iphone-frame { margin: 0; border-radius: 0; box-shadow: none; border: none; }
-  .app-container { padding-left: 12px; padding-right: 12px; }
+/* Header sticks to top */
+.app-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  width: 100%;
+  max-width: var(--app-max-width);
 }
 
-/* Touch friendly: reduce flicker for taps */
-* { -webkit-tap-highlight-color: rgba(0,0,0,0.05); }
+/* Footer sticks to bottom */
+.nav-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+}
 
-/* Keep existing sticky headers/nav working */
-.app-header, .nav-bar { position: sticky; z-index: 40; }
-
-/* Accessibility: respects reduced motion */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -181,47 +209,44 @@ html, body, #root {
   align-items: center;
   width: 100%;
   white-space: nowrap;
-  font-size: 0.875rem; /* ~text-sm */
+  font-size: 0.875rem;
   font-weight: 500;
   background: #000;
   color: #fff;
 }
-.status-icons {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: nowrap;
-}
+.status-icons { display: flex; gap: 0.5rem; }
 .status-icons svg {
   display: inline-block !important;
   vertical-align: middle;
-  width: 1.125rem;  /* ~18px */
-  height: 1.125rem; /* ~18px */
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
-/* Header (full width bar) */
+/* -----------------------------
+   Header (truly constrained)
+------------------------------ */
 .app-header {
-  width: 100%;
-  background-color: #000; /* keep full-bleed background */
+  background-color: #fff;
   color: #fff;
   position: sticky;
   top: 0;
   z-index: 60;
-  /* keep any existing visual styles */
-  padding-top: env(safe-area-inset-top); /* safe area for iOS notch */
+  padding-top: env(safe-area-inset-top);
+
+  /* ⬅️ Constrain header background */
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+  width: 100%;
+  border-bottom: 1px solid #e5e7eb; /* border-b border-gray-200 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
 }
 
-/* Inner header content (constrained and centered) */
-.app-header .app-header-inner {
-  max-width: var(--site-max-width);
-  margin: 0 auto;
-  padding: 0 var(--app-padding);
+.app-header-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* logo left, actions right */
-  height: 56px; /* adjust to your desired header height */
-  gap: 12px;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 var(--app-padding);
 }
 
 /* -----------------------------
@@ -239,40 +264,37 @@ html, body, #root {
   text-align: center;
   transition: background-color 0.2s ease;
 }
-.btn-primary:hover {
-  background-color: #1e40af; /* darker blue */
-}
+.btn-primary:hover { background-color: #1e40af; }
 .btn-secondary {
   display: block;
   width: 80%;
   margin: 0.5rem auto;
   padding: 0.5rem;
   border-radius: 6px;
-  border: 1px solid #d1d5db; /* gray-300 */
+  border: 1px solid #d1d5db;
   background: #fff;
-  color: #374151; /* gray-700 */
+  color: #374151;
   font-weight: 500;
   text-align: center;
   transition: border-color 0.2s ease;
 }
-.btn-secondary:hover {
-  border-color: #9ca3af; /* gray-400 */
-}
+.btn-secondary:hover { border-color: #9ca3af; }
 .btn-cta {
   display: block;
   width: 80%;
   margin: 0.5rem auto;
   padding: 0.5rem;
   border-radius: 6px;
-  background-color: #facc15; /* yellow */
+  background-color: #facc15;
   color: #000;
   font-weight: 500;
   text-align: center;
   transition: background-color 0.2s ease;
 }
-.btn-cta:hover {
-  background-color: #ca8a04; /* darker yellow */
-}
+.btn-cta:hover { background-color: #ca8a04; }
+
+/* ... keep the rest of your styles (Wallet, Basket, Order, etc.) unchanged ... */
+
 
 /* -----------------------------
    Typography
@@ -287,10 +309,7 @@ html, body, #root {
   font-weight: 600;
   color: #374151;
 }
-.body-text {
-  font-size: 1rem;
-  color: #9ca3af; /* gray-400 */
-}
+
 .value {
   font-size: 1.125rem; /* ~18px */
   font-weight: bold;
@@ -309,21 +328,33 @@ html, body, #root {
 /* -----------------------------
    Navigation bar (iOS style footer)
 ------------------------------ */
+/* Footer sticks to bottom, keep horizontal row layout */
 .nav-bar {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-around;
-  align-items: center;
-  border-top: 1px solid #e5e7eb; /* gray-200 */
-  background: #fff;
-  height: 70px;
   position: sticky;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 50;
+
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+  height: 70px;
   padding-bottom: env(safe-area-inset-bottom);
+
+  display: flex;
+  justify-content: center; /* center the inner container */
 }
+
+.nav-inner {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+
+  width: 100%;
+  max-width: var(--app-max-width); /* ✅ keep consistent with content */
+}
+
 .nav-item {
   display: flex;
   flex-direction: column;
@@ -333,6 +364,17 @@ html, body, #root {
   color: #6b7280; /* gray-500 */
   transition: color 0.2s ease;
 }
+
+button.nav-item {
+  all: unset;              /* remove browser default button styles */
+  cursor: pointer;         /* keep pointer cursor */
+  display: flex;           /* ensure same flex layout */
+  flex-direction: column;  /* match nav-item layout */
+  align-items: center;
+  justify-content: center;
+  color: inherit;          /* inherit text/icon color */
+}
+
 .nav-item-active {
   color: #1d4ed8; /* blue */
 }
@@ -346,12 +388,12 @@ html, body, #root {
    Terms page
 ------------------------------ */
 .terms-container {
-  max-width: 640px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: .25rem;
 }
 .terms-heading {
   font-size: 1.5rem;
@@ -371,7 +413,7 @@ html, body, #root {
 }
 
 .about-container {
-  max-width: 700px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   padding: 2rem;
   text-align: left; /* ✅ ensures all text inside defaults to left */
@@ -396,7 +438,7 @@ html, body, #root {
 .wallet-container {
   background: #fff;
   color: #000;
-  padding: 1.5rem;
+  padding: 0.25rem;
 }
 .wallet-heading {
   font-size: 1.5rem;
@@ -535,7 +577,7 @@ html, body, #root {
 }
 
 /* mobile adjustments: make cards full-bleed on small viewports */
-@media (max-width: 520px) {
+@media ( max-width: var(--app-max-width)) {
   .card {
     border-radius: 8px;
     padding: 12px;
@@ -598,9 +640,9 @@ html, body, #root {
    Basket page
 ------------------------------ */
 .basket-container {
-  padding: 1.5rem;
-  max-width: 768px;
-  margin: 0 auto;
+  padding: .5rem 1rem;
+  max-width: 100%;
+  margin: 0;
   text-align: center;
 }
 .basket-heading {
@@ -628,6 +670,14 @@ html, body, #root {
 .basket-table td {
   border-bottom: 1px solid #e5e7eb; /* fine light line */
   padding: 0.5rem;
+}
+
+.row-active {
+  background-color: #dbeafe; /* light blue */
+  font-weight: 600;
+}
+.row-active:hover {
+  background-color: #bfdbfe; /* darker blue on hover */
 }
 
 .remove-icon-btn {
@@ -681,7 +731,7 @@ html, body, #root {
 ------------------------------ */
 .order-container {
   padding: 1.5rem;
-  max-width: 768px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   text-align: center;
 }
@@ -707,7 +757,7 @@ html, body, #root {
 ------------------------------ */
 .points-container {
   padding: 1.5rem;
-  max-width: 480px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   text-align: center;
 }
@@ -824,7 +874,7 @@ html, body, #root {
 ------------------------------ */
 .page-container {
   padding: 1.5rem;
-  max-width: 480px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
 }
 .broker-list {
@@ -982,7 +1032,7 @@ html, body, #root {
 .goodbye-text {
   font-size: 1.125rem;
   color: #4b5563;
-  max-width: 28rem;
+   max-width: var(--app-max-width);
 }
 
 /* -----------------------------
@@ -990,7 +1040,7 @@ html, body, #root {
 ------------------------------ */
 .onboard-container {
   padding: 1.5rem;
-  max-width: 28rem;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   background: #fff;
 }
@@ -1032,7 +1082,7 @@ html, body, #root {
 ------------------------------ */
 .categories-page {
   padding: 1.5rem;
-  max-width: 480px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
   text-align: center;
 }
@@ -1144,7 +1194,7 @@ html, body, #root {
 }
 /* Form container */
 .form-grid {
-  max-width: 600px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
 }
 
@@ -1171,6 +1221,14 @@ html, body, #root {
   border-radius: 4px;
 }
 
+/* Fixed-width labels, left justified */
+.wysiwyg-label {
+  flex: 0 px;     /* fixed width for alignment */
+  text-align: left;
+  font-weight: 500;
+  margin-right: 10px;
+}
+
 /* MemberOnboard form rows */
 
 .member-form-error {
@@ -1178,7 +1236,7 @@ html, body, #root {
   font-size: 0.875rem;
 }
 .member-form-grid {
-  max-width: 600px;
+  max-width: var(--app-max-width);
   margin: 0 auto;
 }
 
@@ -1205,6 +1263,16 @@ html, body, #root {
   padding: 6px 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
+}
+
+.points-to-convert {
+  width: 60px;
+  padding: 8px;
+  text-align: center;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  color: #0056b3;           /* blue tone, adjust as needed */
+  font-Size: 1rem;
 }
 /* Stock list row tweaks */
 .stocklist-table {
@@ -1336,73 +1404,70 @@ html, body, #root {
 .dev-toggle .dev-toggle-icon { font-size: 18px; line-height: 1; }
 
 /* Hide the verbose label on very small screens to save space */
-@media (max-width: 420px) {
+@media ( max-width: var(--app-max-width)) {
   .dev-toggle .dev-toggle-text { display: none; }
 }
 
-/* -----------------------------
-   Make the iphone-frame conditional:
-   - hidden by default (so mobile responsive layout is used)
-   - shown only when body.dev-frame is present (toggled by DevFrameToggle)
------------------------------- */
+/* Make the editor full width inside its container */
+.ck-editor {
+  width: 100%;
+  box-sizing: border-box;
+}
 
-/* Keep .iphone-frame as the real app container (so app never disappears).
-   When dev-frame is NOT enabled we remove the framed visuals so the app
-   looks responsive/full-bleed. When dev-frame IS enabled we show the
-   framed preview with shadow/border/etc. */
+/* Ensure the editable area doesn’t bleed over panel padding */
+/* CKEditor margin fix */
+.ck-editor__editable_inline {
+    min-height: 80px;   /* reduce height */
+  font-size: 0.9rem;  /* optional: adjust text size */
+  line-height: 1.4;   /* optional: control vertical spacing */
+  margin-top: 0 !important;   /* remove big gap above editor */
+  margin-bottom: 0.5rem;  /* small consistent spacing */
+}
 
-.iphone-frame {
-  /* default visible container (flex so existing layout still works) */
+/* SlideOutPanel (vertical) */
+.sidepanel-nav {
+  @apply flex flex-col;
+}
+.sidepanel-link {
+  @apply block w-full px-4 py-3 text-gray-700 rounded-md transition;
+}
+.sidepanel-link + .sidepanel-link {
+  @apply mt-1; /* modest break */
+}
+.sidepanel-link:hover {
+  @apply bg-gray-100 text-blue-600;
+}
+.sidepanel-link-active {
+  @apply bg-gray-50 font-medium text-blue-600;
+}
+
+.slideout-body {
+  padding: 14px;
+  overflow-y: auto;
+  flex: 1;
+  background: #fff;         /* ensure it’s visible */
+  min-height: 100px;        /* don’t collapse if children small */
+}
+
+.floating-actions {
+  position: fixed;
+  bottom: 70px;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(6px);
+  padding: 10px 16px;
   display: flex;
   flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  width: min(var(--app-phone-width), 100%);
-  margin: 20px auto;
-  border-radius: 24px;
-  background: var(--app-bg);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.04);
-  border: 1px solid rgba(229,231,235,0.9);
-  -webkit-overflow-scrolling: touch;
-  transition: box-shadow 220ms ease, border-color 220ms ease, transform 220ms ease;
+  align-items: center;
+  z-index: 1000;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+
+  /* ✅ App max width + centering */
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+  right: 0;
+  left: 0;
 }
 
-/* When dev frame is OFF: make the container behave like a normal app shell
-   (full-bleed on small screens, no heavy frame on desktop). */
-body:not(.dev-frame) .iphone-frame {
-  border: none;
-  box-shadow: none;
-  border-radius: 0;
-  width: 100%;
-  margin: 0;
-  max-width: none;
-  height: auto;
-}
-
-/* When dev frame is ON: show the framed preview with stronger visuals */
-body.dev-frame .iphone-frame {
-  display: flex;
-  width: 420px;
-  height: 900px; /* visual only */
-  margin: 20px auto;
-  border-radius: 24px;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
-  border-color: rgba(37, 99, 235, 0.12);
-}
-
-/* slight on-screen DEV badge when enabled */
-body.dev-frame::after {
-  content: "DEV";
-  position: fixed;
-  left: 12px;
-  top: 12px;
-  z-index: 99998;
-  background: rgba(37,99,235,0.12);
-  color: #2563eb;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 12px;
-  pointer-events: none;
-}
 

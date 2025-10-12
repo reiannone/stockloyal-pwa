@@ -1,0 +1,59 @@
+# ===============================================
+# StockLoyal Deployment Script (PowerShell)
+# ===============================================
+
+# EC2 details
+$EC2_IP = "3.143.207.226"
+$PEM    = "C:\Users\reian\AWS\stockloyal.pem"
+
+# Database details
+$LOCAL_DB_USER = "root"
+$LOCAL_DB_PASS = ""   # if root has no password leave blank
+$LOCAL_DB_NAME = "stockloyal"
+
+$AWS_DB_HOST = "***REMOVED***"
+$AWS_DB_USER = "admin"
+$AWS_DB_PASS = "***REMOVED***"
+$AWS_DB_NAME = "stockloyal"
+
+Write-Host "🚀 Starting StockLoyal deployment..." -ForegroundColor Cyan
+
+# 1) Build frontend
+Write-Host "📦 Building frontend..."
+cd "C:\xampp\htdocs\stockloyal-pwa"
+npm run build
+
+# 2) Upload frontend build
+Write-Host "⬆️ Uploading frontend dist/ to EC2..."
+scp -i $PEM -r dist\* ec2-user@${EC2_IP}:"/var/www/html/stockloyal-pwa/"
+
+# 3) Upload backend PHP API
+Write-Host "⬆️ Uploading backend API/ to EC2..."
+scp -i $PEM -r api\ ec2-user@${EC2_IP}:"/var/www/html/stockloyal-pwa/"
+
+# 4) Upload static assets
+Write-Host "⬆️ Uploading public assets to EC2..."
+scp -i $PEM -r public\* ec2-user@${EC2_IP}:"/var/www/html/stockloyal-pwa/public/"
+
+# 5) Restart Apache on EC2
+Write-Host "🔄 Restarting Apache on EC2..."
+ssh -i $PEM ec2-user@${EC2_IP} "sudo systemctl restart httpd"
+
+# 6) Sync MySQL schema + data from local → AWS RDS
+Write-Host "💾 Syncing local MySQL ($LOCAL_DB_NAME) → AWS RDS ($AWS_DB_NAME)..."
+
+$dumpFile = "C:\xampp\htdocs\stockloyal-pwa\stockloyal_dump.sql"
+
+# Export local DB
+& mysqldump -u $LOCAL_DB_USER --password=$LOCAL_DB_PASS $LOCAL_DB_NAME > $dumpFile
+
+# Import into AWS RDS
+& mysql -h $AWS_DB_HOST -u $AWS_DB_USER --password=$AWS_DB_PASS $AWS_DB_NAME < $dumpFile
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "✅ Database synced successfully to AWS RDS!" -ForegroundColor Green
+} else {
+    Write-Host "❌ Database sync failed. Check credentials and connectivity." -ForegroundColor Red
+}
+
+Write-Host "✅ Deployment completed! Visit http://$EC2_IP/stockloyal-pwa/" -ForegroundColor Green

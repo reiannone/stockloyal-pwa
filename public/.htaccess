@@ -1,0 +1,78 @@
+# --- General hardening ---
+Options -Indexes
+
+# --- SPA routing: serve built files if they exist; otherwise fall back to index.html ---
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Let PHP API endpoints pass through untouched
+  RewriteRule ^api/ - [L]
+
+  # Serve existing files/directories (CSS/JS/images/etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule . - [L]
+
+  # Fallback all other routes to the SPA entry
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# --- Cache static assets aggressively (fingerprinted bundles are safe to cache) ---
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  # Cache-busted assets (Vite output in /assets/) for 1 year
+  <Location "/assets/">
+    ExpiresDefault "access plus 1 year"
+  </Location>
+
+  # PWA icons & images
+  <Location "/icons/">
+    ExpiresDefault "access plus 30 days"
+  </Location>
+
+  # Manifest can change more often
+  <Files "manifest.json">
+    ExpiresDefault "access plus 1 hour"
+  </Files>
+
+  # HTML should not be cached hard
+  <FilesMatch "\.(html)$">
+    ExpiresDefault "access plus 0 seconds"
+  </FilesMatch>
+</IfModule>
+
+# Also set Cache-Control headers (works even if mod_expires is off)
+<IfModule mod_headers.c>
+  # Strong caching for assets (immutable once deployed by Vite)
+  <Location "/assets/">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </Location>
+
+  # Icons OK to cache moderately
+  <Location "/icons/">
+    Header set Cache-Control "public, max-age=2592000"
+  </Location>
+
+  # Manifest & HTML: no aggressive cache
+  <Files "manifest.json">
+    Header set Cache-Control "no-cache"
+  </Files>
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+
+  # Basic security headers (safe defaults)
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "no-referrer-when-downgrade"
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# --- Gzip/Brotli (if modules are enabled) ---
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+<IfModule mod_brotli.c>
+  AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>

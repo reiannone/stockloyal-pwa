@@ -28,16 +28,7 @@ if (!$memberId) {
 try {
     // 1. Fetch all orders for this member
     $stmt = $conn->prepare("
-        SELECT 
-            order_id,
-            member_id,
-            symbol,
-            shares,
-            amount,
-            status,
-            placed_at,
-            broker,
-            order_type
+        SELECT *
         FROM orders
         WHERE member_id = :member_id
         ORDER BY placed_at DESC
@@ -45,7 +36,8 @@ try {
     $stmt->execute([":member_id" => $memberId]);
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ✅ Cast numeric fields
+    // ✅ Cast numeric fields + calculate portfolio total
+    $portfolioTotal = 0.0;
     foreach ($orders as &$order) {
         if (isset($order['shares'])) {
             $order['shares'] = (float) $order['shares'];
@@ -53,11 +45,16 @@ try {
         if (isset($order['amount'])) {
             $order['amount'] = (float) $order['amount'];
         }
+        // Add to portfolio if status is confirmed or executed
+        if (isset($order['status']) && in_array(strtolower($order['status']), ['confirmed','executed'])) {
+            $portfolioTotal += (float) $order['amount'];
+        }
     }
 
     echo json_encode([
-        "success" => true,
-        "orders"  => $orders
+        "success"          => true,
+        "orders"           => $orders,
+        "portfolio_value"  => $portfolioTotal
     ]);
 } catch (Exception $e) {
     http_response_code(500);

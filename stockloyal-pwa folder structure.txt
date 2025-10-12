@@ -1,0 +1,29 @@
+stockloyal-pwa folder structure:
+
+C:\xampp\htdocs\stockloyal-pwa\api
+C:\xampp\htdocs\stockloyal-pwa\dist
+	C:\xampp\htdocs\stockloyal-pwa\dist\assets
+	C:\xampp\htdocs\stockloyal-pwa\dist\icons
+	C:\xampp\htdocs\stockloyal-pwa\dist\logos
+	C:\xampp\htdocs\stockloyal-pwa\dist\stockloyal-pwa
+		C:\xampp\htdocs\stockloyal-pwa\dist\stockloyal-pwa\icons
+
+
+C:\xampp\htdocs\stockloyal-pwa\node_modules
+C:\xampp\htdocs\stockloyal-pwa\public
+	C:\xampp\htdocs\stockloyal-pwa\public\icons
+	C:\xampp\htdocs\stockloyal-pwa\public\logos
+	C:\xampp\htdocs\stockloyal-pwa\public\stockloyal-pwa
+		C:\xampp\htdocs\stockloyal-pwa\public\stockloyal-pwa\icons
+
+C:\xampp\htdocs\stockloyal-pwa\src
+	C:\xampp\htdocs\stockloyal-pwa\src\api
+	C:\xampp\htdocs\stockloyal-pwa\src\assets
+	C:\xampp\htdocs\stockloyal-pwa\src\components
+	C:\xampp\htdocs\stockloyal-pwa\src\config
+	C:\xampp\htdocs\stockloyal-pwa\src\context
+	C:\xampp\htdocs\stockloyal-pwa\src\pages
+	C:\xampp\htdocs\stockloyal-pwa\src\utils
+
+
+

@@ -5,7 +5,7 @@ const Terms = () => {
   const navigate = useNavigate();
 
   const handleAccept = () => {
-    navigate("/selectbroker");
+    navigate("/select-broker");
   };
 
   const handleReject = () => {
@@ -14,7 +14,7 @@ const Terms = () => {
 
   return (
     <div className="terms-container">
-      <h2 className="terms-heading">Terms & Conditions</h2>
+      <h2 className="page-title">Terms & Conditions</h2>
 
       <p>This application allows investments only in listed securities.</p>
       <p>

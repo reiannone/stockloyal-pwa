@@ -1,5 +1,5 @@
 // src/pages/MemberOnboard.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api"; // ✅ universal helper
 
@@ -8,6 +8,48 @@ function MemberOnboard() {
   const location = useLocation();
 
   const memberId = location.state?.memberId || localStorage.getItem("memberId");
+
+  // ✅ Try to get local timezone; fall back to "America/New_York"
+  const localTZ = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+    } catch {
+      return "America/New_York";
+    }
+  }, []);
+
+  // ✅ Build timezone list; prefer browser list, else fallback to a curated set
+  const timezoneOptions = useMemo(() => {
+    try {
+      if (typeof Intl.supportedValuesOf === "function") {
+        const tzs = Intl.supportedValuesOf("timeZone");
+        // Group US-first, then rest alphabetically for nicer UX
+        const usFirst = tzs.filter((z) => z.startsWith("America/"));
+        const rest = tzs.filter((z) => !z.startsWith("America/"));
+        return [...usFirst.sort(), ...rest.sort()];
+      }
+    } catch {}
+    // Fallback (common timezones)
+    return [
+      "America/New_York",
+      "America/Chicago",
+      "America/Denver",
+      "America/Los_Angeles",
+      "America/Phoenix",
+      "America/Anchorage",
+      "Pacific/Honolulu",
+      "America/Toronto",
+      "Europe/London",
+      "Europe/Paris",
+      "Europe/Berlin",
+      "Asia/Tokyo",
+      "Asia/Shanghai",
+      "Asia/Kolkata",
+      "Australia/Sydney",
+      "UTC",
+    ];
+  }, []);
+
   const [formData, setFormData] = useState({
     first_name: "",
     middle_name: "",
@@ -22,6 +64,7 @@ function MemberOnboard() {
     member_state: "",
     member_zip: "",
     member_country: "",
+    member_timezone: "", // ✅ new field
   });
 
   const [error, setError] = useState("");
@@ -104,11 +147,12 @@ function MemberOnboard() {
 
   console.log("Start MemberOnboard.jsx");
   console.log(memberId);
-  
+
   // ✅ Load wallet details
   useEffect(() => {
     if (!memberId) {
       setError("No member ID found — please log in again.");
+      setLoading(false);
       return;
     }
 
@@ -116,10 +160,12 @@ function MemberOnboard() {
       try {
         const data = await apiPost("get-wallet.php", { member_id: memberId });
         if (data.success && data.wallet) {
-          setFormData((prev) => ({
-            ...prev,
-            ...data.wallet,
-          }));
+          setFormData((prev) => {
+            const merged = { ...prev, ...data.wallet };
+            // If no timezone saved yet, default to local
+            if (!merged.member_timezone) merged.member_timezone = localTZ;
+            return merged;
+          });
         } else {
           setError(data.error || "Failed to load wallet.");
         }
@@ -130,7 +176,14 @@ function MemberOnboard() {
         setLoading(false);
       }
     })();
-  }, [memberId]);
+  }, [memberId, localTZ]);
+
+  // ✅ If still no timezone (e.g., new user and fetch failed), set to local on mount
+  useEffect(() => {
+    if (!formData.member_timezone) {
+      setFormData((p) => ({ ...p, member_timezone: localTZ }));
+    }
+  }, [localTZ, formData.member_timezone]);
 
   // ✅ Handle form changes
   const handleChange = (e) => {
@@ -159,6 +212,13 @@ function MemberOnboard() {
     }
   };
 
+  // ✅ Cancel (no save)
+  const handleCancel = () => {
+    // Go back if possible; otherwise land on wallet
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/wallet");
+  };
+
   if (loading) {
     return (
       <div className="page-container">
@@ -170,7 +230,7 @@ function MemberOnboard() {
 
   return (
     <div className="page-container">
-      <h2 className="heading">Member Onboarding</h2>
+      <h2 className="page-title">Member Onboarding</h2>
       {error && <p className="member-form-error">{error}</p>}
 
       <form className="form member-form-grid" onSubmit={handleSave}>
@@ -297,9 +357,35 @@ function MemberOnboard() {
           </select>
         </div>
 
-        <button type="submit" className="btn-primary">
-          Save & Continue
-        </button>
+        {/* ✅ Timezone Dropdown */}
+        <div className="member-form-row">
+          <label className="member-form-label">Local Timezone:</label>
+          <select
+            name="member_timezone"
+            value={formData.member_timezone || localTZ}
+            onChange={handleChange}
+            className="member-form-input"
+          >
+            {!formData.member_timezone && (
+              <option value={localTZ}>{localTZ} (Detected)</option>
+            )}
+            {timezoneOptions.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Actions */}
+        <div className="member-form-actions">
+          <button type="submit" className="btn-primary">
+            Save & Continue
+          </button>
+          <button type="button" className="btn-secondary" onClick={handleCancel}>
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   );

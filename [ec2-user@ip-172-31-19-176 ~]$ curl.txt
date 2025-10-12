@@ -1,0 +1,18 @@
+[ec2-user@ip-172-31-19-176 ~]$ curl -X POST http://localhost/api/get-wallet.php \
+     -H "Content-Type: application/json" \
+     -d '{"member_id":"thursday3"}'
+{"success":false,"error":"Wallet not found"}[ec2-user@ip-172-31-19-176 ~]$
+
+
+# Replace with your EC2 IP
+$EC2_IP = "3.143.207.226"
+$PEM    = "C:\Users\reian\AWS\stockloyal.pem"
+
+# Upload frontend build
+scp -i $PEM -r dist\* ec2-user@3.143.207.226:/var/www/html/stockloyal-pwa/
+
+# Upload backend PHP API
+scp -i $PEM -r api\ ec2-user@3.143.207.226:/var/www/html/stockloyal-pwa/
+
+# Upload static assets (icons/logos)
+scp -i $PEM -r public\* ec2-user@3.143.207.226:/var/www/html/stockloyal-pwa/public/

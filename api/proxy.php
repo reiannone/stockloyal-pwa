@@ -1,5 +1,12 @@
 <?php
-// api/proxy.php - screener + search-friendly symbol lookup
+// ======================================================================
+// api/proxy.php
+// Unified Yahoo Finance proxy for:
+//  - Screeners (via ?scrId=most_actives)
+//  - Symbol search (via POST {"symbol":"AAPL"})
+//  - Multi-symbol quote lookup (via POST {"symbol":"AAPL,MSFT"})
+// ======================================================================
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
@@ -14,113 +21,163 @@ function L($msg) { error_log("[proxy.php] " . $msg); }
 $raw = file_get_contents("php://input");
 $post = $raw ? json_decode($raw, true) : null;
 if ($raw && $post === null) {
-    L("Warning: JSON decode failed for POST body: " . substr($raw,0,400));
+    L("Warning: JSON decode failed: " . substr($raw, 0, 200));
 }
 
-$scrId = isset($_GET['scrId']) ? trim($_GET['scrId']) : null;
+// $scrId  = isset($_GET['scrId']) ? trim($_GET['scrId']) : null;
+$scrId = isset($_GET['scrId'])
+    ? trim($_GET['scrId'])
+    : (is_array($post) && !empty($post['scrId']) ? trim($post['scrId']) : null);
+
 $symbol = is_array($post) && !empty($post['symbol']) ? trim($post['symbol']) : null;
 
-$ua = "Mozilla/5.0 (StockLoyal Proxy; +http://localhost)";
+$ua = "Mozilla/5.0 (StockLoyal Proxy; +https://stockloyal.com)";
 $curlTimeout = 20;
+$cacheDir = __DIR__ . "/cache";
+@mkdir($cacheDir, 0755);
+
 $curl = curl_init();
 
 try {
-    // --- SYMBOL LOOKUP (prefer search endpoint to avoid /v7/quote 401) ---
+    // -----------------------------------------------------------
+    // 🔹 MULTI-SYMBOL OR SINGLE SYMBOL LOOKUP
+    // -----------------------------------------------------------
     if ($symbol) {
+        $symbols = array_filter(array_map('trim', explode(',', strtoupper($symbol))));
+        $symbolKey = implode(',', $symbols);
+        $cacheFile = $cacheDir . "/quote_" . md5($symbolKey) . ".json";
+
+        // Return cached if < 60 seconds old
+        if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < 60) {
+            header("X-Proxy-Cache: HIT");
+            echo file_get_contents($cacheFile);
+            exit;
+        }
+
+        if (count($symbols) > 1) {
+            // --- Multi-symbol quote API ---
+            $url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" . urlencode($symbolKey);
+            L("multi-symbol fetch: {$url}");
+
+            curl_setopt_array($curl, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_USERAGENT => $ua,
+                CURLOPT_TIMEOUT => $curlTimeout
+            ]);
+
+            $resp = curl_exec($curl);
+            $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            if ($resp === false || $http !== 200) {
+                echo json_encode(["success" => false, "error" => "Yahoo quote request failed", "http" => $http]);
+                exit;
+            }
+
+            $data = json_decode($resp, true);
+            $results = $data['quoteResponse']['result'] ?? [];
+
+            $out = [
+                "success" => true,
+                "count"   => count($results),
+                "data"    => array_map(function ($q) {
+                    return [
+                        "symbol"   => $q['symbol'],
+                        "name"     => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
+                        "price"    => $q['regularMarketPrice'] ?? null,
+                        "change"   => $q['regularMarketChangePercent'] ?? 0,
+                        "currency" => $q['currency'] ?? "USD",
+                    ];
+                }, $results)
+            ];
+
+            @file_put_contents($cacheFile, json_encode($out));
+            echo json_encode($out);
+            exit;
+        }
+
+        // --- Single-symbol path (search + chart fallback) ---
         $q = urlencode($symbol);
         $searchUrl = "https://query1.finance.yahoo.com/v1/finance/search?q={$q}&lang=en-US&region=US&quotesCount=1";
         L("symbol search: {$symbol} -> {$searchUrl}");
 
-        curl_setopt($curl, CURLOPT_URL, $searchUrl);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($curl, CURLOPT_USERAGENT, $ua);
-        curl_setopt($curl, CURLOPT_TIMEOUT, $curlTimeout);
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $searchUrl,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_USERAGENT => $ua,
+            CURLOPT_TIMEOUT => $curlTimeout
+        ]);
 
         $resp = curl_exec($curl);
         $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        $cerr = curl_error($curl);
-        L("search curl HTTP code: $http, curl_error: " . ($cerr ?: '<none>'));
-        L("search response preview: " . substr($resp ?? '', 0, 800));
-
-        if ($resp === false) {
-            http_response_code(502);
-            echo json_encode(["success" => false, "error" => "Upstream request failed", "details" => $cerr]);
+        if ($resp === false || $http !== 200) {
+            echo json_encode(["success" => false, "error" => "Yahoo search failed", "http" => $http]);
             exit;
         }
 
-        // If search didn't produce JSON or returned HTML, bail with useful message
-        $trim = ltrim($resp);
-        if (strpos($trim, "<") === 0) {
-            http_response_code(502);
-            echo json_encode(["success" => false, "error" => "Upstream returned HTML (likely blocked)", "http_code" => $http, "preview" => substr($resp,0,800)]);
-            exit;
-        }
-
-        // parse JSON and map sensible fields
         $j = json_decode($resp, true);
-        if (!$j) {
-            http_response_code(502);
-            echo json_encode(["success" => false, "error" => "Upstream returned invalid JSON", "preview" => substr($resp,0,800)]);
-            exit;
-        }
-
-        // prefer `quotes` array (search endpoint) or `finance.result.quotes`
-        $quotes = $j['quotes'] ?? ($j['finance']['result'][0]['quotes'] ?? null) ?? null;
+        $quotes = $j['quotes'] ?? ($j['finance']['result'][0]['quotes'] ?? []);
         if (empty($quotes)) {
-            // no quotes -> return not found
-            http_response_code(404);
-            echo json_encode(["success" => false, "error" => "Symbol not found (search returned no quotes)"]);
+            echo json_encode(["success" => false, "error" => "Symbol not found"]);
             exit;
         }
 
         $q0 = $quotes[0];
-
-        // robust extraction of name/price/change
         $outSymbol = $q0['symbol'] ?? ($q0['id'] ?? $symbol);
         $name = $q0['shortname'] ?? $q0['longname'] ?? $q0['name'] ?? ($q0['title'] ?? $outSymbol);
 
-        // price fields vary by endpoint; try several possibilities
-        $price = null;
-        $possiblePriceKeys = [
-            'regularMarketPrice','regularMarketPreviousClose','mid','lastPrice','price','regularMarketPrice.raw'
-        ];
-        foreach ($possiblePriceKeys as $k) {
-            if (isset($q0[$k]) && is_numeric($q0[$k])) { $price = $q0[$k]; break; }
-            // support nested/raw style (sometimes value in ['regularMarketPrice']['raw'])
-            if (is_array($q0) && isset($q0['regularMarketPrice']) && is_array($q0['regularMarketPrice']) && isset($q0['regularMarketPrice']['raw'])) {
-                $price = $q0['regularMarketPrice']['raw'];
-                break;
+        // --- Chart fallback to get latest price ---
+        $chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/{$outSymbol}?interval=1d&range=1d";
+        L("chart fetch: {$chartUrl}");
+
+        curl_setopt_array($curl, [
+            CURLOPT_URL => $chartUrl,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_USERAGENT => $ua,
+            CURLOPT_TIMEOUT => $curlTimeout
+        ]);
+
+        $chartResp = curl_exec($curl);
+        $price = $change = null;
+
+        if ($chartResp) {
+            $cj = json_decode($chartResp, true);
+            $meta = $cj['chart']['result'][0]['meta'] ?? null;
+            if ($meta) {
+                $price = $meta['regularMarketPrice'] ?? null;
+                $prevClose = $meta['previousClose'] ?? null;
+                if ($price && $prevClose) {
+                    $change = (($price - $prevClose) / $prevClose) * 100;
+                }
             }
         }
 
-        // some search results include 'score' or 'exch' — for now we only return symbol/name/price/change
-        $change = null;
-        if (isset($q0['regularMarketChangePercent'])) $change = $q0['regularMarketChangePercent'];
-        if ($change === null && isset($q0['regularMarketChangePercentRaw'])) $change = $q0['regularMarketChangePercentRaw'];
-
-        // return normalized object
-        echo json_encode([
+        $out = [
             "success" => true,
             "symbol"  => $outSymbol,
             "name"    => $name,
             "price"   => ($price !== null ? floatval($price) : null),
-            "change"  => ($change !== null ? floatval($change) : 0),
-            "raw"     => $j  // optional: include full search response for debugging (remove in prod if desired)
-        ]);
+            "change"  => ($change !== null ? floatval($change) : 0)
+        ];
+
+        @file_put_contents($cacheFile, json_encode($out));
+        echo json_encode($out);
         exit;
     }
 
-    // --- SCREENER / category fetch (existing behaviour) ---
+    // -----------------------------------------------------------
+    // 🔹 SCREENER FETCH
+    // -----------------------------------------------------------
     $scr = $scrId ?: 'most_actives';
-    $cacheDir = __DIR__ . "/cache";
-    @mkdir($cacheDir, 0755);
     $cacheFile = $cacheDir . "/cache_" . preg_replace('/[^a-z0-9_-]/i', '_', $scr) . ".json";
     $cacheTime = 300;
 
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTime) {
-        L("serve cached screener for $scr");
         header("X-Proxy-Cache: HIT");
         echo file_get_contents($cacheFile);
         exit;
@@ -129,34 +186,25 @@ try {
     $url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=" . urlencode($scr) . "&count=50&lang=en&region=US";
     L("screener fetch: $url");
 
-    curl_setopt($curl, CURLOPT_URL, $url);
-    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($curl, CURLOPT_USERAGENT, $ua);
-    curl_setopt($curl, CURLOPT_TIMEOUT, $curlTimeout);
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT => $ua,
+        CURLOPT_TIMEOUT => $curlTimeout
+    ]);
 
     $resp = curl_exec($curl);
     $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    $cerr = curl_error($curl);
 
-    L("screener curl HTTP code: $http, curl_error: " . ($cerr ?: '<none>'));
-    L("screener response preview: " . substr($resp ?? '', 0, 800));
-
-    if ($resp === false) {
-        http_response_code(502);
-        echo json_encode(["success" => false, "error" => "Upstream request failed", "details" => $cerr]);
-        exit;
-    }
-    if ($http !== 200) {
+    if ($resp === false || $http !== 200) {
         if (file_exists($cacheFile)) {
-            L("Yahoo screener returned $http -> serve stale cache");
             header("X-Proxy-Cache: STALE");
             echo file_get_contents($cacheFile);
             exit;
         }
-        http_response_code(502);
-        echo json_encode(["success" => false, "error" => "Yahoo returned HTTP $http", "body_preview" => substr($resp,0,800)]);
+        echo json_encode(["success" => false, "error" => "Yahoo screener request failed", "http" => $http]);
         exit;
     }
 
@@ -166,9 +214,8 @@ try {
     exit;
 
 } catch (Exception $e) {
-    L("Exception: " . $e->getMessage());
     http_response_code(500);
-    echo json_encode(["success" => false, "error" => "Server error", "message" => $e->getMessage()]);
+    echo json_encode(["success" => false, "error" => $e->getMessage()]);
     exit;
 } finally {
     if ($curl) curl_close($curl);

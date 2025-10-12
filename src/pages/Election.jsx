@@ -76,16 +76,16 @@ export default function Election() {
   if (loading) {
     return (
       <div className="page-container">
-        <h2 className="heading">StockLoyal Elections</h2>
-        <p>Loading your election settings…</p>
+        <h2 className="page-title">StockLoyal Elections</h2>
+        <p class="page-deck">Loading your election settings…</p>
       </div>
     );
   }
 
   return (
     <div className="page-container">
-      <h2 className="heading">StockLoyal Elections</h2>
-      <p className="body-text mb-4">
+      <h2 className="page-title">StockLoyal Elections</h2>
+      <p className="page-deck">
         Choose how you want to invest your loyalty points.
       </p>
 
