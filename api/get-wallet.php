@@ -26,11 +26,15 @@ if (!$memberId) {
 }
 
 try {
-    // 1. Fetch full wallet row (all columns)
+    // 1. Fetch wallet + merchant conversion rate
     $stmt = $conn->prepare("
-        SELECT *
-        FROM wallet
-        WHERE member_id = :member_id
+        SELECT 
+            w.*,
+            m.merchant_name,
+            m.conversion_rate
+        FROM wallet w
+        LEFT JOIN merchant m ON w.merchant_id = m.merchant_id
+        WHERE w.member_id = :member_id
         LIMIT 1
     ");
     $stmt->execute([":member_id" => $memberId]);
@@ -45,15 +49,31 @@ try {
         exit;
     }
 
-    // ✅ Normalize numeric fields if they exist
-    foreach (['points', 'cash_balance', 'portfolio_value', 'sweep_percentage'] as $col) {
+    // ✅ Normalize numeric fields
+    foreach (['points', 'cash_balance', 'portfolio_value', 'sweep_percentage', 'conversion_rate'] as $col) {
         if (isset($wallet[$col])) {
-            if (in_array($col, ['points', 'sweep_percentage'])) {
+            if ($col === 'points' || $col === 'sweep_percentage') {
                 $wallet[$col] = (int) $wallet[$col];
             } else {
                 $wallet[$col] = (float) $wallet[$col];
             }
         }
+    }
+
+    // ✅ Lightly normalize timezone field (leave null if not set)
+    if (array_key_exists('member_timezone', $wallet)) {
+        $tz = $wallet['member_timezone'];
+        if ($tz !== null) {
+            $tz = trim((string)$tz);
+            // Allow letters, slash, underscore, hyphen; cap at 64 chars (matches DB column)
+            if ($tz === '' || strlen($tz) > 64 || !preg_match('/^[A-Za-z_\/\-]+$/', $tz)) {
+                $tz = null;
+            }
+        }
+        $wallet['member_timezone'] = $tz;
+    } else {
+        // Column not present in schema yet — keep explicit null for the client
+        $wallet['member_timezone'] = null;
     }
 
     // 2. Fetch broker_credentials info

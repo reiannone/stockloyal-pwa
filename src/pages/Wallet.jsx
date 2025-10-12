@@ -6,7 +6,6 @@ import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
 
 export default function Wallet() {
   const [wallet, setWallet] = useState(null);
-  const [brokerCreds, setBrokerCreds] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -25,7 +24,6 @@ export default function Wallet() {
       setError("");
       try {
         const data = await apiPost("get-wallet.php", { member_id: memberId });
-
         if (!data || !data.success) {
           if (mounted) {
             setError(data?.error || "Failed to load wallet.");
@@ -34,21 +32,22 @@ export default function Wallet() {
           return;
         }
 
-        // Save wallet and broker credentials in state
         if (mounted) {
           setWallet(data.wallet ?? null);
-          setBrokerCreds(data.broker_credentials ?? null);
           setLoading(false);
         }
 
-        // Sync a few values to localStorage so other pages (quick paths) work immediately
+        // Sync to localStorage
         try {
-          if (data.wallet?.points != null) localStorage.setItem("points", String(parseInt(data.wallet.points, 10) || 0));
-          if (data.wallet?.cash_balance != null) localStorage.setItem("cashBalance", Number(data.wallet.cash_balance).toFixed(2));
-          if (typeof data.wallet?.portfolio_value !== "undefined") localStorage.setItem("portfolio_value", Number(data.wallet.portfolio_value).toFixed(2));
-          if (typeof data.wallet?.sweep_percentage !== "undefined") localStorage.setItem("sweep_percentage", String(data.wallet.sweep_percentage));
+          if (data.wallet?.points != null)
+            localStorage.setItem("points", String(parseInt(data.wallet.points, 10) || 0));
+          if (data.wallet?.cash_balance != null)
+            localStorage.setItem("cashBalance", Number(data.wallet.cash_balance).toFixed(2));
+          if (typeof data.wallet?.portfolio_value !== "undefined")
+            localStorage.setItem("portfolio_value", Number(data.wallet.portfolio_value).toFixed(2));
+          if (typeof data.wallet?.sweep_percentage !== "undefined")
+            localStorage.setItem("sweep_percentage", String(data.wallet.sweep_percentage));
         } catch (e) {
-          // LocalStorage might be unavailable in some environments — non-fatal
           console.warn("[Wallet] failed to sync to localStorage", e);
         }
       } catch (err) {
@@ -75,7 +74,6 @@ export default function Wallet() {
   const formatPoints = (val) => (parseInt(val, 10) || 0).toLocaleString("en-US");
 
   const handleRefresh = async () => {
-    // simple refresh by re-calling API
     setLoading(true);
     setError("");
     try {
@@ -84,11 +82,6 @@ export default function Wallet() {
         setError(data?.error || "Failed to refresh wallet.");
       } else {
         setWallet(data.wallet ?? null);
-        try {
-          if (data.wallet?.points != null) localStorage.setItem("points", String(parseInt(data.wallet.points, 10) || 0));
-          if (data.wallet?.cash_balance != null) localStorage.setItem("cashBalance", Number(data.wallet.cash_balance).toFixed(2));
-          if (typeof data.wallet?.portfolio_value !== "undefined") localStorage.setItem("portfolio_value", Number(data.wallet.portfolio_value).toFixed(2));
-        } catch (e) { /* ignore */ }
       }
     } catch (e) {
       console.error("[Wallet] refresh failed", e);
@@ -137,35 +130,50 @@ export default function Wallet() {
     );
   }
 
-  const notLinked = !wallet.broker || wallet.broker === "Not linked" || wallet.broker === "unlinked";
+  // --- Determine broker status ---
+  const notLinked =
+    !wallet.broker || wallet.broker === "Not linked" || wallet.broker === "unlinked";
+
   const points = parseInt(wallet.points || 0, 10);
-  const cashBalance = Number(wallet.cash_balance || 0);
+  const baseCash = Number(wallet.cash_balance || 0);
+  const conversionRate = Number(wallet.conversion_rate || 0);
   const portfolioValue = Number(wallet.portfolio_value || 0);
   const sweepPct = wallet.sweep_percentage ?? null;
+  const merchantName = wallet.merchant_name || "Merchant";
+
+  const effectiveCashBalance = baseCash + (conversionRate > 0 ? points * conversionRate : 0);
 
   return (
     <div className="wallet-container">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <h2 className="wallet-heading" style={{ margin: 0 }}>Stock-Backed Rewards</h2>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          className="btn-secondary"
-          title="Refresh wallet"
-          style={{ width: "auto", padding: "0.4rem 0.6rem" }}
-        >
-          <RefreshCw size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />
-          Refresh
-        </button>
-      </div>
+      <h2 className="page-title" style={{ margin: 0 }}>
+        Stock-Backed Rewards
+      </h2>
+      <p className="page-deck" style={{ marginTop: 8 }}>
+        Available Points & Cash Value
+      </p>
 
-      <p className="wallet-intro" style={{ marginTop: 8 }}>Available Points & Cash Value</p>
-
-      {/* Top summary card */}
+      {/* --- Summary Card --- */}
       <div className="card" style={{ marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 10, background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 10,
+                background: "#f9fafb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               <CreditCard size={24} />
             </div>
             <div>
@@ -175,29 +183,73 @@ export default function Wallet() {
           </div>
 
           <div style={{ textAlign: "right" }}>
-            <div className="wallet-cash" style={{ margin: 0 }}>{formatDollars(cashBalance)}</div>
-            <div className="caption" style={{ marginTop: 6 }}>Points: <strong>{formatPoints(points)}</strong></div>
+            <div className="wallet-cash" style={{ margin: 0 }}>
+              {formatDollars(effectiveCashBalance)}
+            </div>
+            <div className="caption" style={{ marginTop: 6 }}>
+              Points from <strong>{merchantName}</strong>:{" "}
+              <strong>{formatPoints(points)}</strong>
+            </div>
             {sweepPct !== null && (
-              <div className="caption" style={{ marginTop: 4 }}>Sweep: {Number(sweepPct)}%</div>
+              <div className="caption" style={{ marginTop: 4 }}>
+                Sweep: {Number(sweepPct)}%
+              </div>
             )}
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "center" }}>
-          <button className="btn-primary" onClick={() => navigate("/stock-picker")}>
+        {/* --- Action Buttons --- */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            marginTop: 12,
+            justifyContent: "center",
+          }}
+        >
+          <button
+            className={`btn-primary ${notLinked ? "btn-disabled" : ""}`}
+            onClick={() => !notLinked && navigate("/stock-picker")}
+            disabled={notLinked}
+            style={{
+              opacity: notLinked ? 0.6 : 1,
+              cursor: notLinked ? "not-allowed" : "pointer",
+            }}
+          >
             Convert & Invest
           </button>
-          <button className="btn-secondary" onClick={() => navigate("/select-broker")}>
+
+          <button
+            className={notLinked ? "btn-primary" : "btn-secondary"}
+            onClick={() => navigate("/select-broker")}
+          >
             {notLinked ? "Link Broker" : `Active Broker: ${wallet.broker || "Unknown"}`}
           </button>
         </div>
       </div>
 
-      {/* Portfolio card */}
+      {/* --- Portfolio Section --- */}
       <div className="card card--accent" style={{ marginTop: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 10, background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: 10,
+                background: "#f9fafb",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               <BarChart2 size={24} />
             </div>
             <div>
@@ -207,18 +259,34 @@ export default function Wallet() {
           </div>
 
           <div style={{ textAlign: "right" }}>
-            <div className="wallet-portfolio" style={{ margin: 0 }}>{formatDollars(portfolioValue)}</div>
-            <div className="caption" style={{ marginTop: 6 }}>Updated when trades settle</div>
+            <div className="wallet-portfolio" style={{ margin: 0 }}>
+              {formatDollars(portfolioValue)}
+            </div>
+            <div className="caption" style={{ marginTop: 6 }}>
+              Updated when trades settle
+            </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>View Portfolio</button>
-          <button className="btn-secondary" onClick={() => navigate("/transactions")}>Transactions</button>
+        {/* --- Navigation Buttons --- */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            marginTop: 12,
+            justifyContent: "flex-end",
+          }}
+        >
+          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>
+            View Portfolio
+          </button>
+          <button className="btn-secondary" onClick={() => navigate("/transactions")}>
+            View Transactions
+          </button>
         </div>
       </div>
 
-      {/* Sweep / subscription CTA */}
+      {/* --- Sweep CTA --- */}
       <div style={{ marginTop: 14 }}>
         {wallet.election_type === "monthly" ? (
           <button type="button" onClick={() => navigate("/election")} className="btn-gold">
@@ -231,19 +299,39 @@ export default function Wallet() {
         )}
       </div>
 
+      {/* --- Footer --- */}
       <p className="wallet-note" style={{ marginTop: 12 }}>
-        Investment portfolio reflects shares purchased through the StockLoyal app only.
+        Investment portfolio reflects shares purchased through the StockLoyal app only.{" "}
         {wallet.broker && wallet.broker_url && (
           <>
-            {" "}To see your full portfolio at {wallet.broker}, click{" "}
-            <a href={wallet.broker_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+            To see your full portfolio at {wallet.broker}, click{" "}
+            <a
+              href={wallet.broker_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 underline"
+            >
               here
-            </a>.
+            </a>
+            .
           </>
         )}
       </p>
 
-      <p className="caption" style={{ marginTop: 12 }}>StockLoyal Member ID: {wallet.member_id}</p>
+      <button
+        type="button"
+        onClick={handleRefresh}
+        className="refresh-btn"
+        title="Refresh"
+        style={{ width: "auto", padding: "0.4rem 0.6rem" }}
+      >
+        <RefreshCw size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />
+        Refresh
+      </button>
+
+      <p className="caption" style={{ marginTop: 12 }}>
+        StockLoyal Member ID: {wallet.member_id}
+      </p>
     </div>
   );
 }

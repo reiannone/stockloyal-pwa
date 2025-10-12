@@ -3,16 +3,16 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.VITE_BASE_PATH || '/',
   server: {
-    host: true,
-    port: 5173,
     proxy: {
-      '/stockloyal-pwa/api': {
-        target: 'http://localhost', // Vite will forward to local Apache
+      '/api': {
+        // if your local Apache serves /api at http://localhost/api
+        target: 'http://localhost',
         changeOrigin: true,
-        secure: false,
-        rewrite: (path) => path, // keep path
-      }
-    }
-  }
+        rewrite: p => p, // keep /api
+      },
+    },
+  },
+  build: { outDir: 'dist' },
 });

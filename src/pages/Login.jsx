@@ -3,8 +3,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 
-console.log("Start Login.jsx");
-
 function Login() {
   const navigate = useNavigate();
 
@@ -12,15 +10,14 @@ function Login() {
   const [memberId, setMemberId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState(""); // ✅ new
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [merchantId, setMerchantId] = useState("");
   const [points, setPoints] = useState(0);
-  const [conversionRate, setConversionRate] = useState(0.01); // ✅ fallback
+  const [conversionRate, setConversionRate] = useState(0.01);
 
-  console.log("Login.jsx, memberId:", memberId);
-
-  // ✅ Hydrate from localStorage (set by SplashScreen.jsx)
+  // ✅ Hydrate from localStorage
   useEffect(() => {
     const lsMode = localStorage.getItem("mode");
     const lsMemberId = localStorage.getItem("memberId");
@@ -44,7 +41,13 @@ function Login() {
     setError("");
 
     if (!memberId || !password || (mode === "create" && !email)) {
-      setError("Please fill in all fields.");
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    // ✅ Password confirmation validation
+    if (mode === "create" && password !== confirmPassword) {
+      setError("Passwords do not match. Please re-enter.");
       return;
     }
 
@@ -53,7 +56,7 @@ function Login() {
         const data = await apiPost("create_member.php", {
           member_id: memberId,
           member_email: email,
-          password,
+          password, // plain password — backend hashes it
         });
 
         if (data.success) {
@@ -82,7 +85,6 @@ function Login() {
           localStorage.setItem("memberId", memberId);
           localStorage.setItem("memberEmail", data.member_email || "");
           if (merchantId) localStorage.setItem("merchantId", merchantId);
-
           navigate("/wallet");
         }
       } catch (err) {
@@ -100,7 +102,7 @@ function Login() {
 
   return (
     <div className="page-container">
-      <h2 className="heading">
+      <h2 className="page-title">
         {mode === "login" ? "Login to StockLoyal" : "Create StockLoyal Account"}
       </h2>
 
@@ -156,15 +158,30 @@ function Login() {
               autoComplete="current-password"
             />
             <img
-              src={`${import.meta.env.BASE_URL}icons/${
-                showPw ? "hide.png" : "show.png"
-              }`}
+              src={`${import.meta.env.BASE_URL}icons/${showPw ? "hide.png" : "show.png"}`}
               alt={showPw ? "Hide password" : "Show password"}
               className="pw-toggle-icon"
               onClick={() => setShowPw(!showPw)}
             />
           </div>
         </div>
+
+        {/* ✅ Confirm Password field (create mode only) */}
+        {mode === "create" && (
+          <div className="member-form-row">
+            <label htmlFor="confirmPassword" className="member-form-label">
+              Confirm Password:
+            </label>
+            <input
+              id="confirmPassword"
+              type={showPw ? "text" : "password"}
+              className="member-form-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+        )}
 
         {error && <p className="form-error">{error}</p>}
 

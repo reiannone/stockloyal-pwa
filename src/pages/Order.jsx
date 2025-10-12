@@ -5,6 +5,11 @@ import { useBasket } from "../context/BasketContext";
 import { useBroker } from "../context/BrokerContext";
 import { apiPost } from "../api";
 
+// Simple UUID generator for basket_id
+function generateBasketId() {
+  return "basket-" + Date.now() + "-" + Math.floor(Math.random() * 1e6);
+}
+
 export default function Order() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,6 +48,14 @@ export default function Order() {
         enrichedBasketCount: enrichedBasket.length,
       });
 
+      // ✅ Generate basket_id once per checkout
+      const basketId = generateBasketId();
+      localStorage.setItem("basketId", basketId);
+
+      // Split amount across all basket items
+      const perOrderAmount =
+        enrichedBasket.length > 0 ? totalAmount / enrichedBasket.length : 0;
+
       // Attempt to fetch authoritative wallet from server
       let currentWallet = null;
       try {
@@ -50,46 +63,28 @@ export default function Order() {
         if (walletRes?.success && walletRes.wallet) {
           currentWallet = walletRes.wallet;
           console.log("[Order] fetched wallet from server:", currentWallet);
-        } else {
-          console.warn("[Order] get-wallet.php returned no wallet or success=false", walletRes);
         }
       } catch (gErr) {
         console.warn("[Order] get-wallet.php failed, falling back to localStorage", gErr);
       }
 
-      // Fallback to localStorage if server wallet not available
-      const currPoints = Number.isFinite(Number(currentWallet?.points))
-        ? Number(currentWallet.points)
-        : parseInt(localStorage.getItem("points") || "0", 10);
-
-      const currCash = Number.isFinite(Number(currentWallet?.cash_balance))
-        ? Number(currentWallet.cash_balance)
-        : parseFloat(localStorage.getItem("cashBalance") || "0");
-
-      const currPortfolio = Number.isFinite(Number(currentWallet?.portfolio_value))
-        ? Number(currentWallet.portfolio_value)
-        : parseFloat(localStorage.getItem("portfolio_value") || "0");
+      // Fallback values
+      const currPoints = Number(currentWallet?.points) || parseInt(localStorage.getItem("points") || "0", 10);
+      const currCash = Number(currentWallet?.cash_balance) || parseFloat(localStorage.getItem("cashBalance") || "0");
+      const currPortfolio = Number(currentWallet?.portfolio_value) || parseFloat(localStorage.getItem("portfolio_value") || "0");
 
       const newPoints = Math.max(0, Math.round(currPoints - pointsUsed));
       const newCash = Math.max(0, Number((currCash - totalAmount).toFixed(2)));
       const newPortfolio = Number((currPortfolio + totalAmount).toFixed(2));
 
-      console.log("[Order] computed wallet updates (pending):", {
-        currPoints,
-        currCash,
-        currPortfolio,
-        newPoints,
-        newCash,
-        newPortfolio,
-      });
-
-      // 1) Place broker orders sequentially
+      // 1) Place broker orders sequentially with basket_id + per-order amount
       for (const stock of enrichedBasket) {
         const payload = {
           member_id: memberId,
+          basket_id: basketId, // ✅ tie all orders to this basket
           symbol: stock.symbol,
           shares: stock.shares || 0,
-          amount: stock.allocatedAmount || 0,
+          amount: perOrderAmount, // ✅ evenly split
           order_type: "market",
           broker: broker?.id || broker || "Not linked",
         };
@@ -103,7 +98,7 @@ export default function Order() {
         }
       }
 
-      // 2) All orders succeeded — persist wallet updates via update_balances.php
+      // 2) Persist wallet updates
       try {
         const updatePayload = {
           member_id: memberId,
@@ -113,39 +108,30 @@ export default function Order() {
         };
 
         console.log("[Order] calling update_balances.php", updatePayload);
-        const updateRes = await apiPost("update_balances.php", updatePayload);
+        await apiPost("update_balances.php", updatePayload);
 
-        if (!updateRes || !updateRes.success) {
-          console.warn("[Order] wallet update failed or returned success=false", updateRes);
-          // Non-fatal: orders succeeded, wallet update failed. Notify user but proceed.
-          alert("Order placed but failed to update wallet: " + (updateRes?.error || "unknown"));
-        } else {
-          console.log("[Order] wallet updated successfully on server:", updateRes.wallet ?? updateRes);
-
-          // Prefer server-returned wallet if present
-          const returnedWallet = updateRes.wallet ?? {
-            points: newPoints,
-            cash_balance: newCash,
-            portfolio_value: newPortfolio,
-          };
-
-          try {
-            localStorage.setItem("points", String(returnedWallet.points ?? newPoints));
-            localStorage.setItem("cashBalance", Number(returnedWallet.cash_balance ?? newCash).toFixed(2));
-            localStorage.setItem("portfolio_value", Number(returnedWallet.portfolio_value ?? newPortfolio).toFixed(2));
-            console.log("[Order] localStorage synced with new wallet values");
-          } catch (lsErr) {
-            console.warn("[Order] failed to update localStorage", lsErr);
-          }
-        }
+        localStorage.setItem("points", String(newPoints));
+        localStorage.setItem("cashBalance", newCash.toFixed(2));
+        localStorage.setItem("portfolio_value", newPortfolio.toFixed(2));
       } catch (walletErr) {
-        console.error("[Order] network error while updating wallet:", walletErr);
-        alert("Order placed but failed to update wallet (network error). Check logs.");
+        console.error("[Order] wallet update failed:", walletErr);
       }
 
-      // 3) Clear basket and navigate to confirmation
+      // 3) Schedule broker confirmation stub after 20s
+      setTimeout(async () => {
+        try {
+          console.log("[Order] Triggering broker_confirm.php after 20s...");
+          await apiPost("broker_confirm.php", { member_id: memberId });
+        } catch (err) {
+          console.error("[Order] broker_confirm.php failed:", err);
+        }
+      }, 20000);
+
+      // 4) Clear basket and navigate with basketId
       clearBasket();
-      navigate("/order-confirmation", { state: { refreshWallet: true, placed: true, amount: totalAmount } });
+      navigate("/order-confirmation", {
+        state: { refreshWallet: true, placed: true, amount: totalAmount, basketId },
+      });
     } catch (err) {
       console.error("❌ Error placing order:", err);
       alert("Error placing order: " + (err.message || String(err)));
@@ -156,7 +142,7 @@ export default function Order() {
 
   return (
     <div className="order-container">
-      <h2 className="order-heading">Place Market Order with {broker || "Broker"}</h2>
+      <h2 className="page-title">Place Market Order with {broker || "Broker"}</h2>
       <p className="order-subtext">
         These orders will be executed as <span className="highlight">Market Orders</span>.
       </p>

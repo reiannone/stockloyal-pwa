@@ -27,6 +27,23 @@ if (!$input || !isset($input['member_id'])) {
     exit;
 }
 
+// ✅ Extract + lightly validate timezone (IANA-like)
+// Allow letters, slash, underscore, hyphen. Keep it simple and safe.
+$memberTimezone = $input['member_timezone'] ?? null;
+if ($memberTimezone !== null) {
+    $memberTimezone = trim($memberTimezone);
+    if ($memberTimezone === "") {
+        $memberTimezone = null; // treat empty as null
+    } elseif (strlen($memberTimezone) > 64 || !preg_match('/^[A-Za-z_\/\-]+$/', $memberTimezone)) {
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "error"   => "Invalid timezone format"
+        ]);
+        exit;
+    }
+}
+
 try {
     $sql = "UPDATE wallet SET
                 member_email = :member_email,
@@ -39,6 +56,7 @@ try {
                 member_state = :member_state,
                 member_zip = :member_zip,
                 member_country = :member_country,
+                member_timezone = :member_timezone,
                 updated_at = NOW()
             WHERE member_id = :member_id";
 
@@ -54,6 +72,7 @@ try {
         ':member_state'         => $input['member_state'] ?? null,
         ':member_zip'           => $input['member_zip'] ?? null,
         ':member_country'       => $input['member_country'] ?? null,
+        ':member_timezone'      => $memberTimezone,
         ':member_id'            => $input['member_id'],
     ]);
 

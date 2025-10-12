@@ -1,0 +1,90 @@
+/* -----------------------------
+   Global reset
+------------------------------ */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  -webkit-overflow-scrolling: touch; /* smooth iOS scroll */
+  font-family: system-ui, sans-serif;
+}
+
+* { -webkit-tap-highlight-color: rgba(0,0,0,0.05); }
+
+/* -----------------------------
+   Layout shell
+------------------------------ */
+:root {
+  --app-max-width: 780px;
+  --phone-width: 420px;
+  --app-padding: 16px;
+  --app-bg: #fff;
+}
+
+.iphone-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--app-bg);
+  transition: box-shadow 220ms ease, border-color 220ms ease;
+}
+
+/* -----------------------------
+   Scrollable content area
+------------------------------ */
+.iphone-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--app-padding);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+}
+
+/* -----------------------------
+   Header & Footer
+------------------------------ */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: #000;
+  color: #fff;
+  padding-top: env(safe-area-inset-top);
+}
+
+.nav-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+  height: 70px;
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  justify-content: center;
+}
+
+/* Inner nav alignment */
+.nav-inner {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+  max-width: var(--app-max-width);
+}
+
+/* -----------------------------
+   Utility classes
+------------------------------ */
+.bg-blue { background: #1d4ed8; }
+.text-white { color: #fff; }
+.heading { font-size: 1.5rem; font-weight: bold; color: #374151; }
+.subheading { font-size: 1.25rem; font-weight: 600; color: #374151; }

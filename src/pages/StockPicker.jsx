@@ -2,25 +2,13 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api";
-import { API_BASE } from "../config/api";
 import { useBasket } from "../context/BasketContext";
-import {
-  Flame,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  Building2,
-  Sprout,
-  Cpu,
-  BarChart3,
-  Briefcase,
-  Bitcoin,
-  Search,
-} from "lucide-react";
+import { Search } from "lucide-react";
+import "../styles/StockPicker.css";
 
+// ✅ Map categories -> API screener IDs
 const categoryMap = {
   "Most Active": "most_actives",
-  Trending: "trending_tickers",
   "Day Gainers": "day_gainers",
   "Day Losers": "day_losers",
   "Large Caps": "undervalued_large_caps",
@@ -31,17 +19,17 @@ const categoryMap = {
   "Crypto - Most Active": "most_actives_cryptocurrencies",
 };
 
-const categoryIcons = {
-  "Most Active": <Flame size={32} />,
-  Trending: <TrendingUp size={32} />,
-  "Day Gainers": <ArrowUpRight size={32} />,
-  "Day Losers": <ArrowDownRight size={32} />,
-  "Large Caps": <Building2 size={32} />,
-  "Small Caps": <Sprout size={32} />,
-  "Growth Tech": <Cpu size={32} />,
-  "Mutual Funds": <BarChart3 size={32} />,
-  ETFs: <Briefcase size={32} />,
-  "Crypto - Most Active": <Bitcoin size={32} />,
+// ✅ Map categories -> background images
+const categoryImages = {
+  "Most Active": "/icons/most-active.jpg",
+  "Day Gainers": "/icons/day-gainers.jpg",
+  "Day Losers": "/icons/day-losers.jpg",
+  "Large Caps": "/icons/large-caps.jpg",
+  "Small Caps": "/icons/small-caps.jpg",
+  "Growth Tech": "/icons/growth-tech.jpg",
+  "Mutual Funds": "/icons/mutual-funds.jpg",
+  ETFs: "/icons/etfs.jpg",
+  "Crypto - Most Active": "/icons/crypto.jpg",
 };
 
 export default function StockPicker() {
@@ -53,14 +41,16 @@ export default function StockPicker() {
   const { amount: initialAmount = 0, pointsUsed: initialPoints = 0 } =
     location.state || {};
 
-  // --- PointsSelect state ---
+  // --- Wallet / points state ---
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
   const [conversionRate, setConversionRate] = useState(0.01);
   const [selectedPoints, setSelectedPoints] = useState(initialPoints);
   const [cashValue, setCashValue] = useState(initialAmount);
+  const [cashInput, setCashInput] = useState(initialAmount.toFixed(2));
+  const [isEditingCash, setIsEditingCash] = useState(false);
 
-  // --- StockCategories state ---
+  // --- Stock categories state ---
   const [category, setCategory] = useState("");
   const [results, setResults] = useState([]);
   const [stockError, setStockError] = useState("");
@@ -70,8 +60,11 @@ export default function StockPicker() {
   const [symbolInput, setSymbolInput] = useState("");
   const [searching, setSearching] = useState(false);
 
-  // --- Slider drag setup ---
+  // --- Refs ---
   const sliderRef = useRef(null);
+  const tableRef = useRef(null);
+
+  // --- Slider drag logic ---
   const isDragging = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
@@ -81,18 +74,13 @@ export default function StockPicker() {
     startX.current = e.pageX - sliderRef.current.offsetLeft;
     scrollLeft.current = sliderRef.current.scrollLeft;
   };
-  const handleMouseLeave = () => {
-    isDragging.current = false;
-  };
-  const handleMouseUp = () => {
-    isDragging.current = false;
-  };
+  const handleMouseLeave = () => (isDragging.current = false);
+  const handleMouseUp = () => (isDragging.current = false);
   const handleMouseMove = (e) => {
     if (!isDragging.current) return;
     e.preventDefault();
     const x = e.pageX - sliderRef.current.offsetLeft;
-    const walk = x - startX.current;
-    sliderRef.current.scrollLeft = scrollLeft.current - walk;
+    sliderRef.current.scrollLeft = scrollLeft.current - (x - startX.current);
   };
   const handleTouchStart = (e) => {
     isDragging.current = true;
@@ -102,21 +90,11 @@ export default function StockPicker() {
   const handleTouchMove = (e) => {
     if (!isDragging.current) return;
     const x = e.touches[0].pageX - sliderRef.current.offsetLeft;
-    const walk = x - startX.current;
-    sliderRef.current.scrollLeft = scrollLeft.current - walk;
+    sliderRef.current.scrollLeft = scrollLeft.current - (x - startX.current);
   };
-  const handleTouchEnd = () => {
-    isDragging.current = false;
-  };
+  const handleTouchEnd = () => (isDragging.current = false);
 
-  // load conversion rate
-  useEffect(() => {
-    let r = parseFloat(localStorage.getItem("conversion_rate") || "0");
-    if (r >= 1) r = r / 100;
-    setConversionRate(r > 0 ? r : 0.01);
-  }, []);
-
-  // fetch wallet
+  // --- Load wallet ---
   useEffect(() => {
     (async () => {
       try {
@@ -130,27 +108,12 @@ export default function StockPicker() {
           return;
         }
         setWallet(data.wallet);
-
-        // Initialize selectedPoints from sweep_percentage (but don’t update wallet)
-        if (data.wallet?.sweep_percentage != null && data.wallet?.points != null) {
+        if (data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
               (parseFloat(data.wallet.sweep_percentage) / 100)
           );
           setSelectedPoints(sweepVal);
-        }
-
-        if (data.wallet?.points != null) {
-          localStorage.setItem(
-            "points",
-            String(parseInt(data.wallet.points, 10) || 0)
-          );
-        }
-        if (data.wallet?.cash_balance != null) {
-          localStorage.setItem(
-            "cashBalance",
-            Number(data.wallet.cash_balance).toFixed(2)
-          );
         }
       } catch (e) {
         console.error("[StockPicker] fetch wallet error:", e);
@@ -159,123 +122,119 @@ export default function StockPicker() {
     })();
   }, [memberId]);
 
-  // recompute cash value
   useEffect(() => {
-    const cents = Math.round(selectedPoints * conversionRate * 100);
-    setCashValue(cents / 100);
-  }, [selectedPoints, conversionRate]);
+    let r = parseFloat(localStorage.getItem("conversion_rate") || "0");
+    if (r >= 1) r = r / 100;
+    setConversionRate(r > 0 ? r : 0.01);
+  }, []);
 
-  // PointsSelect helpers
+  // --- Sync cash value to points ---
+  useEffect(() => {
+    if (!isEditingCash) {
+      const cents = Math.round(selectedPoints * conversionRate * 100);
+      const val = cents / 100;
+      setCashValue(val);
+      setCashInput(val.toFixed(2));
+    }
+  }, [selectedPoints, conversionRate, isEditingCash]);
+
+  // --- Points handler ---
   const handlePointsChange = (val) => {
     let v = parseInt(val ?? "0", 10);
     if (Number.isNaN(v)) v = 0;
     const max = parseInt(wallet?.points ?? "0", 10) || 0;
-    if (v < 0) v = 0;
-    if (v > max) v = max;
+    v = Math.max(0, Math.min(v, max));
     setSelectedPoints(v);
   };
 
-  // StockCategories helpers
+  // --- Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
     try {
       setCategory(cat);
       setStockError("");
       setResults([]);
-      const resp = await fetch(`${API_BASE}/proxy.php?scrId=${scrId}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const fetched =
-        data.finance?.result?.[0]?.quotes?.map((q) => ({
-          symbol: q.symbol,
-          name: q.shortName,
-          price: q.regularMarketPrice,
-          change: q.regularMarketChangePercent,
-        })) ||
-        data.quoteResponse?.result?.map((q) => ({
-          symbol: q.symbol,
-          name: q.shortName || q.longName,
-          price: q.regularMarketPrice,
-          change: q.regularMarketChangePercent,
-        })) ||
-        [];
+
+      const data = await apiPost("proxy.php", { scrId });
+      if (!data || data.error) throw new Error(data.error || "Failed to load");
+
+      const quotes =
+        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
+
+      const fetched = quotes.map((q) => ({
+        symbol: q.symbol,
+        name: q.shortName || q.longName || q.symbol,
+        price:
+          q.regularMarketPrice ??
+          q.postMarketPrice ??
+          q.preMarketPrice ??
+          null,
+        change:
+          q.regularMarketChangePercent ??
+          q.postMarketChangePercent ??
+          q.preMarketChangePercent ??
+          0,
+      }));
+
       setResults(fetched);
+
+      setTimeout(() => {
+        if (tableRef.current) {
+          tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 300);
     } catch (err) {
-      console.error("Proxy/Yahoo API error:", err);
-      setStockError("Failed to fetch stocks");
+      console.error("[StockPicker] proxy error:", err);
+      setStockError("Failed to fetch stocks.");
     }
   };
 
-  // ---- NEW: symbol search using proxy.php POST { symbol } ----
+  // --- Symbol lookup ---
   const handleSymbolSearch = async () => {
     if (!symbolInput.trim()) return;
     setSearching(true);
     setStockError("");
     setResults([]);
+
     try {
-      const resp = await fetch(`${API_BASE}/proxy.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: symbolInput.trim().toUpperCase() }),
+      const data = await apiPost("symbol-lookup.php", {
+        symbol: symbolInput.trim().toUpperCase(),
       });
 
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-
-      const data = await resp.json();
-
-      // proxy may return different shapes; handle common ones:
-      // 1) { success: true, symbol, name, price, change, raw? }
-      // 2) Yahoo quoteResponse: { quoteResponse: { result: [ { ... } ] } }
-      // 3) finance.result... (rare)
-      if (data && data.success && data.symbol) {
-        setCategory(`Symbol: ${data.symbol}`);
-        setResults([
-          {
-            symbol: data.symbol,
-            name: data.name || data.symbol,
-            price: typeof data.price !== "undefined" ? data.price : null,
-            change: typeof data.change !== "undefined" ? data.change : 0,
-          },
-        ]);
-      } else if (data?.quoteResponse?.result?.length > 0) {
-        const q = data.quoteResponse.result[0];
-        setCategory(`Symbol: ${q.symbol}`);
-        setResults([
-          {
-            symbol: q.symbol,
-            name: q.shortName || q.longName || q.symbol,
-            price: q.regularMarketPrice ?? null,
-            change: q.regularMarketChangePercent ?? 0,
-          },
-        ]);
-      } else if (data.finance?.result?.[0]?.quotes?.[0]) {
-        const q = data.finance.result[0].quotes[0];
-        setCategory(`Symbol: ${q.symbol}`);
-        setResults([
-          {
-            symbol: q.symbol,
-            name: q.shortName || q.longName || q.symbol,
-            price: q.regularMarketPrice ?? null,
-            change: q.regularMarketChangePercent ?? 0,
-          },
-        ]);
-      } else {
+      if (!data.success) {
         setStockError(data.error || "Symbol not found.");
+        return;
       }
+
+      setCategory(`Symbol: ${data.symbol}`);
+      setResults([
+        {
+          symbol: data.symbol,
+          name: data.name,
+          price: data.price,
+          change: data.change,
+        },
+      ]);
+
+      setTimeout(() => {
+        if (tableRef.current) {
+          tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 300);
     } catch (err) {
-      console.error("Symbol search error:", err);
+      console.error("[StockPicker] symbol search error:", err);
       setStockError("Symbol lookup failed.");
     } finally {
       setSearching(false);
     }
   };
 
-  const toggleSelect = (symbol) => {
+  // --- Stock selection + continue ---
+  const toggleSelect = (symbol) =>
     setSelectedStocks((prev) =>
-      prev.includes(symbol) ? prev.filter((s) => s !== symbol) : [...prev, symbol]
+      prev.includes(symbol)
+        ? prev.filter((s) => s !== symbol)
+        : [...prev, symbol]
     );
-  };
 
   const handleContinueStocks = () => {
     if (selectedStocks.length === 0) {
@@ -285,54 +244,83 @@ export default function StockPicker() {
     results
       .filter((stock) => selectedStocks.includes(stock.symbol))
       .forEach((stock) => addToBasket(stock));
-
     navigate("/basket", {
       state: { category, amount: cashValue, pointsUsed: selectedPoints, memberId },
     });
   };
 
-  // --- Rendering ---
-  if (error) {
+  // --- Render ---
+  if (error)
     return (
       <div className="page-container">
-        <h2 className="heading">Convert Points to Shares</h2>
+        <h2 className="page-title">Convert Points to Shares</h2>
         <p className="form-error">{error}</p>
       </div>
     );
-  }
 
-  if (!wallet) {
+  if (!wallet)
     return (
       <div className="page-container">
-        <h2 className="heading">Convert Points</h2>
+        <h2 className="page-title">Convert Points</h2>
         <p>Loading…</p>
       </div>
     );
-  }
 
   const availablePoints = parseInt(wallet.points, 10) || 0;
   const availableCash = Number(wallet.cash_balance) || 0;
 
   return (
-    // Use the app container + categories-page classes so the layout matches your CSS and is centered
     <div className="app-container categories-page">
-      {/* --- PointsSelect Section --- */}
-      <h2 className="heading" style={{ marginBottom: "1rem", textAlign: "center" }}>
+      <h2 className="page-title" style={{ marginBottom: "1rem", textAlign: "center" }}>
         Convert Points to Invest
       </h2>
 
-      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
-        <p>
-          <strong>Available Points:</strong> {availablePoints.toLocaleString()}
+      {/* Wallet Info */}
+      <div
+        className="card"
+        style={{
+          marginBottom: "1.5rem",
+          textAlign: "center",
+          padding: "1.25rem",
+          borderRadius: "12px",
+          background: "linear-gradient(135deg, #2563eb15, #1e40af10)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+        }}
+      >
+        <p style={{ fontSize: "1rem", fontWeight: "600", color: "#1e40af" }}>
+          Available Points
         </p>
-        <p>
-          <strong>Available Cash Balance:</strong> ${availableCash.toFixed(2)}
+        <p
+          style={{
+            fontSize: "1.25rem",
+            fontWeight: "700",
+            marginBottom: "1rem",
+            color: "#111827",
+          }}
+        >
+          {availablePoints.toLocaleString()}
+        </p>
+
+        <p style={{ fontSize: "1rem", fontWeight: "600", color: "#1e40af" }}>
+          Available Cash Balance
+        </p>
+        <p
+          style={{
+            fontSize: "1.25rem",
+            fontWeight: "700",
+            margin: 0,
+            color: "#16a34a",
+          }}
+        >
+          ${availableCash.toFixed(2)}
         </p>
       </div>
 
-      <div className="card" style={{ marginBottom: "1.25rem" }}>
-        <p style={{ textAlign: "center" }}>
-          <strong>Points to Convert</strong>
+      {/* Points slider */}
+      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
+        <p style={{ fontWeight: "600" }}>Points to Convert</p>
+        <p style={{ fontWeight: "100" }}>
+          Use slider to select points or enter a custom amount in the box below:
         </p>
         <input
           id="pointsToConvert"
@@ -340,13 +328,13 @@ export default function StockPicker() {
           min="0"
           max={availablePoints}
           step="1"
-          className="member-form-input"
+          className="points-to-convert"
           value={selectedPoints}
           onChange={(e) => handlePointsChange(e.target.value)}
-          style={{ marginBottom: "0.75rem" }}
+          style={{ marginBottom: "0.75rem", textAlign: "center" }}
         />
 
-        <div className="range-wrapper">
+        <div className="range-wrapper" style={{ marginBottom: "1rem" }}>
           <button type="button" className="range-btn" onClick={() => handlePointsChange(0)}>
             ➖
           </button>
@@ -367,24 +355,53 @@ export default function StockPicker() {
             ➕
           </button>
         </div>
+
+        <p className="wallet-intro" style={{ marginBottom: "0.25rem", fontWeight: "600" }}>
+          Cash-Value used for this Order
+        </p>
+
+        {/* 💰 Editable Cash Input */}
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+          <span style={{ fontSize: "1.25rem", marginRight: "6px" }}>$</span>
+          <input
+            id="cashToConvert"
+            type="text"
+            inputMode="decimal"
+            className="wallet-cash"
+            value={cashInput}
+            onFocus={() => setIsEditingCash(true)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCashInput(val);
+              const num = parseFloat(val);
+              if (!isNaN(num)) {
+                const maxCash =
+                  (parseInt(wallet?.points ?? "0", 10) || 0) * conversionRate;
+                const clamped = Math.min(Math.max(num, 0), maxCash);
+                setCashValue(clamped);
+                setSelectedPoints(Math.floor(clamped / conversionRate));
+              }
+            }}
+            onBlur={() => {
+              setIsEditingCash(false);
+              setCashInput(cashValue.toFixed(2));
+            }}
+            style={{
+              fontSize: "1.25rem",
+              color: "#16a34a",
+              textAlign: "center",
+              border: "1px solid #ccc",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              width: "120px",
+              appearance: "textfield",
+            }}
+          />
+        </div>
       </div>
 
-      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
-        <p className="wallet-intro" style={{ marginBottom: "0.5rem" }}>
-          Cash-Value
-        </p>
-        <p className="wallet-cash" style={{ fontSize: "1.25rem" }}>
-          ${cashValue.toFixed(2)}
-        </p>
-      </div>
-
-      {/* --- Symbol Search Section --- */}
+      {/* Symbol search */}
       <div className="card" style={{ marginBottom: "1.25rem" }}>
-        <p style={{ textAlign: "center" }}>
-          <strong>Lookup Symbol</strong>
-        </p>
-
-        {/* center the search box */}
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div style={{ position: "relative", width: "80%", minWidth: 180 }}>
             <input
@@ -393,14 +410,10 @@ export default function StockPicker() {
               onChange={(e) => setSymbolInput(e.target.value)}
               placeholder="Enter symbol (e.g., AAPL)"
               className="member-form-input"
-              style={{
-                width: "100%",
-                paddingRight: "1rem", // space for the icon
-              }}
+              style={{ width: "60%", paddingRight: "1rem" }}
               onKeyDown={(e) => e.key === "Enter" && handleSymbolSearch()}
               aria-label="Symbol input"
             />
-            {/* Magnifying glass icon (clickable) */}
             <Search
               size={20}
               style={{
@@ -417,14 +430,10 @@ export default function StockPicker() {
           </div>
         </div>
         {searching && <p className="caption" style={{ marginTop: 8 }}>Searching…</p>}
-        {stockError && (
-          <p className="points-error" style={{ marginTop: 8 }}>
-            {stockError}
-          </p>
-        )}
+        {stockError && <p className="points-error" style={{ marginTop: 8 }}>{stockError}</p>}
       </div>
 
-      {/* --- Categories Section --- */}
+      {/* Categories */}
       <h2 className="categories-title" style={{ textAlign: "center" }}>
         Select a Category
       </h2>
@@ -447,31 +456,49 @@ export default function StockPicker() {
             onClick={() => handleCategoryClick(cat, scrId)}
             className="category-btn"
             style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
+              minWidth: "160px",
+              height: "100px",
+              marginRight: "10px",
+              borderRadius: "8px",
+              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              position: "relative",
+              overflow: "hidden",
+              color: "white",
+              fontWeight: "600",
             }}
           >
-            <span className="cat-icon" style={{ marginBottom: "0.5rem" }}>
-              {categoryIcons[cat]}
+            <span
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                padding: "6px",
+                background: "rgba(0,0,0,0.5)",
+                textAlign: "center",
+                fontSize: "0.9rem",
+              }}
+            >
+              {cat}
             </span>
-            <span className="label">{cat}</span>
           </button>
         ))}
       </div>
 
-      {/* --- Stock List Section --- */}
+      {/* Stock list */}
       {category && (
-        <div className="stocklist-container" style={{ marginTop: 16 }}>
+        <div
+          ref={tableRef}
+          className={`stocklist-container ${results.length > 0 ? "show" : ""}`}
+          style={{ marginTop: 16, marginBottom: 120 }}
+        >
           <h2 className="stocklist-heading" style={{ textAlign: "center" }}>
             {category} Stocks
           </h2>
-
           {stockError && <p className="stocklist-error">{stockError}</p>}
-
           {!stockError && results.length === 0 && <p className="stocklist-empty">No stocks found.</p>}
-
           {results.length > 0 && (
             <div className="stocklist-table-wrapper">
               <table className="stocklist-table">
@@ -480,11 +507,7 @@ export default function StockPicker() {
                     <th>Select</th>
                     <th>Symbol</th>
                     <th>Name</th>
-                    <th>
-                      Price
-                      <br />
-                      Change %
-                    </th>
+                    <th>Price<br />Change %</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -500,7 +523,9 @@ export default function StockPicker() {
                       <td className="symbol">{stock.symbol}</td>
                       <td className="text-left">{stock.name || "-"}</td>
                       <td className="price-change">
-                        <div className="price">${stock.price?.toFixed(2) ?? "N/A"}</div>
+                        <div className="price">
+                          {stock.price ? `$${stock.price.toFixed(2)}` : "N/A"}
+                        </div>
                         <div
                           className={
                             stock.change > 0
@@ -522,28 +547,30 @@ export default function StockPicker() {
               </table>
             </div>
           )}
-
-          <div className="stocklist-actions" style={{ marginTop: 12 }}>
-            <button type="button" onClick={handleContinueStocks} className="btn-primary">
-              Continue with Selected
-            </button>
-            <button
-              type="button"
-              onClick={() => setResults([])}
-              className="btn-secondary"
-              style={{ marginTop: 8 }}
-            >
-              Back to Categories
-            </button>
-          </div>
         </div>
       )}
 
-      <div className="categories-footer" style={{ marginTop: 18 }}>
-        <button type="button" onClick={() => navigate("/wallet")} className="btn-secondary">
-          Back to Wallet
-        </button>
-      </div>
+      {/* Floating actions */}
+      {(category || selectedStocks.length > 0) && (
+        <div className="floating-actions">
+          <button
+            type="button"
+            onClick={handleContinueStocks}
+            className="btn-primary"
+            style={{ width: "90%", maxWidth: 320, marginBottom: 8 }}
+          >
+            Continue with Selected
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/wallet")}
+            className="btn-secondary"
+            style={{ width: "90%", maxWidth: 320 }}
+          >
+            Back to Wallet
+          </button>
+        </div>
+      )}
     </div>
   );
 }

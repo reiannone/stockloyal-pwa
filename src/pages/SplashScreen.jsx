@@ -1,11 +1,7 @@
 // src/pages/SplashScreen.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-// Use Vite proxy in dev, absolute path in prod
-const API_BASE = import.meta.env.DEV
-  ? "/stockloyal-pwa/api"
-  : `${window.location.origin}/stockloyal-pwa/api`;
+import { apiPost } from "../api";
 
 function SplashScreen() {
   const navigate = useNavigate();
@@ -28,7 +24,13 @@ function SplashScreen() {
       conversionRate = 0.01;
     }
 
-    console.log("[Splash] parsed params:", { memberId, merchantId, points, action, conversionRate });
+    console.log("[Splash] parsed params:", {
+      memberId,
+      merchantId,
+      points,
+      action,
+      conversionRate,
+    });
 
     // try to recover from hash if missing
     if ((!memberId || !merchantId) && window.location.hash) {
@@ -61,18 +63,7 @@ function SplashScreen() {
         if (merchantId) {
           console.log("[Splash] Fetching merchant for merchantId:", merchantId);
 
-          const resp = await fetch(`${API_BASE}/get_merchant.php`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ merchant_id: merchantId }),
-          });
-
-          console.log("[Splash] get_merchant status:", resp.status);
-          const data = await resp.json().catch((e) => {
-            console.error("[Splash] get_merchant JSON parse error:", e);
-            return null;
-          });
-
+          const data = await apiPost("get_merchant.php", { merchant_id: merchantId });
           console.log("[Splash] get_merchant response:", data);
 
           if (data && data.success && data.merchant) {
@@ -91,14 +82,14 @@ function SplashScreen() {
             isActive = parseBool(merchantData.active_status);
             promoActive = parseBool(merchantData.promotion_active);
 
-            // Save merchant to localStorage for downstream pages (full object)
+            // Save merchant to localStorage for downstream pages
             try {
               localStorage.setItem("merchant", JSON.stringify(merchantData));
             } catch (e) {
               console.warn("[Splash] failed to store merchant in localStorage", e);
             }
 
-            // If merchant has a conversion_rate column, use it
+            // Use merchant-specific conversion_rate if provided
             let merchantRate = parseFloat(merchantData.conversion_rate || "0");
             if (!merchantRate || merchantRate <= 0) merchantRate = 0.01;
             localStorage.setItem("conversion_rate", merchantRate.toString());
@@ -114,27 +105,25 @@ function SplashScreen() {
         if (memberId && merchantId && points > 0) {
           console.log("[Splash] Deep-link present — updating wallet before routing");
 
-          // compute cashBalance based on conversion_rate (use the most recent value)
+          // compute cashBalance
           const conv = parseFloat(localStorage.getItem("conversion_rate") || "0.01");
           const cashBalance = Number((points * (conv > 0 ? conv : 0.01)).toFixed(2));
 
-          // try updated_points.php first (preferred), fallback to update_points.php
-          const updateEndpoints = ["updated_points.php", "update_points.php", "update_points.php"];
+          const updateEndpoints = ["updated_points.php", "update_points.php"];
           let updated = null;
 
           for (const ep of updateEndpoints) {
             try {
-              console.log(`[Splash] calling ${ep} to add points`, { memberId, points, cash_balance: cashBalance });
-              const r = await fetch(`${API_BASE}/${ep}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ member_id: memberId, points, cash_balance: cashBalance }),
+              console.log(`[Splash] calling ${ep} to add points`, {
+                memberId,
+                points,
+                cash_balance: cashBalance,
               });
 
-              console.log(`[Splash] ${ep} status:`, r.status);
-              const json = await r.json().catch((e) => {
-                console.error(`[Splash] ${ep} JSON parse error`, e);
-                return null;
+              const json = await apiPost(ep, {
+                member_id: memberId,
+                points,
+                cash_balance: cashBalance,
               });
 
               console.log(`[Splash] ${ep} response:`, json);
@@ -151,13 +140,18 @@ function SplashScreen() {
 
           if (updated) {
             console.log("[Splash] Wallet updated successfully from deep-link:", updated);
-            // if server returned wallet, sync localStorage
             if (updated.wallet) {
               try {
                 localStorage.setItem("points", String(updated.wallet.points ?? points));
-                localStorage.setItem("cashBalance", Number(updated.wallet.cash_balance ?? cashBalance).toFixed(2));
+                localStorage.setItem(
+                  "cashBalance",
+                  Number(updated.wallet.cash_balance ?? cashBalance).toFixed(2)
+                );
                 if (typeof updated.wallet.portfolio_value !== "undefined") {
-                  localStorage.setItem("portfolio_value", Number(updated.wallet.portfolio_value).toFixed(2));
+                  localStorage.setItem(
+                    "portfolio_value",
+                    Number(updated.wallet.portfolio_value).toFixed(2)
+                  );
                 }
               } catch (e) {
                 console.warn("[Splash] failed to sync wallet values to localStorage", e);
@@ -173,7 +167,9 @@ function SplashScreen() {
         // final routing decision
         if (merchantId && isActive && promoActive) {
           console.log("[Splash] routing to /promotions");
-          navigate("/promotions", { state: { memberId, merchantId, points, merchant: merchantData } });
+          navigate("/promotions", {
+            state: { memberId, merchantId, points, merchant: merchantData },
+          });
         } else {
           console.log("[Splash] routing to /login");
           localStorage.setItem("mode", "login");
@@ -181,7 +177,6 @@ function SplashScreen() {
         }
       } catch (err) {
         console.error("[Splash] routing flow error:", err);
-        // fallback to login
         localStorage.setItem("mode", "login");
         navigate("/login");
       }

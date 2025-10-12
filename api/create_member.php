@@ -22,9 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php'; // $conn is PDO + ENCRYPTION_KEY/IV
 
 $input        = json_decode(file_get_contents("php://input"), true);
-$memberId     = $input['member_id']    ?? '';
-$memberEmail  = $input['member_email'] ?? '';
-$password     = $input['password']     ?? '';
+$memberId     = trim($input['member_id']    ?? '');
+$memberEmail  = trim($input['member_email'] ?? '');
+$password     = $input['password']          ?? '';
 
 error_log("create_member.php: Received JSON -> memberId=$memberId, memberEmail=$memberEmail");
 
@@ -32,10 +32,7 @@ if (!$memberId) {
     http_response_code(400);
     $msg = "Missing required field: member_id";
     error_log("create_member.php: $msg");
-    echo json_encode([
-        "success" => false,
-        "error"   => $msg
-    ]);
+    echo json_encode(["success" => false, "error" => $msg]);
     exit;
 }
 
@@ -43,38 +40,36 @@ if (!$memberEmail) {
     http_response_code(400);
     $msg = "Missing required field: member_email";
     error_log("create_member.php: $msg");
-    echo json_encode([
-        "success" => false,
-        "error"   => $msg
-    ]);
+    echo json_encode(["success" => false, "error" => $msg]);
     exit;
 }
 
-// ✅ Only check password once both ID + Email are present
 if (!$password) {
     http_response_code(400);
     $msg = "Missing required field: password";
     error_log("create_member.php: $msg");
-    echo json_encode([
-        "success" => false,
-        "error"   => $msg
-    ]);
+    echo json_encode(["success" => false, "error" => $msg]);
+    exit;
+}
+
+// ✅ Enforce basic password policy
+if (strlen($password) < 8) {
+    http_response_code(400);
+    $msg = "Password must be at least 8 characters long";
+    error_log("create_member.php: $msg");
+    echo json_encode(["success" => false, "error" => $msg]);
     exit;
 }
 
 try {
-    // 🔐 Use bcrypt one-way hashing for member login
-    $memberPasswordHash = password_hash($password, PASSWORD_BCRYPT);
+    // 🔐 Use PASSWORD_DEFAULT (bcrypt now, Argon2 in future PHP releases)
+    $memberPasswordHash = password_hash($password, PASSWORD_DEFAULT);
 
     $conn->beginTransaction();
 
     // ✅ Check if member_id already exists
-    $checkIdSql = "SELECT COUNT(*) FROM wallet WHERE member_id = :member_id";
-    $checkIdStmt = $conn->prepare($checkIdSql);
+    $checkIdStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_id = :member_id");
     $checkIdStmt->execute([':member_id' => $memberId]);
-
-    error_log("create_member.php, check member id: $memberId");
-    error_log("create_member.php, check member email: $memberEmail");
 
     if ($checkIdStmt->fetchColumn() > 0) {
         $conn->rollBack();
@@ -85,8 +80,7 @@ try {
     }
 
     // ✅ Check if member_email already exists
-    $checkEmailSql = "SELECT COUNT(*) FROM wallet WHERE member_email = :member_email";
-    $checkEmailStmt = $conn->prepare($checkEmailSql);
+    $checkEmailStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_email = :member_email");
     $checkEmailStmt->execute([':member_email' => $memberEmail]);
 
     if ($checkEmailStmt->fetchColumn() > 0) {
@@ -97,16 +91,27 @@ try {
         exit;
     }
 
-    // Insert new member
-    $sql = "
-        INSERT INTO wallet (member_id, member_email, member_password_hash, created_at, updated_at)
-        VALUES (:member_id, :member_email, :member_password_hash, NOW(), NOW())
-    ";
-    $stmt = $conn->prepare($sql);
+    // ✅ Insert new member row
+    $stmt = $conn->prepare("
+        INSERT INTO wallet (
+            member_id, 
+            member_email, 
+            member_password_hash, 
+            created_at, 
+            updated_at
+        ) VALUES (
+            :member_id, 
+            :member_email, 
+            :member_password_hash, 
+            NOW(), 
+            NOW()
+        )
+    ");
+
     $stmt->execute([
-        ':member_id'           => $memberId,
-        ':member_email'        => $memberEmail,
-        ':member_password_hash'=> $memberPasswordHash
+        ':member_id'            => $memberId,
+        ':member_email'         => $memberEmail,
+        ':member_password_hash' => $memberPasswordHash
     ]);
 
     $conn->commit();
@@ -114,9 +119,9 @@ try {
     error_log("create_member.php: Inserted new wallet row for member_id=$memberId");
 
     echo json_encode([
-        "success"       => true,
-        "member_id"     => $memberId,
-        "member_email"  => $memberEmail
+        "success"      => true,
+        "member_id"    => $memberId,
+        "member_email" => $memberEmail
     ]);
 
 } catch (Exception $e) {

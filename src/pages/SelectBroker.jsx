@@ -1,5 +1,4 @@
-// src/pages/SelectBroker.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBroker } from "../context/BrokerContext";
 import { apiPost } from "../api"; // ✅ universal JSON API
@@ -52,73 +51,96 @@ export default function SelectBroker() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-
   const { updateBroker } = useBroker();
+
+  const memberId = localStorage.getItem("memberId");
 
   const canSubmit = useMemo(
     () => Boolean(selected && username && password && !submitting),
     [selected, username, password, submitting]
   );
 
+  // ✅ Load existing broker info from wallet
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await apiPost("get-wallet.php", { member_id: memberId });
+        if (data.success && data.wallet) {
+          const currentBroker = data.wallet.broker || "";
+          const creds = data.broker_credentials || {};
+          if (currentBroker) {
+            setSelected(currentBroker);
+            setUsername(creds.username || "");
+            setPassword(creds.password || "");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch current broker:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [memberId]);
+
   const handleBrokerSelect = (brokerId) => {
     setSelected(brokerId);
     updateBroker(brokerId);
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!canSubmit) return;
-  setError("");
-  setSubmitting(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setError("");
+    setSubmitting(true);
 
-  try {
-    const memberId = localStorage.getItem("memberId");
-    const selectedBroker = brokers.find((b) => b.id === selected);
+    try {
+      const selectedBroker = brokers.find((b) => b.id === selected);
 
-    const payload = {
-      member_id: memberId,
-      broker: selected,
-      broker_url: selectedBroker?.url || "",  // ✅ include broker_url
-      username,
-      password,
-    };
+      const payload = {
+        member_id: memberId,
+        broker: selected,
+        broker_url: selectedBroker?.url || "",
+        username,
+        password,
+      };
 
-    console.log("Submitting broker payload:", payload);
+      console.log("Submitting broker payload:", payload);
 
-    const data = await apiPost("store-broker-credentials.php", payload);
+      const data = await apiPost("store-broker-credentials.php", payload);
 
-    if (!data.success) {
-      setError(data.error || "Failed to link broker");
-      return;
+      if (!data.success) {
+        setError(data.error || "Failed to link broker");
+        return;
+      }
+
+      if (data.member_id) {
+        localStorage.setItem("memberId", data.member_id);
+      }
+
+      updateBroker(selected);
+      navigate("/wallet");
+    } catch (err) {
+      console.error("SelectBroker error:", err);
+      setError("Network error — please try again.");
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    if (data.member_id) {
-      localStorage.setItem("memberId", data.member_id);
-    }
-
-    updateBroker(selected);
-    navigate("/wallet");
-  } catch (err) {
-    console.error("SelectBroker error:", err);
-    setError("Network error — please try again.");
-  } finally {
-    setSubmitting(false);
-  }
-};
-
-  // ✅ Find broker name for label
   const selectedBroker = brokers.find((b) => b.id === selected);
 
   return (
     <div className="page-container">
-      <h2 className="heading mb-2">Connect your broker</h2>
-      <p className="body-text mb-4">
+      <h2 className="page-title">Connect your broker</h2>
+      <p className="page-deck">
         Select your broker and enter your existing login to link your investment
         account to your rewards program.
       </p>
 
-      {/* Broker logos stacked */}
+      {/* --- Broker logos --- */}
       <div className="broker-list">
         {brokers.map((b) => {
           const active = selected === b.id;
@@ -131,6 +153,11 @@ const handleSubmit = async (e) => {
               className={`broker-card ${active ? "active" : ""} ${
                 submitting ? "disabled" : ""
               }`}
+              style={{
+                border: active ? "3px solid #007bff" : undefined,
+                boxShadow: active ? "0 0 8px rgba(0,123,255,0.3)" : undefined,
+                transition: "border 0.2s, box-shadow 0.2s",
+              }}
             >
               <img src={b.logo} alt={b.name} className="broker-logo" />
             </button>
@@ -138,7 +165,7 @@ const handleSubmit = async (e) => {
         })}
       </div>
 
-      {/* Disclosure */}
+      {/* --- Security Notice --- */}
       <p className="form-disclosure mt-4">
         <strong>Security Notice:</strong> Your broker login credentials are used
         only to securely connect your brokerage account with StockLoyal. These
@@ -148,8 +175,7 @@ const handleSubmit = async (e) => {
         login information under any circumstances.
       </p>
 
-
-      {/* Credentials form */}
+      {/* --- Credentials form --- */}
       <form onSubmit={handleSubmit} className="form">
         <div>
           <label className="form-label">
@@ -207,6 +233,7 @@ const handleSubmit = async (e) => {
         {error && <p className="form-error">{error}</p>}
       </form>
 
+      {/* --- Footer --- */}
       <div className="mt-4">
         <button
           type="button"

@@ -43,11 +43,11 @@ export default function Basket() {
   if (basket.length === 0) {
     return (
       <div className="basket-container">
-        <h2 className="basket-heading">Your Basket</h2>
+        <h2 className="page-title">Your Basket</h2>
         <p className="basket-empty">Your basket is empty.</p>
         <button
           type="button"
-          onClick={() => navigate("/stock-categories")}
+          onClick={() => navigate("/stock-picker")}
           className="btn-primary"
         >
           Browse Categories
@@ -58,8 +58,8 @@ export default function Basket() {
 
   return (
     <div className="basket-container">
-      <h2 className="basket-heading">Your Basket</h2>
-      <p className="basket-intro">
+      <h2 className="page-title">Your Basket</h2>
+      <p className="page-deck">
         You’re investing <strong>${investedAmount.toFixed(2)}</strong> across{" "}
         {basket.length} stocks, using <strong>{pointsUsed}</strong> points.
       </p>
@@ -108,7 +108,7 @@ export default function Basket() {
 
         <button
           type="button"
-          onClick={() => navigate("/stock-categories")}
+          onClick={() => navigate("/stock-picker")}
           className="btn-secondary"
         >
           Add More Stocks

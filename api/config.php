@@ -1,0 +1,82 @@
+<?php
+// api/config.php
+declare(strict_types=1);
+
+// -------- 1) Environment selection --------
+$appEnv = getenv('APP_ENV');
+if ($appEnv === false || $appEnv === '') $appEnv = 'production';
+
+// Pick env file based on APP_ENV
+$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
+
+// -------- 2) Load .env key=value pairs --------
+if (!is_file($envFile)) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode(["success"=>false,"error"=>"Server misconfigured (missing env file)"]);
+    exit;
+}
+foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+    $line = trim($line);
+    if ($line === '' || $line[0] === '#') continue;
+    if (strpos($line, '=') === false) continue;
+    [$k, $v] = array_map('trim', explode('=', $line, 2));
+    $_ENV[$k] = $v;
+}
+
+// -------- 3) DB settings from env --------
+$dbHost = $_ENV['DB_HOST'] ?? '127.0.0.1';
+$dbName = $_ENV['DB_NAME'] ?? '';
+$dbUser = $_ENV['DB_USER'] ?? '';
+$dbPass = $_ENV['DB_PASS'] ?? '';
+$dbPort = (int)($_ENV['DB_PORT'] ?? 3306);
+
+// TLS options
+$dbSslMode = strtolower(trim($_ENV['DB_SSL_MODE'] ?? 'verify')); // off|verify
+$dbSslCa   = $_ENV['DB_SSL_CA'] ?? (__DIR__ . '/certs/rds-combined-ca-bundle.pem');
+
+// -------- 4) Build PDO options --------
+$pdoOptions = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_TIMEOUT            => 10, // seconds
+];
+
+// Enable TLS to RDS in prod (recommended)
+if ($dbSslMode !== 'off') {
+    if (!is_file($dbSslCa)) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(["success"=>false,"error"=>"Server misconfigured (missing RDS CA bundle)"]);
+        exit;
+    }
+    $pdoOptions[PDO::MYSQL_ATTR_SSL_CA] = $dbSslCa;
+    // Verify the server cert (requires mysqlnd)
+    if (defined('PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT')) {
+        $pdoOptions[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+    }
+}
+
+// -------- 5) Connect --------
+try {
+    $dsn  = sprintf("mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4", $dbHost, $dbPort, $dbName);
+    $conn = new PDO($dsn, $dbUser, $dbPass, $pdoOptions);
+} catch (Throwable $ex) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+
+    $msg = "DB connection failed";
+    if (($appEnv ?? '') === 'development') {
+        $msg .= ": " . $ex->getMessage(); // DEV ONLY
+    }
+
+    echo json_encode(["success" => false, "error" => $msg]);
+    exit;
+}
+// -------- 6) App crypto (if you use it) --------
+if (!defined('ENCRYPTION_KEY')) {
+    define('ENCRYPTION_KEY', $_ENV['ENCRYPTION_KEY'] ?? 'changeme32charstringchangeme32char');
+}
+if (!defined('ENCRYPTION_IV')) {
+    define('ENCRYPTION_IV', $_ENV['ENCRYPTION_IV'] ?? 'changeme16charIV');
+}

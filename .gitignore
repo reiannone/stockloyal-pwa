@@ -21,8 +21,8 @@ dist-ssr
 # -----------------------
 # PHP (backend)
 # -----------------------
-api/config.php        # ✅ DB creds/secrets (do not push)
-vendor/
+vendor/                 # if you use Composer; commit composer.json/lock
+# DO NOT ignore api/config.php (it has no secrets; keep it in repo)
 
 # -----------------------
 # Environment / Secrets
@@ -30,6 +30,15 @@ vendor/
 .env
 .env.local
 .env.*.local
+api/.env
+api/.env.*             # local/prod envs stay out of git
+*.pem                   # certs/keys (e.g., RDS CA if ever copied in repo)
+*.key
+*.crt
+
+# If you want an empty tracked certs dir:
+# /api/certs/*
+# !/api/certs/.gitkeep
 
 # -----------------------
 # Editor / OS junk

@@ -26,9 +26,14 @@ import StockCategories from "./pages/StockCategories.jsx";
 import StockPicker from "./pages/StockPicker.jsx";
 import StockList from "./pages/StockList.jsx";
 import Basket from "./pages/Basket.jsx";
-import TestButtons from "./pages/TestButtons.jsx";
+import Portfolio from "./pages/Portfolio.jsx";
+import Transactions from "./pages/Transactions.jsx";
+import Admin from "./pages/Admin.jsx";
+import WalletAdmin from "./pages/WalletAdmin.jsx";
+import LedgerAdmin from "./pages/LedgerAdmin.jsx";
+import DemoLaunch from "./pages/DemoLaunch.jsx";
 
-import PageWrapper from "./components/PageWrapper.jsx"; // ✅ new wrapper
+import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
 
 function App() {
   const location = useLocation();
@@ -37,31 +42,105 @@ function App() {
     <ErrorBoundary>
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
-          {/* Pages WITHOUT header/footer */}
+          {/* Pages WITHOUT header/footer (always full screen) */}
           <Route element={<FrameOnly />}>
             <Route path="/" element={<SplashScreen />} />
-            <Route path="/promotions" element={<PageWrapper><Promotions /></PageWrapper>} />
-            <Route path="/login" element={<PageWrapper><Login /></PageWrapper>} />
-            <Route path="/terms" element={<PageWrapper><Terms /></PageWrapper>} />
-            <Route path="/goodbye" element={<PageWrapper><Goodbye /></PageWrapper>} />
-            <Route path="/test-buttons" element={<PageWrapper><TestButtons /></PageWrapper>} />
+            <Route
+              path="/promotions"
+              element={<PageWrapper><Promotions /></PageWrapper>}
+            />
+            <Route
+              path="/login"
+              element={<PageWrapper><Login /></PageWrapper>}
+            />
+            <Route
+              path="/terms"
+              element={<PageWrapper><Terms /></PageWrapper>}
+            />
+            <Route
+              path="/goodbye"
+              element={<PageWrapper><Goodbye /></PageWrapper>}
+            />
           </Route>
 
-          {/* Pages WITH header/footer */}
+          {/* Pages WITH layout (Header hidden in prod, Footer always visible) */}
           <Route element={<Layout />}>
-            <Route path="/about" element={<PageWrapper><About /></PageWrapper>} />
-            <Route path="/member-onboard" element={<PageWrapper><MemberOnboard /></PageWrapper>} />
-            <Route path="/wallet" element={<PageWrapper><Wallet /></PageWrapper>} />
-            <Route path="/convert" element={<PageWrapper><Convert /></PageWrapper>} />
-            <Route path="/order" element={<PageWrapper><Order /></PageWrapper>} />
-            <Route path="/order-confirmation" element={<PageWrapper><OrderConfirmation /></PageWrapper>} />
-            <Route path="/select-broker" element={<PageWrapper><SelectBroker /></PageWrapper>} />
-            <Route path="/election" element={<PageWrapper><Election /></PageWrapper>} />
-            <Route path="/points-select" element={<PageWrapper><PointsSelect /></PageWrapper>} />
-            <Route path="/stock-picker" element={<PageWrapper><StockPicker /></PageWrapper>} />
-            <Route path="/stock-categories" element={<PageWrapper><StockCategories /></PageWrapper>} />
-            <Route path="/stock-list" element={<PageWrapper><StockList /></PageWrapper>} />
-            <Route path="/basket" element={<PageWrapper><Basket /></PageWrapper>} />
+            <Route
+              path="/about"
+              element={<PageWrapper><About /></PageWrapper>}
+            />
+            <Route
+              path="/member-onboard"
+              element={<PageWrapper><MemberOnboard /></PageWrapper>}
+            />
+            <Route
+              path="/wallet"
+              element={<PageWrapper><Wallet /></PageWrapper>}
+            />
+            <Route
+              path="/convert"
+              element={<PageWrapper><Convert /></PageWrapper>}
+            />
+            <Route
+              path="/order"
+              element={<PageWrapper><Order /></PageWrapper>}
+            />
+            <Route
+              path="/order-confirmation"
+              element={<PageWrapper><OrderConfirmation /></PageWrapper>}
+            />
+            <Route
+              path="/select-broker"
+              element={<PageWrapper><SelectBroker /></PageWrapper>}
+            />
+            <Route
+              path="/election"
+              element={<PageWrapper><Election /></PageWrapper>}
+            />
+            <Route
+              path="/points-select"
+              element={<PageWrapper><PointsSelect /></PageWrapper>}
+            />
+            <Route
+              path="/stock-picker"
+              element={<PageWrapper><StockPicker /></PageWrapper>}
+            />
+            <Route
+              path="/stock-categories"
+              element={<PageWrapper><StockCategories /></PageWrapper>}
+            />
+            <Route
+              path="/stock-list"
+              element={<PageWrapper><StockList /></PageWrapper>}
+            />
+            <Route
+              path="/basket"
+              element={<PageWrapper><Basket /></PageWrapper>}
+            />
+            <Route
+              path="/portfolio"
+              element={<PageWrapper><Portfolio /></PageWrapper>}
+            />
+            <Route
+              path="/transactions"
+              element={<PageWrapper><Transactions /></PageWrapper>}
+            />
+            <Route
+              path="/admin"
+              element={<PageWrapper><Admin /></PageWrapper>}
+            />
+            <Route
+              path="/wallet-admin"
+              element={<PageWrapper><WalletAdmin /></PageWrapper>}
+            />
+            <Route
+              path="/ledger-admin"
+              element={<PageWrapper><LedgerAdmin /></PageWrapper>}
+            />
+            <Route
+              path="/demo-launch"
+              element={<PageWrapper><DemoLaunch /></PageWrapper>}
+            />
           </Route>
         </Routes>
       </AnimatePresence>
