@@ -1,18 +1,18 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+// vite.config.js
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
-  plugins: [react()],
-  base: process.env.VITE_BASE_PATH || '/',
-  server: {
-    proxy: {
-      '/api': {
-        // if your local Apache serves /api at http://localhost/api
-        target: 'http://localhost',
-        changeOrigin: true,
-        rewrite: p => p, // keep /api
-      },
+export default ({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), ''); // loads VITE_* from env
+  const apiBase =
+    env.VITE_API_BASE ||
+    (mode === 'production'
+      ? 'https://api.stockloyal.com/api'
+      : '/api');
+
+  return defineConfig({
+    define: {
+      __API_BASE__: JSON.stringify(apiBase),
     },
-  },
-  build: { outDir: 'dist' },
-});
+    // ...any other existing config
+  });
+};
