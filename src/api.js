@@ -1,20 +1,15 @@
-// src/api.js
-// Safe default: in production on stockloyal.com, point to the Lightsail API.
-// Else (localhost, previews), fall back to /api
-const isProd =
-  typeof window !== 'undefined' && /\.?stockloyal\.com$/i.test(window.location.hostname);
-
-const DEFAULT_API = isProd ? 'https://api.stockloyal.com/api' : '/api';
-
-// Precedence: Amplify build-time env → runtime override → default
-const API_BASE =
+// src/api.js  ← the ONLY place that defines API_BASE
+export const API_BASE =
+  (typeof window !== 'undefined' && (window.__VITE_API_BASE__ || window.__API_BASE__)) ||
   (import.meta.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE).trim()) ||
-  (typeof window !== 'undefined' && window.__API_BASE) ||
-  DEFAULT_API;
+  '/api';
 
 // Small helper to build URLs safely
-const join = (base, path) =>
-  `${base.replace(/\/+$/, '')}/${String(path || '').replace(/^\/+/, '')}`;
+const join = (base, path) => {
+  const b = base.replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  return `${b}/${p}`;
+};
 
 async function handle(res) {
   if (!res.ok) {
@@ -25,25 +20,30 @@ async function handle(res) {
 }
 
 export async function apiGet(path) {
-  const res = await fetch(join(API_BASE, path), {
+  const url = join(API_BASE, path);
+  const res = await fetch(url, {
     method: 'GET',
     credentials: 'include',
-    headers: { Accept: 'application/json' },
+    headers: { 'Accept': 'application/json' },
   });
   return handle(res);
 }
 
 export async function apiPost(path, body = {}) {
-  const res = await fetch(join(API_BASE, path), {
+  const url = join(API_BASE, path);
+  const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(body),
   });
   return handle(res);
 }
 
-// (Optional) debug
+// Helpful at runtime
 if (typeof window !== 'undefined') {
   console.log('[API_BASE]', API_BASE);
 }

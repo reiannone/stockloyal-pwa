@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // config.example.php
 // ------------------
 // Copy this file to config.php and fill in your actual values

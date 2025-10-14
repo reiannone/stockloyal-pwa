@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
+
 header('Content-Type: text/plain; charset=utf-8');
-require __DIR__ . '/_loadenv.php';
+
 
 $h = $_ENV['DB_HOST'] ?? '127.0.0.1';
 $p = (int)($_ENV['DB_PORT'] ?? 3306);

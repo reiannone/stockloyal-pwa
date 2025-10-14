@@ -1,23 +1,36 @@
 <?php
-// api/_loadenv.php
 declare(strict_types=1);
 
+// api/_loadenv.php
+
+// 1) Prefer server-side env file when present (prod on Lightsail)
+$serverEnv = '/home/bitnami/stockloyal.php';
+if (is_file($serverEnv)) {
+    /** @noinspection PhpIncludeInspection */
+    require_once $serverEnv;
+
+    // Also mirror to $_ENV if defined (so legacy code works)
+    foreach (['DB_HOST','DB_PORT','DB_NAME','DB_USER','DB_PASS','APP_ENV','APP_ORIGIN'] as $k) {
+        if (isset($$k)) { $_ENV[$k] = (string)($$k); }
+    }
+    return; // done
+}
+
+// 2) Fallback for local dev: read  or  in the api folder
 $appEnv = getenv('APP_ENV');
 if ($appEnv === false || $appEnv === '') $appEnv = 'production';
+$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
 
-$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
-
-if (!is_file($envFile)) {
-    header('Content-Type: application/json; charset=utf-8');
-    http_response_code(500);
-    echo json_encode(["success"=>false,"error"=>"Missing env file: $envFile"]);
-    exit;
+if (is_file($envFile)) {
+    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') continue;
+        if (strpos($line, '=') === false) continue;
+        [$k, $v] = array_map('trim', explode('=', $line, 2));
+        $_ENV[$k] = $v;
+    }
+    return;
 }
 
-foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-    $line = trim($line);
-    if ($line === '' || $line[0] === '#') continue;
-    if (strpos($line, '=') === false) continue;
-    [$k, $v] = array_map('trim', explode('=', $line, 2));
-    $_ENV[$k] = $v;
-}
+// 3) If neither exists, set sane defaults and continue (don’t hard-fail)
+$_ENV['APP_ENV'] = $appEnv;

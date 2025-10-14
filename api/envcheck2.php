@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
+
 header('Content-Type: application/json; charset=utf-8');
 
-require __DIR__ . '/_loadenv.php';
 
 echo json_encode([
   'APP_ENV'      => getenv('APP_ENV') ?: '',

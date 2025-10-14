@@ -1,7 +1,6 @@
 <?php
-// api/config.php
-
 declare(strict_types=1);
+// api/config.php
 
 // --- 1) Decide environment (explicit via APP_ENV) ---
 $appEnv = getenv('APP_ENV');
@@ -10,11 +9,11 @@ if ($appEnv === false || $appEnv === '') {
 }
 error_log("[config.php] APP_ENV={$appEnv}");
 
-$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
+$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
 
 // --- 2) Load environment variables ---
 if (!is_file($envFile)) {
-    error_log("[config.php] Missing env file: {$envFile}");
+    error_log("[config.php] : {$envFile}");
     http_response_code(500);
     echo json_encode(["success"=>false, "error"=>"Server misconfigured (missing env)"]);
     exit;

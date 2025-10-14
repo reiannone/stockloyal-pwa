@@ -1,9 +1,16 @@
 <?php
+declare(strict_types=1);
+require_once '/home/bitnami/stockloyal_bootstrap.php';
+require_once __DIR__ . '/_loadenv.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+// added above lines to support api.stockloyal.com for backend API access
 // ===========================================
 // api/symbol-lookup.php
 // Yahoo Finance single-symbol lookup
 // with retry, caching, and fallback
 // ===========================================
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 

@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiPost } from "../api";
 
 function Onboard() {
   const [name, setName] = useState("");
@@ -7,16 +9,11 @@ function Onboard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost/stockloyal/api/onboard.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
+      const data = await apiPost("onboard.php", { name }); // <-- no absolute URL
       setResponse(data);
     } catch (err) {
       console.error(err);
-      setResponse({ error: "Request failed" });
+      setResponse({ error: err.message || "Request failed" });
     }
   };
 
@@ -31,9 +28,7 @@ function Onboard() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button type="submit" className="btn-primary">
-          Submit
-        </button>
+        <button type="submit" className="btn-primary">Submit</button>
       </form>
       {response && (
         <div className="onboard-response">

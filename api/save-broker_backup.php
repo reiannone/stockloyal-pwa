@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 // api/save-broker.php
 
 // Allow cross-origin requests and preflight (CORS) handling

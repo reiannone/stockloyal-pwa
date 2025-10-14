@@ -1,4 +1,5 @@
-<?php 
+<?php
+declare(strict_types=1); 
 // api/config.php
 
 // --------------------------------------------------
@@ -10,16 +11,16 @@ $appEnv = getenv('APP_ENV') ?: 'production';
 
 // Explicit choice
 if ($appEnv === 'development') {
-    $envFile = __DIR__ . '/.env';
+    $envFile = __DIR__ . '/';
 } else {
-    $envFile = __DIR__ . '/.env.production';
+    $envFile = __DIR__ . '/';
 }
 
 // --------------------------------------------------
 // 2. Load environment variables
 // --------------------------------------------------
 if (!file_exists($envFile)) {
-    error_log("[config.php] Missing env file: " . $envFile);
+    error_log("[config.php] : " . $envFile);
     http_response_code(500);
     die(json_encode([
         "success" => false,
