@@ -4,6 +4,21 @@ export const API_BASE =
   (import.meta.env?.VITE_API_BASE && String(import.meta.env.VITE_API_BASE).trim()) ||
   '/api';
 
+// Debug: show where API_BASE came from
+if (typeof window !== "undefined") {
+  const runtimeVite = window.__VITE_API_BASE__ || null;
+  const runtimeLegacy = window.__API_BASE__ || null;
+  const envVite = (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE) || null;
+  console.log(
+    "[API] API_BASE =", API_BASE,
+    "| runtime.__VITE_API_BASE__ =", runtimeVite,
+    "| runtime.__API_BASE__ =", runtimeLegacy,
+    "| import.meta.env.VITE_API_BASE =", envVite,
+    "| href =", location.href
+  );
+  window.__DEBUG_API = { API_BASE, runtimeVite, runtimeLegacy, envVite, href: location.href };
+}
+
 // Small helper to build URLs safely
 const join = (base, path) => {
   const b = base.replace(/\/+$/, '');
