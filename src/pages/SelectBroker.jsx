@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBroker } from "../context/BrokerContext";
-import { apiPost } from "../api"; // ✅ universal JSON API
+import { apiPost } from "../api.js"; // ✅ universal JSON API
 
 const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
 

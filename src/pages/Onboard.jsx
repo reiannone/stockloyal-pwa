@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 function Onboard() {
   const [name, setName] = useState("");

@@ -1,7 +1,7 @@
 // src/pages/StockCategories.jsx
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { API_BASE } from "../config/api"; // ✅ centralized API base
+import { apiPost } from "../api.js";
 
 const categoryMap = {
   "Most Active": "most_actives",

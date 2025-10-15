@@ -1,7 +1,7 @@
 // src/pages/MemberOnboard.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { apiPost } from "../api"; // ✅ universal helper
+import { apiPost } from "../api.js"; // ✅ universal helper
 
 function MemberOnboard() {
   const navigate = useNavigate();

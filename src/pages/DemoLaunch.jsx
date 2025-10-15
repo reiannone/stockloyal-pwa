@@ -1,6 +1,6 @@
 // src/pages/DemoLaunch.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { apiGet, apiPost } from "../api";
+import { apiGet, apiPost } from "../api.js";
 
 export default function DemoLaunch() {
   const [merchants, setMerchants] = useState([]);

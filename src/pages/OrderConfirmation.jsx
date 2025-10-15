@@ -1,7 +1,7 @@
 // src/pages/OrderConfirmation.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 export default function OrderConfirmation() {
   const navigate = useNavigate();

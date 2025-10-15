@@ -1,7 +1,7 @@
 // src/pages/Promotions.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE } from "../config/api";
+import { apiPost } from "../api.js";
 
 function Promotions() {
   const navigate = useNavigate();

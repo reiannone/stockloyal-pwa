@@ -1,6 +1,6 @@
 // src/pages/Admin.jsx
 import React, { useEffect, useState, useRef } from "react";
-import { apiGet, apiPost } from "../api";
+import { apiGet, apiPost } from "../api.js";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
 

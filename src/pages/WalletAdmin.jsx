@@ -1,6 +1,6 @@
 // src/pages/WalletAdmin.jsx
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { apiGet, apiPost } from "../api";
+import { apiGet, apiPost } from "../api.js";
 
 export default function WalletAdmin() {
   const [wallets, setWallets] = useState([]);

@@ -1,7 +1,7 @@
 // src/pages/Login.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 function Login() {
   const navigate = useNavigate();

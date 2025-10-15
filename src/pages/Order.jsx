@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useBasket } from "../context/BasketContext";
 import { useBroker } from "../context/BrokerContext";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 // Simple UUID generator for basket_id
 function generateBasketId() {

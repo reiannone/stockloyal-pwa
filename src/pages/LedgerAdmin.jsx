@@ -1,6 +1,6 @@
 // src/pages/TransactionsLedgerAdmin.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 export default function TransactionsLedgerAdmin() {
   const [rows, setRows] = useState([]);

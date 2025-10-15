@@ -1,7 +1,7 @@
 // src/pages/PointsSelect.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 export default function PointsSelect() {
   const navigate = useNavigate();

@@ -1,7 +1,7 @@
 // src/pages/Transactions.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 
 export default function Transactions() {
   const navigate = useNavigate();

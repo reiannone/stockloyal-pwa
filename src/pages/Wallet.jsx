@@ -1,7 +1,7 @@
 // src/pages/Wallet.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
 
 export default function Wallet() {

@@ -1,7 +1,7 @@
 // src/pages/StockPicker.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { apiPost } from "../api";
+import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
 import { Search } from "lucide-react";
 import "../styles/StockPicker.css";
