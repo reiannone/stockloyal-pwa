@@ -2,25 +2,52 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+
+    <!-- Canonicalize host: never run the app on the apex -->
     <script>
-  // Canonicalize host: never run the app on the apex
-    if (location.hostname === "stockloyal.com") {
-      location.replace("https://app.stockloyal.com" + location.pathname + location.search + location.hash);
-    }
+      if (location.hostname === "stockloyal.com") {
+        location.replace("https://app.stockloyal.com" + location.pathname + location.search + location.hash);
+      }
     </script>
 
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-512.png" />
 
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- PWA metas -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes"><!-- keep for iOS -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="StockLoyal">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#2563eb" />
 
     <title>StockLoyal PWA</title>
-    <script>window.__VITE_API_BASE__="https://api.stockloyal.com/api";</script>
+
+    <!-- Force API base at runtime (read by src/api.js) -->
+    <script>
+      window.__VITE_API_BASE__ = "https://api.stockloyal.com/api";
+    </script>
+
+    <!-- Safety net: rewrite any stray relative /api/... fetches to the API subdomain -->
+    <script>
+      (function () {
+        const API_HOST = "https://api.stockloyal.com";
+        const origFetch = window.fetch;
+        window.fetch = function (input, init) {
+          try {
+            const u = (typeof input === "string") ? input : (input && input.url) || "";
+            if (/^\/?api\//i.test(u)) {
+              const abs = API_HOST + (u.startsWith("/") ? "" : "/") + u.replace(/^\/+/, "");
+              return origFetch(abs, init);
+            }
+          } catch (e) {}
+          return origFetch(input, init);
+        };
+      })();
+    </script>
+
+    <!-- Your bundled app (must come AFTER the scripts above) -->
     <script type="module" crossorigin src="/assets/index-DX5IPTuG.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-INjIyoTR.css">
   </head>
