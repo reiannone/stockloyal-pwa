@@ -2,6 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+  // Canonicalize host: never run the app on the apex
+    if (location.hostname === "stockloyal.com") {
+      location.replace("https://app.stockloyal.com" + location.pathname + location.search + location.hash);
+    }
+    </script>
+
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/icon-512.png" />
