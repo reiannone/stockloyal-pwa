@@ -32,21 +32,25 @@
     <!-- Safety net: rewrite any stray relative /api/... fetches to the API subdomain -->
     <script>
       (function () {
-        const API_HOST = "https://api.stockloyal.com";
+        const API_HOST = "https://api.stockloyal.com/";
         const origFetch = window.fetch;
+
         window.fetch = function (input, init) {
           try {
             const u = (typeof input === "string") ? input : (input && input.url) || "";
+
+            // Only rewrite calls that target "/api/..." or "api/..."
             if (/^\/?api\//i.test(u)) {
-              const abs = API_HOST + (u.startsWith("/") ? "" : "/") + u.replace(/^\/+/, "");
+              // Ensure exactly one slash between host and path
+              const abs = API_HOST.replace(/\/+$/, "/") + String(u).replace(/^\/+/, "");
               return origFetch(abs, init);
             }
-          } catch (e) {}
+          } catch (e) { /* ignore and fall through */ }
+
           return origFetch(input, init);
         };
       })();
     </script>
-
     <!-- Your bundled app (must come AFTER the scripts above) -->
     <script type="module" crossorigin src="/assets/index-DX5IPTuG.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-INjIyoTR.css">
