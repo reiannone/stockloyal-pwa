@@ -1,29 +1,61 @@
-# deploy-api.ps1
+# deploy-frontend.ps1
+# Usage:
+#   ./deploy-frontend.ps1
+#   (optional) set env vars first: $env:AMPLIFY_APP_ID="d123abc456def"; $env:AMPLIFY_BRANCH="main"
+
 $ErrorActionPreference = "Stop"
 
-# 1) Config
-$Pem = "C:\Users\reian\AWS\stockloyal.pem"
-$Remote = "ec2-user@3.150.49.91"
+# ---- SETTINGS ----
+$Branch = $env:mail
+if (-not $Branch) { $Branch = "main" }    # default branch if not set
+$AppId  = $env:d3m4upe8dxa3lr            # set this to your Amplify App Id to auto-trigger build
 
-# 2) Prep remote tmp dir (clean slate)
-ssh -i $Pem $Remote "rm -rf ~/deploy_api_tmp && mkdir -p ~/deploy_api_tmp"
+Write-Host "==> Checking Git status..."
+git rev-parse --is-inside-work-tree | Out-Null
 
-# 3) Upload the entire local ./api folder to remote tmp (WRAP user@host:dest!)
-scp -i $Pem -r .\api "${Remote}:~/deploy_api_tmp/"
+Write-Host "==> Switching to $Branch and pulling latest..."
+git fetch origin
+git checkout $Branch
+git pull --rebase origin $Branch
 
-# 4) Atomically sync into live /var/www/html/api and set perms
-ssh -i $Pem $Remote @'
-set -e
-if command -v rsync >/dev/null 2>&1; then
-  sudo rsync -a --delete ~/deploy_api_tmp/api/ /var/www/html/api/
-else
-  sudo mkdir -p /var/www/html/api
-  sudo cp -a ~/deploy_api_tmp/api/. /var/www/html/api/
-fi
-sudo chown -R ec2-user:apache /var/www/html/api
-sudo find /var/www/html/api -type d -exec chmod 775 {} \;
-sudo find /var/www/html/api -type f -exec chmod 664 {} \;
-'@
+Write-Host "==> Installing dependencies (npm ci)..."
+npm ci
 
-# 5) Quick smoke test
-ssh -i $Pem $Remote "ls -l /var/www/html/api/get-faqs.php && curl -i http://localhost/api/get-faqs.php"
+Write-Host "==> Building (npm run build)..."
+npm run build
+
+# Ensure a new commit even if nothing changed (touch a build stamp that's ignored by the app)
+$stampFile = "deploy.buildstamp"
+(Get-Date -Format "yyyy-MM-ddTHH:mm:ss.ffffK") | Out-File -Encoding utf8 $stampFile
+
+Write-Host "==> Committing and pushing..."
+git add -A
+git commit -m "Deploy: frontend $(Get-Date -Format s)" --allow-empty
+git push origin $Branch
+
+# ---- Optionally trigger Amplify build via AWS CLI (requires `aws configure` and proper IAM perms) ----
+if ($AppId) {
+  Write-Host "==> Starting Amplify job for AppId=$AppId branch=$Branch..."
+  $start = aws amplify start-job --app-id $AppId --branch-name $Branch --job-type RELEASE | ConvertFrom-Json
+  $jobId = $start.jobSummary.jobId
+  Write-Host "Amplify job started: $jobId"
+
+  # Simple poll loop until SUCCEED or FAILED
+  do {
+    Start-Sleep -Seconds 8
+    $job = aws amplify get-job --app-id $AppId --branch-name $Branch --job-id $jobId | ConvertFrom-Json
+    $status = $job.job.summary.status
+    Write-Host ("   ...status: {0}" -f $status)
+  } while ($status -in @("PENDING","PROVISIONING","RUNNING","CANCELLING"))
+
+  if ($status -ne "SUCCEED") {
+    throw "Amplify job failed with status: $status"
+  }
+
+  Write-Host "✅ Amplify deploy finished: $status"
+} else {
+  Write-Host "ℹ️  AMPLIFY_APP_ID not set. Relying on GitHub webhook to trigger Amplify."
+  Write-Host "    (Set `$env:AMPLIFY_APP_ID` and optionally `$env:AMPLIFY_BRANCH` to trigger via AWS CLI.)"
+}
+
+Write-Host "==> Done."
