@@ -1,7 +1,8 @@
 // src/pages/Election.jsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { API_BASE } from "../config/api";
+import { apiPost } from "../api.js";
+import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
 
 export default function Election() {
   const [selection, setSelection] = useState("");

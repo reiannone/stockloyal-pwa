@@ -13,6 +13,9 @@ import { X } from "lucide-react";
 import { useBasket } from "../context/BasketContext";
 import SlideOutPanel from "./SlideOutPanel";
 
+// Footer.jsx
+console.log("FOOTER LIVE:", import.meta.url, import.meta.env.MODE);
+
 export default function Footer() {
   const location = useLocation();
   const { basket } = useBasket();

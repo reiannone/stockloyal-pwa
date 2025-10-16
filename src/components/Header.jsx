@@ -6,6 +6,9 @@ import logo from "/logos/stockloyal.png";
 import SlideOutPanel from "./SlideOutPanel";
 import { useBasket } from "../context/BasketContext";
 
+// Header.jsx (top-level of component body)
+console.log("HEADER LIVE:", import.meta.url, import.meta.env.MODE);
+
 export default function Header() {
   const location = useLocation();
   const { basket } = useBasket();
@@ -18,7 +21,6 @@ export default function Header() {
     { to: "/ledger-admin",        label: "Ledger Admin" },
     { to: "/admin-faq",           label: "FAQ Admin" },
     { to: "/demo-launch",         label: "Demo Launch" },
-    { to: "/goodbye",             label: "Exit App" },
   ];
 
   return (
