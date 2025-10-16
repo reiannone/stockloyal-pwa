@@ -31,6 +31,7 @@ import Transactions from "./pages/Transactions.jsx";
 import Admin from "./pages/Admin.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
+import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
 
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
@@ -136,6 +137,10 @@ function App() {
             <Route
               path="/ledger-admin"
               element={<PageWrapper><LedgerAdmin /></PageWrapper>}
+            />
+            <Route
+              path="/admin-faq"
+              element={<PageWrapper><AdminFAQ /></PageWrapper>}
             />
             <Route
               path="/demo-launch"

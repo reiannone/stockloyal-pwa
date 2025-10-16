@@ -42,10 +42,6 @@ export default function Footer() {
     { to: "/stock-picker",        label: "Stock Picker" },
     { to: "/basket",              label: "Basket" },
     { to: "/portfolio",           label: "StockLoyal Portfolio" },
-    { to: "/admin",               label: "Merchant Admin" },
-    { to: "/wallet-admin",        label: "Wallet Admin" },
-    { to: "/ledger-admin",        label: "Ledger Admin" },
-    { to: "/demo-launch",         label: "Demo Launch" },
     { to: "/goodbye",             label: "Exit App" },
   ];
 
