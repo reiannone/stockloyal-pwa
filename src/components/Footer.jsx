@@ -30,22 +30,13 @@ export default function Footer() {
     { to: "/member-onboard", label: "Member Onboard", icon: <User className="nav-icon" /> },
   ];
 
-  // Full menu matches App.jsx routing exactly
+    // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
   const allPages = [
-    { to: "/promotions",          label: "Promotions" },
-    { to: "/login",               label: "Login" },
-    { to: "/terms",               label: "Terms & Conditions" },
-    { to: "/about",               label: "About" },
-    { to: "/member-onboard",      label: "Member Profile" },
-    { to: "/wallet",              label: "Wallet" },
-    { to: "/order",               label: "Pending Order" },
-    { to: "/order-confirmation",  label: "Order Confirmation" },
-    { to: "/select-broker",       label: "Select Broker" },
-    { to: "/election",            label: "Investment Election" },
-    { to: "/stock-picker",        label: "Stock Picker" },
-    { to: "/basket",              label: "Basket" },
-    { to: "/portfolio",           label: "StockLoyal Portfolio" },
-    { to: "/goodbye",             label: "Exit App" },
+    { to: "/admin",               label: "Merchant Admin" },
+    { to: "/wallet-admin",        label: "Wallet Admin" },
+    { to: "/ledger-admin",        label: "Ledger Admin" },
+    { to: "/admin-faq",           label: "FAQ Admin" },
+    { to: "/demo-launch",         label: "Demo Launch" },
   ];
 
   return (

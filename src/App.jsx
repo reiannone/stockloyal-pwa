@@ -22,9 +22,7 @@ import OrderConfirmation from "./pages/OrderConfirmation.jsx";
 import SelectBroker from "./pages/SelectBroker.jsx";
 import Election from "./pages/Election.jsx";
 import PointsSelect from "./pages/PointsSelect.jsx";
-import StockCategories from "./pages/StockCategories.jsx";
 import StockPicker from "./pages/StockPicker.jsx";
-import StockList from "./pages/StockList.jsx";
 import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
@@ -105,14 +103,6 @@ function App() {
             <Route
               path="/stock-picker"
               element={<PageWrapper><StockPicker /></PageWrapper>}
-            />
-            <Route
-              path="/stock-categories"
-              element={<PageWrapper><StockCategories /></PageWrapper>}
-            />
-            <Route
-              path="/stock-list"
-              element={<PageWrapper><StockList /></PageWrapper>}
             />
             <Route
               path="/basket"

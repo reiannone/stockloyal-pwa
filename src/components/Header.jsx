@@ -6,45 +6,50 @@ import logo from "/logos/stockloyal.png";
 import SlideOutPanel from "./SlideOutPanel";
 import { useBasket } from "../context/BasketContext";
 
-// Header.jsx (top-level of component body)
-console.log("HEADER LIVE:", import.meta.url, import.meta.env.MODE);
-
 export default function Header() {
   const location = useLocation();
   const { basket } = useBasket();
   const [showMenu, setShowMenu] = useState(false);
 
-  // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
   const allPages = [
-    { to: "/admin",               label: "Merchant Admin" },
-    { to: "/wallet-admin",        label: "Wallet Admin" },
-    { to: "/ledger-admin",        label: "Ledger Admin" },
-    { to: "/admin-faq",           label: "FAQ Admin" },
-    { to: "/demo-launch",         label: "Demo Launch" },
+    { to: "/promotions", label: "Promotions" },
+    { to: "/login", label: "Login" },
+    { to: "/terms", label: "Terms & Conditions" },
+    { to: "/about", label: "About" },
+    { to: "/member-onboard", label: "Member Profile" },
+    { to: "/wallet", label: "Wallet" },
+    { to: "/order", label: "Pending Order" },
+    { to: "/order-confirmation", label: "Order Confirmation" },
+    { to: "/select-broker", label: "Select Broker" },
+    { to: "/election", label: "Investment Election" },
+    { to: "/stock-picker", label: "Stock Picker" },
+    { to: "/basket", label: "Basket" },
+    { to: "/portfolio", label: "StockLoyal Portfolio" },
+    { to: "/goodbye", label: "Exit App" },
   ];
 
   return (
     <>
-      <header className="app-header bg-white flex items-center justify-between h-8 border-b border-gray-200 shadow-sm px-2">
+      <header className="app-header relative z-20 bg-white flex items-center h-12 border-b border-gray-200 shadow-sm px-3 pr-12">
+        {/* Logo (left) */}
         <img
           src={logo}
           alt="StockLoyal"
-          className="max-h-3 max-w-[60px] object-contain"
-          style={{ height: "32px", width: "auto" }}
+          className="object-contain flex-none z-0"
+          style={{ height: 32, width: "auto" }}
         />
 
-        {/* Right-side menu button (replaces gear) */}
+        {/* Absolutely positioned menu icon (right) */}
         <button
           type="button"
-          onClick={() => setShowMenu(true)}
-          className="p-1 rounded-md hover:bg-gray-100 active:bg-gray-200 transition"
           aria-label="Open menu"
+          onClick={() => setShowMenu(true)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 grid place-items-center cursor-pointer z-30"
         >
-          <Menu className="w-5 h-5 text-gray-700" />
+          <Menu className="block w-6 h-6 text-gray-800" strokeWidth={2} />
         </button>
       </header>
 
-      {/* Slide-out menu (same as Footer.jsx) */}
       <SlideOutPanel
         isOpen={showMenu}
         onClose={() => setShowMenu(false)}
@@ -52,15 +57,13 @@ export default function Header() {
         side="right"
         width={260}
         zIndex={2200}
-        anchorSelector=".app-container"
+        anchorSelector="body"
       >
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {allPages.map(({ to, label }, idx) => (
             <li
               key={to}
-              style={{
-                borderTop: idx === 0 ? "none" : "1px solid #e5e7eb",
-              }}
+              style={{ borderTop: idx === 0 ? "none" : "1px solid #e5e7eb" }}
             >
               <Link
                 to={to}
@@ -72,10 +75,10 @@ export default function Header() {
                   display: "flex",
                   alignItems: "center",
                   width: "100%",
-                  padding: "6px 12px",
+                  padding: "8px 12px",
                   textDecoration: "none",
-                  fontSize: "0.875rem",
-                  lineHeight: 1.2,
+                  fontSize: "0.9rem",
+                  lineHeight: 1.25,
                 }}
               >
                 <span>{label}</span>
