@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/cors.php';
 require_once '/home/bitnami/stockloyal_bootstrap.php';
 require_once __DIR__ . '/_loadenv.php';
 
@@ -13,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 //  - Multi-symbol quote lookup (via POST {"symbol":"AAPL,MSFT"})
 // ======================================================================
 
-header("Access-Control-Allow-Origin: *");
+// header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once '/home/bitnami/stockloyal_bootstrap.php';
 require_once __DIR__ . '/_loadenv.php';
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 // added above lines to support api.stockloyal.com for backend API access
 // api/config.php
@@ -11,13 +12,13 @@ $appEnv = getenv('APP_ENV');
 if ($appEnv === false || $appEnv === '') $appEnv = 'production';
 
 // Pick env file based on APP_ENV
-$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
+$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
 
-// -------- 2) Load .env key=value pairs --------
+// -------- 2) Load  key=value pairs --------
 if (!is_file($envFile)) {
     http_response_code(500);
     header('Content-Type: application/json');
-    echo json_encode(["success"=>false,"error"=>"Server misconfigured (missing env file)"]);
+    echo json_encode(["success"=>false,"error"=>"Server misconfigured ()"]);
     exit;
 }
 foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {

@@ -1470,4 +1470,19 @@ button.nav-item {
   left: 0;
 }
 
+/* ---- Order Ticker ---- */
+.order-ticker .ticker-track {
+  display: flex;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+  animation: ticker-scroll 35s linear infinite;
+}
+.order-ticker .ticker-copy {
+  padding-right: 4rem; /* gap between repeats */
+}
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
 

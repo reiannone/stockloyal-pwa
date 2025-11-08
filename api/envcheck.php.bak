@@ -4,7 +4,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 
 $appEnv = getenv('APP_ENV') ?: '';
-$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
+$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
 
 echo json_encode([
   'APP_ENV' => $appEnv,

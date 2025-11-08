@@ -1,8 +1,81 @@
+# --- General hardening ---
+Options -Indexes
+
+<IfModule mod_env.c>
+  SetEnv APP_ENV development
+</IfModule>
+
+# --- SPA routing: serve built files if they exist; otherwise fall back to index.html ---
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /stockloyal-pwa/
-  RewriteRule ^index\.html$ - [L]
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule . index.html [L]
+
+  # Let PHP API endpoints pass through untouched
+  RewriteRule ^api/ - [L]
+
+  # Serve existing files/directories (CSS/JS/images/etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule . - [L]
+
+  # Fallback all other routes to the SPA entry
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# --- Cache/static headers (no <Location> in .htaccess) ---
+<IfModule mod_expires.c>
+  ExpiresActive On
+
+  # Fingerprinted static assets (Vite) - 1 year
+  <FilesMatch "\.(?:js|mjs|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+
+  # PWA icons - 30 days
+  <FilesMatch "^icon-(?:192|512)\.png$">
+    ExpiresDefault "access plus 30 days"
+  </FilesMatch>
+
+  # Manifest changes more often
+  <Files "manifest.json">
+    ExpiresDefault "access plus 1 hour"
+  </Files>
+
+  # HTML should not be cached hard
+  <FilesMatch "\.(html)$">
+    ExpiresDefault "access plus 0 seconds"
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Strong caching for static assets
+  <FilesMatch "\.(?:js|mjs|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # Icons moderate cache
+  <FilesMatch "^icon-(?:192|512)\.png$">
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+
+  # Manifest & HTML: no aggressive cache
+  <Files "manifest.json">
+    Header set Cache-Control "no-cache"
+  </Files>
+  <FilesMatch "\.(html)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+
+  # Basic security headers
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "no-referrer-when-downgrade"
+  Header always set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# --- Compression (if modules are enabled) ---
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+<IfModule mod_brotli.c>
+  AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/css application/javascript application/json image/svg+xml
 </IfModule>

@@ -26,3 +26,12 @@ Thumbs.db
 dist.tgz
 *.tar
 *.tgz
+
+api/__pre_cors_fix_backup___20251029_195412/
+*.bak
+*-Copy/
+dist.zip
+Set-Location
+add-cors.ps1
+bitnami.css
+vite.svg

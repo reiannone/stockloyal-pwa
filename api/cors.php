@@ -1,25 +1,51 @@
 <?php
+// api/cors.php
 declare(strict_types=1);
-require_once '/home/bitnami/stockloyal_bootstrap.php';
-require_once __DIR__ . '/_loadenv.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
-// added above lines to support api.stockloyal.com for backend API access
-// api/cors.php (include in each endpoint or via a common bootstrap)
+// Defensive: clear any prior headers added by framework/server
+foreach ([
+  'Access-Control-Allow-Origin',
+  'Access-Control-Allow-Credentials',
+  'Access-Control-Allow-Methods',
+  'Access-Control-Allow-Headers',
+  'Access-Control-Max-Age',
+  'Access-Control-Expose-Headers',
+] as $h) { header_remove($h); }
+
+// Allow only known origins (no wildcards when using credentials)
+$allowedOrigins = [
+  'http://localhost:5173',
+  'https://localhost:5173',
+  'https://app.stockloyal.com',
+  'https://stockloyal.com', // ok if your app sometimes runs on apex then redirects
+];
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowed = [
-  'https://*.amplifyapp.com',
-  'https://app.stockloyal.com',
-  'http://localhost:5173'
-];
-if ($origin && array_reduce($allowed, fn($ok,$p)=>$ok||fnmatch($p,$origin), false)) {
-  header("Access-Control-Allow-Origin: $origin");
-  header('Access-Control-Allow-Credentials: true');
-  header('Vary: Origin');
+$isAllowed = in_array($origin, $allowedOrigins, true);
+
+if ($isAllowed) {
+  header("Access-Control-Allow-Origin: {$origin}");
+  header('Access-Control-Allow-Credentials: true'); // needed for cookies/auth
+  header('Vary: Origin'); // so caches split by Origin
 }
-if ($_SERVER['REQUEST_METHOD']==='OPTIONS') {
-  header('Access-Control-Allow-Methods: GET,POST,OPTIONS');
-  header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+// Methods you support
+$allowedMethods = 'GET, POST, OPTIONS';
+
+// Allow requested headers precisely (safer than hardcoding *)
+$reqHeaders = $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '';
+$allowedHeaders = $reqHeaders ?: 'Content-Type, Authorization, X-Requested-With';
+
+header("Access-Control-Allow-Methods: {$allowedMethods}");
+header("Access-Control-Allow-Headers: {$allowedHeaders}");
+header('Access-Control-Max-Age: 86400'); // cache preflight 24h
+
+// Optional: expose any custom response headers your frontend needs to read
+header('Access-Control-Expose-Headers: X-Request-Id, X-RateLimit-Remaining');
+
+// Short-circuit preflight early
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+  // If origin not allowed, still return 204 (quiet) but without ACAO to avoid leaking
+  http_response_code(204);
   exit;
 }

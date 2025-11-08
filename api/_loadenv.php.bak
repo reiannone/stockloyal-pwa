@@ -4,7 +4,7 @@ declare(strict_types=1);
 // api/_loadenv.php
 
 // 1) Prefer server-side env file when present (prod on Lightsail)
-$serverEnv = '/home/bitnami/stockloyal.env.php';
+$serverEnv = '/home/bitnami/stockloyal.php';
 if (is_file($serverEnv)) {
     /** @noinspection PhpIncludeInspection */
     require_once $serverEnv;
@@ -16,10 +16,10 @@ if (is_file($serverEnv)) {
     return; // done
 }
 
-// 2) Fallback for local dev: read .env or .env.production in the api folder
+// 2) Fallback for local dev: read  or  in the api folder
 $appEnv = getenv('APP_ENV');
 if ($appEnv === false || $appEnv === '') $appEnv = 'production';
-$envFile = __DIR__ . ($appEnv === 'development' ? '/.env' : '/.env.production');
+$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
 
 if (is_file($envFile)) {
     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
