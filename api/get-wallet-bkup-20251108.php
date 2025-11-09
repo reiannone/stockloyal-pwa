@@ -14,7 +14,7 @@ try {
     require_once __DIR__ . '/cors.php';
     error_log("cors.php loaded");
     
-    require_once '/home/bitnami/stockloyal_bootstrap.php';
+    
     error_log("stockloyal_bootstrap.php loaded");
     
     require_once __DIR__ . '/_loadenv.php';
