@@ -1,7 +1,7 @@
 // src/pages/Promotions.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost } from "../api.js";
+import { apiPost, API_BASE } from "../api.js";  // ✅ Add API_BASE import
 
 function Promotions() {
   const navigate = useNavigate();
@@ -10,7 +10,7 @@ function Promotions() {
 
   useEffect(() => {
     console.log("✅ Start Promotions.jsx");
-    
+    console.log("API_BASE:", API_BASE); // ✅ Verify it's defined
 
     // ✅ Get merchant_id from localStorage
     const merchantId = localStorage.getItem("merchantId");

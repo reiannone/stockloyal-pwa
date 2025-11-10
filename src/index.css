@@ -26,6 +26,7 @@ body {
   --app-phone-width: 393px;
   --app-padding: 3px;
   --app-bg: #fff;
+  --footer-height: 70px; /* keep in sync with .nav-bar height */
 }
 
 .page {
@@ -123,6 +124,7 @@ body.dev-frame .iphone-frame::before {
   -webkit-overflow-scrolling: touch;
   padding: var(--app-padding);
   box-sizing: border-box;
+  z-index: 1;
 }
 
 
@@ -166,6 +168,7 @@ body.dev-frame .iphone-frame::before {
   align-items: stretch;
   text-align: left;
   -webkit-overflow-scrolling: touch;
+  z-index: 1;
 
   /* ✅ constrain width globally */
   width: 100%;
@@ -1471,18 +1474,36 @@ button.nav-item {
 }
 
 /* ---- Order Ticker ---- */
+.order-ticker {
+  position: fixed;
+  bottom: 70px;
+  left: 0;
+  right: 0;
+  background-color:#333;
+  z-index: 60;
+  pointer-events: none;
+  user-select: none;
+  
+  /* ✅ Add these to constrain to app width */
+  max-width: var(--app-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
 .order-ticker .ticker-track {
   display: flex;
   width: max-content;
   white-space: nowrap;
   will-change: transform;
-  animation: ticker-scroll 35s linear infinite;
+  animation: ticker-scroll 150s linear infinite;
+  overflow: hidden;  /* ✅ Prevent overflow */
 }
+
 .order-ticker .ticker-copy {
-  padding-right: 4rem; /* gap between repeats */
+  padding-right: 4rem;
 }
+
 @keyframes ticker-scroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
-

@@ -109,7 +109,7 @@ function SplashScreen() {
           const conv = parseFloat(localStorage.getItem("conversion_rate") || "0.01");
           const cashBalance = Number((points * (conv > 0 ? conv : 0.01)).toFixed(2));
 
-          const updateEndpoints = ["updated_points.php", "update_points.php"];
+          const updateEndpoints = ["update_points.php", "update_points.php"];
           let updated = null;
 
           for (const ep of updateEndpoints) {

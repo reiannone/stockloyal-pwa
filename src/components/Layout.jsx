@@ -14,7 +14,7 @@ export default function Layout() {
       <main className="iphone-content flex-1 overflow-y-auto">
         <Outlet />
       </main>
-      <OrderTicker />
+      <OrderTicker />   {/* ⬅️ absolute to .iphone-frame */}
       <Footer />
     </div>
   );
