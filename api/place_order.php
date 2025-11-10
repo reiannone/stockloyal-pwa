@@ -39,6 +39,7 @@ if (
 $member_id   = $input['member_id'];
 $symbol      = $input['symbol'];
 $shares      = $input['shares'];
+$points_used = $input['points_used']
 $broker      = $input['broker'];
 $order_type  = $input['order_type'] ?? "market"; // ✅ default to market
 $amount      = isset($input['amount']) ? floatval($input['amount']) : 0.0;
@@ -47,9 +48,9 @@ $basket_id   = $input['basket_id'] ?? null;
 try {
     $sql = "
         INSERT INTO orders (
-            member_id, symbol, shares, amount, order_type, status, placed_at, broker, basket_id
+            member_id, symbol, shares, points_used, amount, order_type, status, placed_at, broker, basket_id
         ) VALUES (
-            :member_id, :symbol, :shares, :amount, :order_type, 'placed', NOW(), :broker, :basket_id
+            :member_id, :symbol, :shares, :points_used, :amount, :order_type, 'placed', NOW(), :broker, :basket_id
         )
     ";
 

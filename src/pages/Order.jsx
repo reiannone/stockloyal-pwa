@@ -52,9 +52,34 @@ export default function Order() {
       const basketId = generateBasketId();
       localStorage.setItem("basketId", basketId);
 
-      // Split amount across all basket items
+      // Split amount across all basket items (simple even split)
       const perOrderAmount =
         enrichedBasket.length > 0 ? totalAmount / enrichedBasket.length : 0;
+
+      // ✅ Prepare an *even* points allocation that sums exactly to pointsUsed
+      const n = enrichedBasket.length;
+      const pointsAlloc = [];
+      if (n > 0) {
+        if (Number.isInteger(pointsUsed)) {
+          // Integer points: distribute remainder by +1 to the first R orders
+          const base = Math.floor(pointsUsed / n);
+          let remainder = pointsUsed - base * n;
+          for (let i = 0; i < n; i++) {
+            pointsAlloc.push(base + (i < remainder ? 1 : 0));
+          }
+        } else {
+          // Decimal points: split to 2 decimals and distribute any leftover cents
+          const raw = pointsUsed / n;
+          const base = Math.floor(raw * 100) / 100; // 2-dp base
+          let remCents = Math.round(pointsUsed * 100 - base * 100 * n);
+          for (let i = 0; i < n; i++) {
+            const add = remCents > 0 ? 0.01 : 0;
+            pointsAlloc.push(Number((base + add).toFixed(2)));
+            if (remCents > 0) remCents--;
+          }
+        }
+      }
+      console.log("[Order] points allocation per order:", pointsAlloc, "total:", pointsAlloc.reduce((a, b) => a + b, 0));
 
       // Attempt to fetch authoritative wallet from server
       let currentWallet = null;
@@ -69,22 +94,31 @@ export default function Order() {
       }
 
       // Fallback values
-      const currPoints = Number(currentWallet?.points) || parseInt(localStorage.getItem("points") || "0", 10);
-      const currCash = Number(currentWallet?.cash_balance) || parseFloat(localStorage.getItem("cashBalance") || "0");
-      const currPortfolio = Number(currentWallet?.portfolio_value) || parseFloat(localStorage.getItem("portfolio_value") || "0");
+      const currPoints =
+        Number(currentWallet?.points) ||
+        parseInt(localStorage.getItem("points") || "0", 10);
+      const currCash =
+        Number(currentWallet?.cash_balance) ||
+        parseFloat(localStorage.getItem("cashBalance") || "0");
+      const currPortfolio =
+        Number(currentWallet?.portfolio_value) ||
+        parseFloat(localStorage.getItem("portfolio_value") || "0");
 
       const newPoints = Math.max(0, Math.round(currPoints - pointsUsed));
       const newCash = Math.max(0, Number((currCash - totalAmount).toFixed(2)));
       const newPortfolio = Number((currPortfolio + totalAmount).toFixed(2));
 
-      // 1) Place broker orders sequentially with basket_id + per-order amount
-      for (const stock of enrichedBasket) {
+      // 1) Place broker orders sequentially with basket_id + per-order amount + per-order points_used
+      for (let i = 0; i < enrichedBasket.length; i++) {
+        const stock = enrichedBasket[i];
+
         const payload = {
           member_id: memberId,
           basket_id: basketId, // ✅ tie all orders to this basket
           symbol: stock.symbol,
           shares: stock.shares || 0,
-          amount: perOrderAmount, // ✅ evenly split
+          points_used: pointsAlloc[i] || 0, // ✅ evenly split per order
+          amount: perOrderAmount, // ✅ evenly split amount (simple split)
           order_type: "market",
           broker: broker?.id || broker || "Not linked",
         };

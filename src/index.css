@@ -1477,16 +1477,13 @@ button.nav-item {
 .order-ticker {
   position: fixed;
   bottom: 70px;
-  left: 0;
-  right: 0;
+  left: 50%;
   background-color:#333;
+  transform: translateX(-50%);
   z-index: 60;
   pointer-events: none;
   user-select: none;
-  
-  /* ✅ Add these to constrain to app width */
   max-width: var(--app-max-width);
-  margin: 0 auto;
   width: 100%;
 }
 
@@ -1496,7 +1493,6 @@ button.nav-item {
   white-space: nowrap;
   will-change: transform;
   animation: ticker-scroll 150s linear infinite;
-  overflow: hidden;  /* ✅ Prevent overflow */
 }
 
 .order-ticker .ticker-copy {

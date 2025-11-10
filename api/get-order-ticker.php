@@ -6,38 +6,87 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/config.php';
 
 try {
-    // One row per (order × redeem_points txn). Orders with no ledger still appear once with pts=0.
+    // Pull rows we’ll aggregate in PHP
+    // Note: assumes orders.amount exists (sent by place_order.php payload).
     $sql = "
         SELECT
             o.order_id,
             o.member_id,
             o.symbol,
             o.shares,
-            COALESCE(ABS(t.amount_points), 0) AS pts,  -- per-action points (no SUM/GROUP)
+            o.amount,
+            COALESCE(o.points_used, 0) AS points_used,
             o.status,
-            COALESCE(t.created_at, o.placed_at) AS event_time
+            o.placed_at,
+            t.created_at AS ledger_time
         FROM orders o
         LEFT JOIN transactions_ledger t
                ON t.order_id = o.order_id
-              AND t.tx_type = 'redeem_points'          -- adjust if your type differs
+              AND t.tx_type = 'redeem_points'      -- adjust if your type differs
         WHERE o.status IN ('pending','executed','confirmed')
-        ORDER BY event_time DESC
-        LIMIT 50
+        ORDER BY COALESCE(t.created_at, o.placed_at) DESC, o.order_id DESC
+        LIMIT 500
     ";
 
     $stmt = $conn->prepare($sql);
     $stmt->execute();
 
-    $items = [];
+    // Group by order_id
+    $byOrder = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $items[] = [
-            'member_id' => $row['member_id'],
-            'symbol'    => $row['symbol'],
-            'shares'    => $row['shares'],
-            'pts'       => (int)$row['pts'],           // cast if you want integers
-            'status'    => $row['status'],
-            'placed_at' => $row['event_time'],
+        $oid = $row['order_id'];
+
+        if (!isset($byOrder[$oid])) {
+            $byOrder[$oid] = [
+                'order_id'  => $oid,
+                'member_id' => $row['member_id'],
+                'pts'       => 0,
+                'items'     => [],       // each: { symbol, amount, shares }
+                'status'    => $row['status'],
+                'event_time'=> $row['placed_at'], // will be updated to latest
+            ];
+        }
+
+        // Add line item
+        $byOrder[$oid]['items'][] = [
+            'symbol' => $row['symbol'],
+            'amount' => isset($row['amount']) ? (float)$row['amount'] : 0.0,
+            'shares' => isset($row['shares']) ? (float)$row['shares'] : 0.0,
         ];
+
+        // Sum order-level points_used across rows for total pts
+        $byOrder[$oid]['pts'] += (float)$row['points_used'];
+
+        // Optional: choose a status—keep first, or implement a precedence rule if you prefer
+        if (!$byOrder[$oid]['status'] && $row['status']) {
+            $byOrder[$oid]['status'] = $row['status'];
+        }
+
+        // Latest event time: ledger redeem_points time if present, else placed_at
+        $candidate = $row['ledger_time'] ?? $row['placed_at'];
+        if ($candidate && strcmp($candidate, $byOrder[$oid]['event_time']) > 0) {
+            $byOrder[$oid]['event_time'] = $candidate;
+        }
+    }
+
+    // Sort the grouped result by event_time DESC (most recent first)
+    usort($byOrder, function ($a, $b) {
+        return strcmp($b['event_time'], $a['event_time']);
+    });
+
+    // Prepare final payload (limit to 50 most recent)
+    $items = [];
+    $count = 0;
+    foreach ($byOrder as $order) {
+        $items[] = [
+            'order_id'  => $order['order_id'],
+            'member_id' => $order['member_id'],
+            'pts'       => $order['pts'],
+            'status'    => $order['status'],
+            'placed_at' => $order['event_time'],
+            'lines'     => $order['items'],   // array of {symbol, amount, shares}
+        ];
+        if (++$count >= 50) break;
     }
 
     echo json_encode(['success' => true, 'items' => $items], JSON_UNESCAPED_SLASHES);
