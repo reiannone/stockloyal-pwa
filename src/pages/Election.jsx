@@ -6,42 +6,47 @@ import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
 
 export default function Election() {
   const [selection, setSelection] = useState("");
-  const [sweepPct, setSweepPct] = useState(null); // ✅ monthly sweep %
+  const [sweepPct, setSweepPct] = useState(null); // monthly sweep %
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // ✅ Load previous election from wallet
-  useEffect(() => {
-    const fetchElection = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/get-wallet.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ member_id: localStorage.getItem("memberId") }),
-        });
-        const data = await res.json();
+  const memberId = localStorage.getItem("memberId");
 
-        if (res.ok && data.success) {
+  // Load previous election from wallet
+  useEffect(() => {
+    if (!memberId) {
+      setError("No member ID found — please log in again.");
+      setLoading(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const data = await apiPost("get-wallet.php", { member_id: memberId });
+
+        if (data?.success && data.wallet) {
           const wallet = data.wallet;
           if (wallet.election_type) {
             setSelection(wallet.election_type);
           }
-          if (wallet.sweep_percentage) {
-            setSweepPct(Number(wallet.sweep_percentage)); // ✅ normalize to number
+          if (wallet.sweep_percentage != null) {
+            setSweepPct(Number(wallet.sweep_percentage));
           }
         }
       } catch (err) {
         console.error("Election fetch error:", err);
+        // you can surface this if you want:
+        // setError("Failed to load election settings.");
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchElection();
-  }, []);
+    })();
+  }, [memberId]);
 
   const handleSubmit = async () => {
+    setError("");
+
     if (!selection) {
       setError("Please select an option.");
       return;
@@ -53,23 +58,19 @@ export default function Election() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/save-election.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          member_id: localStorage.getItem("memberId"),
-          election: selection,
-          sweep_percentage: sweepPct,
-        }),
+      const data = await apiPost("save-election.php", {
+        member_id: memberId,
+        election: selection,
+        sweep_percentage: sweepPct,
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      if (data?.success) {
         navigate("/wallet");
       } else {
-        setError(data.error || "Error saving election");
+        setError(data?.error || "Error saving election");
       }
-    } catch {
+    } catch (e) {
+      console.error("Election save error:", e);
       setError("Network error");
     }
   };
@@ -78,7 +79,7 @@ export default function Election() {
     return (
       <div className="page-container">
         <h2 className="page-title">StockLoyal Elections</h2>
-        <p class="page-deck">Loading your election settings…</p>
+        <p className="page-deck">Loading your election settings…</p>
       </div>
     );
   }
@@ -117,7 +118,7 @@ export default function Election() {
             checked={selection === "monthly"}
             onChange={() => setSelection("monthly")}
           />
-          Monthly Subscription (automatic sweep of points & stock order)
+          Monthly Subscription (automatic sweep of points &amp; stock order)
         </label>
       </div>
 
@@ -155,13 +156,14 @@ export default function Election() {
       {error && <p className="form-error">{error}</p>}
 
       <button onClick={handleSubmit} className="btn-primary">
-        Save & Continue
+        Save &amp; Continue
       </button>
 
       <button
         type="button"
         onClick={() => navigate("/wallet")}
         className="btn-secondary"
+        style={{ marginTop: 8 }}
       >
         Cancel
       </button>

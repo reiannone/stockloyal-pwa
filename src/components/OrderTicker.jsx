@@ -29,20 +29,27 @@ export default function OrderTicker() {
     return items
       .map((order) => {
         const member = order.member_id ?? "—";
-        const pts = Number(order.pts ?? 0).toLocaleString();
 
-        const details = (order.lines || [])
+        // prefer points_used if present, fallback to pts
+        const totalPts = Number(
+          order.points_used ?? order.pts ?? 0
+        ).toLocaleString();
+
+        // each symbol + shares for this order (grouped by order_id in PHP)
+        const sharesStr = (order.lines || [])
           .map((ln) => {
             const sym = String(ln.symbol || "").toUpperCase();
             const shrs = Number(ln.shares ?? 0).toFixed(3);
-            const amt = Number(ln.amount ?? 0).toFixed(2);
-            return `${sym} ${shrs} shrs $${amt}`;
+            return `${sym} ${shrs} shrs`;
           })
-          .join(", ");
+          .join(" + ");
 
-        return details
-          ? `${member} • ${pts} pts ➜ ${details}`
-          : `${member} • ${pts} pts`;
+        // if you want to show order id too, uncomment:
+        // const oid = order.order_id ? `#${order.order_id} ` : "";
+
+        return sharesStr
+          ? `${member} • ${totalPts} pts ➜ ${sharesStr}`
+          : `${member} • ${totalPts} pts`;
       })
       .join("   |   ");
   }, [items]);

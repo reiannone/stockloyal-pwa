@@ -39,7 +39,7 @@ if (
 $member_id   = $input['member_id'];
 $symbol      = $input['symbol'];
 $shares      = $input['shares'];
-$points_used = $input['points_used']
+$points_used = $input['points_used'];
 $broker      = $input['broker'];
 $order_type  = $input['order_type'] ?? "market"; // ✅ default to market
 $amount      = isset($input['amount']) ? floatval($input['amount']) : 0.0;
@@ -60,6 +60,7 @@ try {
         ':symbol'     => $symbol,
         ':shares'     => $shares,
         ':amount'     => $amount,
+        ':points_used' => $points_used,
         ':order_type' => $order_type,
         ':broker'     => $broker,
         ':basket_id'  => $basket_id
@@ -79,6 +80,7 @@ try {
             "member_id"   => $row['member_id'],
             "symbol"      => $row['symbol'],
             "shares"      => (float)$row['shares'],
+            "points_used" => $row['points_used'],
             "amount"      => (float)$row['amount'],
             "order_type"  => $row['order_type'],
             "status"      => $row['status'],
