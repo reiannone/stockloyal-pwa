@@ -37,6 +37,7 @@ export default function Footer() {
     { to: "/ledger-admin",        label: "Ledger Admin" },
     { to: "/admin-faq",           label: "FAQ Admin" },
     { to: "/demo-launch",         label: "Demo Launch" },
+    { to: "/skyblue-rewards",         label: "Sky Blue Airlines Miles" },
   ];
 
   return (

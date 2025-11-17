@@ -31,7 +31,7 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
-
+import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
 
 function App() {
@@ -59,6 +59,10 @@ function App() {
             <Route
               path="/goodbye"
               element={<PageWrapper><Goodbye /></PageWrapper>}
+            />
+            <Route
+              path="/skyblue-rewards"
+              element={<PageWrapper><SkyBlueRewards /></PageWrapper>}
             />
           </Route>
 

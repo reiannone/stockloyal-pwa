@@ -1,0 +1,113 @@
+.rewards-page {
+  min-height: 100vh;
+  background-color: #f4f4f5;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.rewards-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  background-color: #f9fafb;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.rewards-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.back-button {
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  padding: 0 4px 2px;
+  cursor: pointer;
+}
+
+.rewards-main {
+  flex: 1;
+  padding: 20px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+.rewards-image-wrapper {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 18px;
+  overflow: hidden;
+  background-color: #ffffff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.rewards-image-wrapper:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.rewards-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.start-demo-button {
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 18px;
+  border-radius: 999px;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease;
+}
+
+.start-demo-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+  opacity: 0.9;
+}
+.demo-inputs {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.demo-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.demo-input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 15px;
+  border: 1px solid #d1d5db;
+  outline: none;
+}
+
+.demo-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}

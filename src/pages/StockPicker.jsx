@@ -64,6 +64,21 @@ export default function StockPicker() {
   const sliderRef = useRef(null);
   const tableRef = useRef(null);
 
+  // --- Helper: robust scroll to stock list (desktop + iOS) ---
+  const scrollToStockList = () => {
+    const el = tableRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const offset = 80; // adjust if you have fixed header / top padding
+    const targetY = rect.top + window.scrollY - offset;
+
+    window.scrollTo({
+      top: targetY,
+      behavior: "smooth",
+    });
+  };
+
   // --- Slider drag logic ---
   const isDragging = useRef(false);
   const startX = useRef(0);
@@ -138,6 +153,13 @@ export default function StockPicker() {
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
 
+  // --- When category & results are ready, scroll to stock list ---
+  useEffect(() => {
+    if (!category) return;
+    if (!results || results.length === 0) return;
+    scrollToStockList();
+  }, [category, results.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Points handler ---
   const handlePointsChange = (val) => {
     let v = parseInt(val ?? "0", 10);
@@ -176,12 +198,7 @@ export default function StockPicker() {
       }));
 
       setResults(fetched);
-
-      setTimeout(() => {
-        if (tableRef.current) {
-          tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 300);
+      // 🔁 Scroll now handled by useEffect on [category, results.length]
     } catch (err) {
       console.error("[StockPicker] proxy error:", err);
       setStockError("Failed to fetch stocks.");
@@ -214,12 +231,7 @@ export default function StockPicker() {
           change: data.change,
         },
       ]);
-
-      setTimeout(() => {
-        if (tableRef.current) {
-          tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 300);
+      // 🔁 Scroll now handled by useEffect on [category, results.length]
     } catch (err) {
       console.error("[StockPicker] symbol search error:", err);
       setStockError("Symbol lookup failed.");
@@ -490,6 +502,7 @@ export default function StockPicker() {
       {/* Stock list */}
       {category && (
         <div
+          id="stock-list"
           ref={tableRef}
           className={`stocklist-container ${results.length > 0 ? "show" : ""}`}
           style={{ marginTop: 16, marginBottom: 120 }}
@@ -498,7 +511,9 @@ export default function StockPicker() {
             {category} Stocks
           </h2>
           {stockError && <p className="stocklist-error">{stockError}</p>}
-          {!stockError && results.length === 0 && <p className="stocklist-empty">No stocks found.</p>}
+          {!stockError && results.length === 0 && (
+            <p className="stocklist-empty">No stocks found.</p>
+          )}
           {results.length > 0 && (
             <div className="stocklist-table-wrapper">
               <table className="stocklist-table">
@@ -507,7 +522,11 @@ export default function StockPicker() {
                     <th>Select</th>
                     <th>Symbol</th>
                     <th>Name</th>
-                    <th>Price<br />Change %</th>
+                    <th>
+                      Price
+                      <br />
+                      Change %
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
