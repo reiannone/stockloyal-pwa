@@ -48,18 +48,29 @@ export default function SelectBroker() {
   const [selected, setSelected] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasExistingPassword, setHasExistingPassword] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const navigate = useNavigate();
   const { updateBroker } = useBroker();
 
   const memberId = localStorage.getItem("memberId");
 
   const canSubmit = useMemo(
-    () => Boolean(selected && username && password && !submitting),
-    [selected, username, password, submitting]
+    () =>
+      Boolean(
+        selected &&
+          username &&
+          password &&
+          confirmPassword &&
+          password === confirmPassword &&
+          !submitting
+      ),
+    [selected, username, password, confirmPassword, submitting]
   );
 
   // ✅ Load existing broker info from wallet
@@ -74,7 +85,12 @@ export default function SelectBroker() {
           if (currentBroker) {
             setSelected(currentBroker);
             setUsername(creds.username || "");
-            setPassword(creds.password || "");
+            // If there's an existing password, mark it as existing but don't set the actual value
+            if (creds.password) {
+              setHasExistingPassword(true);
+              setPassword(""); // Keep actual password empty
+              setConfirmPassword("");
+            }
           }
         }
       } catch (err) {
@@ -90,9 +106,34 @@ export default function SelectBroker() {
     updateBroker(brokerId);
   };
 
+  const handlePasswordFocus = () => {
+    // When user focuses on password field, if there's an existing password,
+    // clear the placeholder so they can re-enter
+    if (hasExistingPassword && !passwordTouched) {
+      setPasswordTouched(true);
+      setPassword("");
+      setConfirmPassword("");
+    }
+  };
+
+  const handlePasswordChange = (e) => {
+    setPassword(e.target.value);
+    setPasswordTouched(true);
+  };
+
+  const handleConfirmPasswordChange = (e) => {
+    setConfirmPassword(e.target.value);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setError("");
     setSubmitting(true);
 
@@ -131,6 +172,10 @@ export default function SelectBroker() {
   };
 
   const selectedBroker = brokers.find((b) => b.id === selected);
+
+  // Display placeholder asterisks if there's an existing password and user hasn't touched it
+  const passwordPlaceholder = hasExistingPassword && !passwordTouched ? "••••••••••" : "";
+  const confirmPasswordPlaceholder = hasExistingPassword && !passwordTouched ? "••••••••••" : "";
 
   return (
     <div className="page-container">
@@ -193,6 +238,7 @@ export default function SelectBroker() {
           />
         </div>
 
+        {/* Password field */}
         <div>
           <label className="form-label">
             {selectedBroker
@@ -204,8 +250,11 @@ export default function SelectBroker() {
               type={showPw ? "text" : "password"}
               className="form-input"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={handlePasswordChange}
+              onFocus={handlePasswordFocus}
+              placeholder={passwordPlaceholder}
               disabled={!selected || submitting}
+              autoComplete="new-password"
               required
             />
             <img
@@ -222,6 +271,28 @@ export default function SelectBroker() {
                 cursor: submitting ? "not-allowed" : "pointer",
                 opacity: !selected || submitting ? 0.5 : 1,
               }}
+            />
+          </div>
+        </div>
+
+        {/* Confirm password field */}
+        <div>
+          <label className="form-label">
+            {selectedBroker
+              ? `Confirm password for ${selectedBroker.name}`
+              : "Confirm password"}
+          </label>
+          <div className="password-wrapper" style={{ position: "relative" }}>
+            <input
+              type={showPw ? "text" : "password"}
+              className="form-input"
+              value={confirmPassword}
+              onChange={handleConfirmPasswordChange}
+              onFocus={handlePasswordFocus}
+              placeholder={confirmPasswordPlaceholder}
+              disabled={!selected || submitting}
+              autoComplete="new-password"
+              required
             />
           </div>
         </div>

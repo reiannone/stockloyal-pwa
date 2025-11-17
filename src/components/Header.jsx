@@ -29,24 +29,44 @@ export default function Header() {
   ];
 
   return (
-    <>
-      <header className="app-header relative z-20 bg-white flex items-center h-12 border-b border-gray-200 shadow-sm px-3 pr-12">
+    <div>
+      <header className="app-header relative bg-white flex items-center h-12 border-b border-gray-200 shadow-sm px-3">
         {/* Logo (left) */}
         <img
           src={logo}
           alt="StockLoyal"
-          className="object-contain flex-none z-0"
+          className="object-contain flex-none"
           style={{ height: 32, width: "auto" }}
         />
 
-        {/* Absolutely positioned menu icon (right) */}
+        {/* Menu icon (right) */}
         <button
           type="button"
           aria-label="Open menu"
           onClick={() => setShowMenu(true)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 grid place-items-center cursor-pointer z-30"
+          className="ml-auto grid place-items-center cursor-pointer"
+          style={{
+            width: 40,
+            height: 40,
+            background: "#ffffff",
+            border: 0,
+            padding: 0,
+            margin: 0,
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#1f2937",
+            outline: "none",
+            boxShadow: "none",
+            WebkitTapHighlightColor: "transparent",
+            position: "relative",
+            zIndex: 9999,
+            pointerEvents: "auto",
+          }}
         >
-          <Menu className="block w-6 h-6 text-gray-800" strokeWidth={2} />
+          <Menu className="block w-6 h-6 text-gray-800" strokeWidth={2} style={{ position: "relative", zIndex: 9999, color: "#1f2937" }} />
         </button>
       </header>
 
@@ -69,7 +89,9 @@ export default function Header() {
                 to={to}
                 onClick={() => setShowMenu(false)}
                 className={`flex items-center w-full text-gray-700 transition hover:bg-gray-100 ${
-                  location.pathname === to ? "bg-gray-50 font-medium text-blue-600" : ""
+                  location.pathname === to
+                    ? "bg-gray-50 font-medium text-blue-600"
+                    : ""
                 }`}
                 style={{
                   display: "flex",
@@ -106,6 +128,6 @@ export default function Header() {
           ))}
         </ul>
       </SlideOutPanel>
-    </>
+    </div>
   );
 }

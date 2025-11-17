@@ -33,23 +33,22 @@ export default function OrderTicker() {
         // prefer points_used if present, fallback to pts
         const totalPts = Number(
           order.points_used ?? order.pts ?? 0
-        ).toLocaleString();
+        ).toLocaleString("en-US");
 
         // each symbol + shares for this order (grouped by order_id in PHP)
         const sharesStr = (order.lines || [])
           .map((ln) => {
             const sym = String(ln.symbol || "").toUpperCase();
-            const shrs = Number(ln.shares ?? 0).toFixed(3);
+            // 4 decimal places, trim trailing zeros and trailing dot
+            let shrs = Number(ln.shares ?? 0).toFixed(4);
+            shrs = shrs.replace(/0+$/, "").replace(/\.$/, "");
             return `${sym} ${shrs} shrs`;
           })
-          .join(" + ");
-
-        // if you want to show order id too, uncomment:
-        // const oid = order.order_id ? `#${order.order_id} ` : "";
+          .join(", ");
 
         return sharesStr
-          ? `${member} • ${totalPts} pts ➜ ${sharesStr}`
-          : `${member} • ${totalPts} pts`;
+          ? `${member} • ${totalPts}pts → ${sharesStr}`
+          : `${member} • ${totalPts}pts`;
       })
       .join("   |   ");
   }, [items]);

@@ -255,6 +255,11 @@ body.dev-frame .iphone-frame::before {
 /* -----------------------------
    Buttons
 ------------------------------ */
+
+.menu-btn {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .btn-primary {
   display: block;
   width: 80%;
