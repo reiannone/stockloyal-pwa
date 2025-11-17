@@ -1,11 +1,12 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
-
 require_once __DIR__ . '/_loadenv.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
-// added above lines to support api.stockloyal.com for backend API access
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { 
+    http_response_code(204); 
+    exit; 
+}
 // api/create_member.php
 
 ini_set('display_errors', 1);
@@ -15,7 +16,6 @@ error_reporting(E_ALL);
 ini_set('log_errors', 1);
 ini_set('error_log', 'C:/xampp/php/logs/php_error_log');
 
-// header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
 error_log("create_member.php: STARTED");
@@ -26,14 +26,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'config.php'; // $conn is PDO + ENCRYPTION_KEY/IV
+require_once 'config.php'; // $conn is PDO
 
-$input        = json_decode(file_get_contents("php://input"), true);
-$memberId     = trim($input['member_id']    ?? '');
-$memberEmail  = trim($input['member_email'] ?? '');
-$password     = $input['password']          ?? '';
+$input       = json_decode(file_get_contents("php://input"), true);
+if (!is_array($input)) {
+    $input = $_POST ?? [];
+}
 
-error_log("create_member.php: Received JSON -> memberId=$memberId, memberEmail=$memberEmail");
+// Optional merchant_id (for logging / future use)
+$merchantId  = trim($input['merchant_id']   ?? '');
+$memberId    = trim($input['member_id']     ?? '');
+$memberEmail = trim($input['member_email']  ?? '');
+$password    = $input['password']           ?? '';
+
+error_log("create_member.php: Received JSON -> merchantId=$merchantId, memberId=$memberId, memberEmail=$memberEmail");
 
 if (!$memberId) {
     http_response_code(400);
@@ -69,13 +75,17 @@ if (strlen($password) < 8) {
 }
 
 try {
-    // 🔐 Use PASSWORD_DEFAULT (bcrypt now, Argon2 in future PHP releases)
+    // 🔐 Hash password
     $memberPasswordHash = password_hash($password, PASSWORD_DEFAULT);
 
     $conn->beginTransaction();
 
-    // ✅ Check if member_id already exists
-    $checkIdStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_id = :member_id");
+    // ✅ Check if member_id already exists (wallet as the source of truth)
+    $checkIdStmt = $conn->prepare("
+        SELECT COUNT(*) 
+        FROM wallet 
+        WHERE member_id = :member_id
+    ");
     $checkIdStmt->execute([':member_id' => $memberId]);
 
     if ($checkIdStmt->fetchColumn() > 0) {
@@ -87,7 +97,11 @@ try {
     }
 
     // ✅ Check if member_email already exists
-    $checkEmailStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_email = :member_email");
+    $checkEmailStmt = $conn->prepare("
+        SELECT COUNT(*) 
+        FROM wallet 
+        WHERE member_email = :member_email
+    ");
     $checkEmailStmt->execute([':member_email' => $memberEmail]);
 
     if ($checkEmailStmt->fetchColumn() > 0) {
@@ -98,7 +112,7 @@ try {
         exit;
     }
 
-    // ✅ Insert new member row
+    // ✅ Insert new "member" row in wallet
     $stmt = $conn->prepare("
         INSERT INTO wallet (
             member_id, 
@@ -132,7 +146,9 @@ try {
     ]);
 
 } catch (Exception $e) {
-    $conn->rollBack();
+    if ($conn && $conn->inTransaction()) {
+        $conn->rollBack();
+    }
     $errMsg = "create_member.php error: " . $e->getMessage();
     error_log($errMsg);
     http_response_code(500);

@@ -1,7 +1,7 @@
 // src/pages/Promotions.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiPost, API_BASE } from "../api.js";  // ✅ Add API_BASE import
+import { apiPost, API_BASE } from "../api.js";
 
 function Promotions() {
   const navigate = useNavigate();
@@ -10,13 +10,23 @@ function Promotions() {
 
   useEffect(() => {
     console.log("✅ Start Promotions.jsx");
-    console.log("API_BASE:", API_BASE); // ✅ Verify it's defined
+    console.log("API_BASE:", API_BASE);
 
-    // ✅ Get merchant_id from localStorage
+    // -------------------------------
+    // NEW: Read memberEmail too
+    // -------------------------------
     const merchantId = localStorage.getItem("merchantId");
-    const memberId = localStorage.getItem("memberId");
+    const memberEmail =
+      localStorage.getItem("memberEmail") ||
+      localStorage.getItem("memberId"); // fallback compatibility
+
     console.log("[Promotions] merchantId:", merchantId);
-    console.log("[Promotions] memberId:", memberId);
+    console.log("[Promotions] memberEmail:", memberEmail);
+
+    // Save fallback → forward compatibility
+    if (memberEmail) {
+      localStorage.setItem("memberEmail", memberEmail);
+    }
 
     if (!merchantId) {
       setLoading(false);
@@ -58,7 +68,13 @@ function Promotions() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleGetStarted = () => navigate("/login");
+  // ------------------------------------
+  // Routes to Login (memberEmail preserved)
+  // ------------------------------------
+  const handleGetStarted = () => {
+    navigate("/login");
+  };
+
   const handleNoThanks = () => navigate("/goodbye");
 
   if (loading) return <p>Loading promotions...</p>;

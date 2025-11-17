@@ -1,37 +1,34 @@
+// src/pages/SkyBlueRewards.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "../styles/DefaultRewards.css";   // keep your existing styling
+import "../styles/DefaultRewards.css";
 
 const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
 
 export default function SkyBlueRewards() {
   const navigate = useNavigate();
 
-  // 🔹 Local state for inputs
-  const [memberId, setMemberId] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
   const [pointsAvailable, setPointsAvailable] = useState("");
-
-  // 🔹 Hard-coded merchant_id
   const merchantId = "merchant001";
 
   const handleStartDemo = () => {
-    if (!memberId.trim()) {
-      alert("Please enter a Member ID");
+    if (!memberEmail.trim()) {
+      alert("Please enter an email");
       return;
     }
     if (!pointsAvailable.trim() || isNaN(pointsAvailable)) {
-      alert("Please enter a valid Points Available number");
+      alert("Please enter a valid points amount");
       return;
     }
 
-    // Build query string for the next page
     const params = new URLSearchParams({
       merchant_id: merchantId,
-      member_id: memberId.trim(),
+      member_email: memberEmail.trim(),
       points: pointsAvailable.trim(),
     }).toString();
 
-    // Navigate to your Splash/Demo Home page with params
+    // 👇 If your Splash route is different, adjust "/splash"
     navigate(`/?${params}`);
   };
 
@@ -49,8 +46,6 @@ export default function SkyBlueRewards() {
       </header>
 
       <main className="rewards-main">
-
-        {/* Rewards banner */}
         <div className="rewards-image-wrapper" onClick={handleStartDemo}>
           <img
             src={ASSET("/logos/skyblue-rewards.png")}
@@ -59,16 +54,15 @@ export default function SkyBlueRewards() {
           />
         </div>
 
-        {/* 🔹 New Input Fields */}
         <div className="demo-inputs">
           <label className="demo-label">
-            Member ID
+            Member Email
             <input
-              type="text"
+              type="email"
               className="demo-input"
-              placeholder="Enter member ID"
-              value={memberId}
-              onChange={(e) => setMemberId(e.target.value)}
+              placeholder="you@example.com"
+              value={memberEmail}
+              onChange={(e) => setMemberEmail(e.target.value)}
             />
           </label>
 
@@ -77,14 +71,13 @@ export default function SkyBlueRewards() {
             <input
               type="number"
               className="demo-input"
-              placeholder="Enter starting points"
+              placeholder="e.g. 500"
               value={pointsAvailable}
               onChange={(e) => setPointsAvailable(e.target.value)}
             />
           </label>
         </div>
 
-        {/* Launch Button */}
         <button
           type="button"
           className="start-demo-button"

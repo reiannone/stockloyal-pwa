@@ -202,7 +202,7 @@ function MemberOnboard() {
 
       if (data.success) {
         localStorage.setItem("memberEmail", formData.member_email);
-        navigate("/wallet");
+        navigate("/select-broker");
       } else {
         setError(data.error || "Failed to update wallet.");
       }
