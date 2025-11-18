@@ -78,7 +78,7 @@ try {
             $resp = curl_exec($curl);
             $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
             if ($resp === false || $http !== 200) {
-                echo json_encode(["success" => false, "error" => "Yahoo quote request failed", "http" => $http]);
+                echo json_encode(["success" => false, "error" => "Yahoo proxy quote request failed", "http" => $http]);
                 exit;
             }
 
@@ -90,11 +90,11 @@ try {
                 "count"   => count($results),
                 "data"    => array_map(function ($q) {
                     return [
-                        "symbol"   => $q['symbol'],
-                        "name"     => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
-                        "price"    => $q['regularMarketPrice'] ?? null,
-                        "change"   => $q['regularMarketChangePercent'] ?? 0,
-                        "currency" => $q['currency'] ?? "USD",
+                        "symbol"    => $q['symbol'],
+                        "name"      => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
+                        "price"     => $q['regularMarketPrice'] ?? null,
+                        "change"    => $q['regularMarketChangePercent'] ?? 0,
+                        "currency"  => $q['currency'] ?? "USD",
                     ];
                 }, $results)
             ];
@@ -121,14 +121,14 @@ try {
         $resp = curl_exec($curl);
         $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         if ($resp === false || $http !== 200) {
-            echo json_encode(["success" => false, "error" => "Yahoo search failed", "http" => $http]);
+            echo json_encode(["Proxy success" => false, "error" => "Yahoo search failed", "http" => $http]);
             exit;
         }
 
         $j = json_decode($resp, true);
         $quotes = $j['quotes'] ?? ($j['finance']['result'][0]['quotes'] ?? []);
         if (empty($quotes)) {
-            echo json_encode(["success" => false, "error" => "Symbol not found"]);
+            echo json_encode(["success" => false, "error" => "Yahoo Proxy Symbol not found"]);
             exit;
         }
 
@@ -157,7 +157,7 @@ try {
             $meta = $cj['chart']['result'][0]['meta'] ?? null;
             if ($meta) {
                 $price = $meta['regularMarketPrice'] ?? null;
-                $prevClose = $meta['previousClose'] ?? null;
+                $prevClose = $meta['regularMarketPreviousClose'] ?? null; 
                 if ($price && $prevClose) {
                     $change = (($price - $prevClose) / $prevClose) * 100;
                 }
@@ -211,7 +211,7 @@ try {
             echo file_get_contents($cacheFile);
             exit;
         }
-        echo json_encode(["success" => false, "error" => "Yahoo screener request failed", "http" => $http]);
+        echo json_encode(["success" => false, "error" => "Yahoo Proxy screener request failed", "http" => $http]);
         exit;
     }
 

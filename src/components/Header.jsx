@@ -15,7 +15,7 @@ export default function Header() {
     { to: "/promotions", label: "Promotions" },
     { to: "/login", label: "Login" },
     { to: "/terms", label: "Terms & Conditions" },
-    { to: "/about", label: "About" },
+    { to: "/about", label: "About & FAQs" },
     { to: "/member-onboard", label: "Member Profile" },
     { to: "/wallet", label: "Wallet" },
     { to: "/order", label: "Pending Order" },

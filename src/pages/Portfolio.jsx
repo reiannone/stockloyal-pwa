@@ -1,27 +1,51 @@
 // src/pages/Portfolio.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+
+// OPTIONAL — only if BrokerContext exists. If not, this still works.
+import { useBroker } from "../context/BrokerContext";
 
 export default function Portfolio() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
 
+  // broker lookup (context + localStorage fallback)
+  let brokerContext = null;
+  try {
+    brokerContext = useBroker();
+  } catch (_) {
+    brokerContext = null;
+  }
+
+  const storedBrokerName = localStorage.getItem("brokerName");
+  const memberBroker =
+    brokerContext?.broker?.name || storedBrokerName || "your brokerage firm";
+
   const [orders, setOrders] = useState([]);
   const [portfolioValue, setPortfolioValue] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => {
-    if (!memberId) {
-      setError("No member ID found — please log in again.");
-      setLoading(false);
-      return;
-    }
+  // ---- Load data ----
+  const loadPortfolio = useCallback(
+    async (isRefresh = false) => {
+      if (!memberId) {
+        setError("No member ID found — please log in again.");
+        setLoading(false);
+        return;
+      }
 
-    (async () => {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+
       try {
-        const data = await apiPost("get_portfolio_orders.php", { member_id: memberId });
+        const data = await apiPost("get_portfolio_orders.php", {
+          member_id: memberId,
+        });
+
         if (!data.success) {
           setError(data.error || "Failed to load portfolio.");
           return;
@@ -29,15 +53,35 @@ export default function Portfolio() {
 
         setOrders(data.orders || []);
         setPortfolioValue(data.portfolio_value || 0);
+        setError("");
+
+        // Set timestamp
+        setLastUpdated(new Date());
       } catch (err) {
         console.error("Portfolio fetch error:", err);
         setError("Network error while fetching portfolio.");
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    })();
-  }, [memberId]);
+    },
+    [memberId]
+  );
 
+  // ---- Initial Load ----
+  useEffect(() => {
+    loadPortfolio(false);
+  }, [loadPortfolio]);
+
+  // ---- Auto refresh every 60 seconds ----
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      loadPortfolio(true);
+    }, 60000);
+    return () => clearInterval(intervalId);
+  }, [loadPortfolio]);
+
+  // ---- Helpers ----
   const formatDollars = (val) =>
     (parseFloat(val) || 0).toLocaleString("en-US", {
       style: "currency",
@@ -47,7 +91,10 @@ export default function Portfolio() {
 
   const formatPercent = (val) => {
     const num = parseFloat(val);
-    const color = num >= 0 ? "#22c55e" : "#ef4444"; // green / red
+    if (!Number.isFinite(num))
+      return <span style={{ color: "#6b7280" }}>—</span>;
+
+    const color = num >= 0 ? "#22c55e" : "#ef4444";
     const sign = num > 0 ? "+" : "";
     return (
       <span style={{ color, fontWeight: 500 }}>
@@ -56,12 +103,38 @@ export default function Portfolio() {
     );
   };
 
+  const formatTimestamp = (ts) => {
+    if (!ts) return "";
+    return ts.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <div className="portfolio-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
         Your StockLoyal Portfolio
       </h2>
 
+      {/* ---- Last Updated Timestamp ---- */}
+      {lastUpdated && !loading && !error && (
+        <p
+          style={{
+            textAlign: "center",
+            marginTop: "-6px",
+            marginBottom: "18px",
+            color: "#6b7280",
+            fontSize: "0.85rem",
+          }}
+        >
+          Last updated: <strong>{formatTimestamp(lastUpdated)}</strong>
+        </p>
+      )}
+
+      {/* ---- Loading / Error / Empty ---- */}
       {loading ? (
         <p>Loading your portfolio...</p>
       ) : error ? (
@@ -72,7 +145,7 @@ export default function Portfolio() {
         </p>
       ) : (
         <>
-          {/* --- Portfolio Total --- */}
+          {/* ==== Portfolio Value + Refresh ==== */}
           <div
             className="portfolio-total"
             style={{
@@ -91,9 +164,20 @@ export default function Portfolio() {
             >
               {formatDollars(portfolioValue)}
             </span>
+
+            <div style={{ marginTop: "8px" }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => loadPortfolio(true)}
+                disabled={refreshing}
+              >
+                {refreshing ? "Refreshing…" : "Refresh Prices"}
+              </button>
+            </div>
           </div>
 
-          {/* --- Holdings Table --- */}
+          {/* ==== Holdings Table ==== */}
           <div className="basket-table-wrapper">
             <table className="basket-table">
               <thead>
@@ -103,7 +187,8 @@ export default function Portfolio() {
                   <th style={{ textAlign: "right" }}>Total Shares</th>
                   <th style={{ textAlign: "right" }}>Current Price</th>
                   <th style={{ textAlign: "right" }}>
-                    Current Value<br />
+                    Current Value
+                    <br />
                     <small style={{ fontWeight: 400, color: "#666" }}>
                       (and Daily % Change)
                     </small>
@@ -138,7 +223,7 @@ export default function Portfolio() {
         </>
       )}
 
-      {/* --- Centered Buttons --- */}
+      {/* ==== Buttons ==== */}
       <div
         className="portfolio-actions"
         style={{
@@ -155,6 +240,7 @@ export default function Portfolio() {
         >
           View Transactions
         </button>
+
         <button
           type="button"
           className="btn-primary"
@@ -163,18 +249,14 @@ export default function Portfolio() {
           Back to Wallet
         </button>
       </div>
+
+      {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
       <p className="form-disclosure">
-        <strong>Disclosure:</strong> Your <em>StockLoyal Portfolio</em> displays only the securities you’ve purchased through the <strong>StockLoyal app</strong>. 
-        These holdings are maintained directly with your brokerage firm, <strong>Charles Schwab</strong>. 
-        To view your complete investment portfolio, visit{" "}
-        <a
-          href="https://www.schwab.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: "#007bff", textDecoration: "underline" }}
-        >
-          Charles Schwab
-        </a>.
+        <strong>Disclosure:</strong> Your <em>StockLoyal Portfolio</em> displays
+        only the securities purchased through the <strong>StockLoyal app</strong>.
+        These holdings are maintained directly with your brokerage firm,
+        <strong> {memberBroker}</strong>. To view your full investment portfolio,
+        please visit your broker’s website or app.
       </p>
     </div>
   );
