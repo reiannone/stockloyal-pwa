@@ -2,8 +2,9 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useBasket } from "../context/BasketContext";
-import { useBroker } from "../context/BrokerContext";
 import { apiPost } from "../api.js";
+
+console.log("[Order] start localStorage item broker:", localStorage.getItem("broker"));
 
 // Simple UUID generator for basket_id
 function generateBasketId() {
@@ -14,8 +15,10 @@ export default function Order() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearBasket } = useBasket();
-  const { broker } = useBroker();
+  const broker = localStorage.getItem("broker");
   const memberId = localStorage.getItem("memberId");
+
+  console.log("[Order] localStorage item broker:", localStorage.getItem("broker"));
 
   // ✅ Basket data passed from Basket.jsx
   const enrichedBasket = location.state?.basket || [];
@@ -120,7 +123,7 @@ export default function Order() {
           points_used: pointsAlloc[i] || 0, // ✅ evenly split per order
           amount: perOrderAmount, // ✅ evenly split amount (simple split)
           order_type: "market",
-          broker: broker?.id || broker || "Not linked",
+          broker: broker || "Not linked",
         };
 
         console.log("[Order] place_order.php payload:", payload);
@@ -159,7 +162,7 @@ export default function Order() {
         } catch (err) {
           console.error("[Order] broker_confirm.php failed:", err);
         }
-      }, 20000);
+      }, 1000);
 
       // 4) Clear basket and navigate with basketId
       clearBasket();
@@ -233,7 +236,7 @@ export default function Order() {
         securities to your portfolio at the brokerage. Orders not filled in the current
         market day will be held over to the next trading day. The actual confirmation for
         this order will be provided by your broker directly to you. We will add these
-        settled trades to your StockLoyal portfolio. To execute <strong>sell market orders</strong>,
+        settled trades to your StockLoyal portfolio. To execute <strong>sell orders</strong>,
         please contact your broker directly through their application or service desk.
       </p>
 

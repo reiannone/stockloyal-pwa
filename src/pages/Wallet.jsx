@@ -49,7 +49,8 @@ export default function Wallet() {
             localStorage.setItem("sweep_percentage", String(data.wallet.sweep_percentage));
           if (typeof data.wallet?.broker !== "undefined")
             localStorage.setItem("broker", String(data.wallet.broker));
-          console.log("[Wallet] successful sync to localStorage", broker);
+          console.log("[Wallet] successful sync to localStorage item broker:", localStorage.getItem("broker"));
+          console.log("[Wallet] successful sync to localStorage with wallet.broker:", data.wallet?.broker);
         } catch (e) {
           console.warn("[Wallet] failed to sync to localStorage", e);
         }
