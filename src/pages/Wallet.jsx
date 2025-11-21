@@ -47,6 +47,9 @@ export default function Wallet() {
             localStorage.setItem("portfolio_value", Number(data.wallet.portfolio_value).toFixed(2));
           if (typeof data.wallet?.sweep_percentage !== "undefined")
             localStorage.setItem("sweep_percentage", String(data.wallet.sweep_percentage));
+          if (typeof data.wallet?.broker !== "undefined")
+            localStorage.setItem("broker", String(data.wallet.broker));
+          console.log("[Wallet] successful sync to localStorage", broker);
         } catch (e) {
           console.warn("[Wallet] failed to sync to localStorage", e);
         }
