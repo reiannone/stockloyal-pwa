@@ -66,17 +66,30 @@ export default function StockPicker() {
 
   // --- Helper: robust scroll to stock list (desktop + iOS) ---
   const scrollToStockList = () => {
-    const el = tableRef.current;
-    if (!el) return;
+    // Try multiple methods to find the element
+    const el = tableRef.current || document.getElementById("stock-list");
+    if (!el) {
+      console.log("Stock list element not found");
+      return;
+    }
 
-    const rect = el.getBoundingClientRect();
-    const offset = 80; // adjust if you have fixed header / top padding
-    const targetY = rect.top + window.scrollY - offset;
-
-    window.scrollTo({
-      top: targetY,
-      behavior: "smooth",
-    });
+    console.log("Scrolling to stock list");
+    
+    // Method 1: Try scrollIntoView first
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {
+      console.log("scrollIntoView failed, trying window.scrollTo");
+      // Method 2: Fallback to window.scrollTo
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const targetY = rect.top + scrollTop - 20;
+      
+      window.scrollTo({
+        top: targetY,
+        behavior: "smooth"
+      });
+    }
   };
 
   // --- Slider drag logic ---
@@ -153,12 +166,21 @@ export default function StockPicker() {
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
 
-  // --- When category & results are ready, scroll to stock list ---
+  // --- When results load, scroll to stock list ---
   useEffect(() => {
-    if (!category) return;
-    if (!results || results.length === 0) return;
-    scrollToStockList();
-  }, [category, results.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!category || results.length === 0) return;
+
+    console.log("Results loaded, scheduling scroll. Results count:", results.length);
+    
+    // Wait for React to paint the stock-list div with results
+    // Using longer timeout to ensure DOM is fully rendered
+    const timer = setTimeout(() => {
+      console.log("Timer fired, calling scrollToStockList");
+      scrollToStockList();
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [results]);
 
   // --- Points handler ---
   const handlePointsChange = (val) => {
@@ -172,6 +194,7 @@ export default function StockPicker() {
   // --- Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
     try {
+      // Set category first; effect above will scroll after render
       setCategory(cat);
       setStockError("");
       setResults([]);
@@ -180,7 +203,10 @@ export default function StockPicker() {
       if (!data || data.error) throw new Error(data.error || "Failed to load");
 
       const quotes =
-        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
+        data.finance?.result?.[0]?.quotes ??
+        data.data ??
+        data.results ??
+        [];
 
       const fetched = quotes.map((q) => ({
         symbol: q.symbol,
@@ -198,7 +224,6 @@ export default function StockPicker() {
       }));
 
       setResults(fetched);
-      // 🔁 Scroll now handled by useEffect on [category, results.length]
     } catch (err) {
       console.error("[StockPicker] proxy error:", err);
       setStockError("Failed to fetch stocks.");
@@ -231,7 +256,7 @@ export default function StockPicker() {
           change: data.change,
         },
       ]);
-      // 🔁 Scroll now handled by useEffect on [category, results.length]
+      // Scroll handled by useEffect on [category]
     } catch (err) {
       console.error("[StockPicker] symbol search error:", err);
       setStockError("Symbol lookup failed.");
