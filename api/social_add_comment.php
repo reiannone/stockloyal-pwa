@@ -34,6 +34,18 @@ if ($postId <= 0 || $memberId === '' || $text === '') {
 }
 
 try {
+    // Optional: verify the parent post exists
+    $check = $conn->prepare("SELECT id FROM social_posts WHERE id = :id");
+    $check->execute([':id' => $postId]);
+    if ($check->rowCount() === 0) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'error'   => 'Invalid post_id: parent post not found',
+        ]);
+        exit;
+    }
+
     $conn->beginTransaction();
 
     $stmt = $conn->prepare(
@@ -47,15 +59,26 @@ try {
         ':parent_id' => $parentId ?: null,
     ]);
 
-    $stmt = $conn->prepare("UPDATE social_posts SET comment_count = comment_count + 1 WHERE id = :post_id");
+    $stmt = $conn->prepare(
+        "UPDATE social_posts
+         SET comment_count = comment_count + 1
+         WHERE id = :post_id"
+    );
     $stmt->execute([':post_id' => $postId]);
 
     $conn->commit();
 
     echo json_encode(['success' => true]);
 } catch (Throwable $e) {
-    $conn->rollBack();
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
     error_log('social_add_comment error: ' . $e->getMessage());
+
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Unable to add comment']);
+    echo json_encode([
+        'success' => false,
+        'error'   => 'Unable to add comment',
+        // 'debug' => $e->getMessage(), // uncomment in dev if needed
+    ]);
 }

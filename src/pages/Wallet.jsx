@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
+import { CreditCard, BarChart2, RefreshCw, Share2 } from "lucide-react";
 import SharePointsSheet from "../components/SharePointsSheet.jsx"; // ✅ NEW
 
 export default function Wallet() {
@@ -273,31 +273,10 @@ export default function Wallet() {
               : `Active Broker: ${wallet.broker || "Unknown"}`}
           </button>
         </div>
-
-        {/* ✅ Social actions under the main wallet actions */}
-        <div style={{ marginTop: 10 }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ width: "100%", marginBottom: 6 }}
-            onClick={() => setIsShareOpen(true)}
-            disabled={sharePoints <= 0}
-          >
-            Share my investment
-          </button>
-          <button
-            type="button"
-            className="btn-tertiary"
-            style={{ width: "100%", fontSize: "0.85rem" }}
-            onClick={() => navigate("/social")}
-          >
-            View community feed
-          </button>
-        </div>
       </div>
 
       {/* --- Portfolio Section --- */}
-      <div className="card card--accent" style={{ marginTop: 14 }}>
+      <div className="card" style={{ marginTop: 14 }}>
         <div
           style={{
             display: "flex",
@@ -361,6 +340,69 @@ export default function Wallet() {
           </button>
         </div>
       </div>
+
+{/* --- Social Media Share Card --- */}
+<div className="card card--accent" style={{ marginTop: 14 }}>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 6,
+    }}
+  >
+    <div
+      style={{
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        background: "#f9fafb",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Share2 size={20} />
+    </div>
+
+    <div>
+      <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
+        Share Your Investment
+      </h3>
+      <p className="caption" style={{ marginTop: 2 }}>
+        Show friends how your loyalty points became real stock ownership.
+      </p>
+    </div>
+  </div>
+
+  <div
+    style={{
+      marginTop: 12,
+      display: "flex",
+      gap: 10,
+      justifyContent: "space-between",
+    }}
+  >
+    <button
+      type="button"
+      className="btn-primary"
+      style={{ flex: 1 }}
+      onClick={() => setIsShareOpen(true)}
+      disabled={sharePoints <= 0}
+    >
+      Share
+    </button>
+
+    <button
+      type="button"
+      className="btn-secondary"
+      style={{ flex: 1 }}
+      onClick={() => navigate("/social")}
+    >
+      Community Feed
+    </button>
+  </div>
+</div>
 
       {/* --- Sweep CTA --- */}
       <div style={{ marginTop: 14 }}>

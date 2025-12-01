@@ -1,15 +1,7 @@
 // src/components/SharePointsSheet.jsx
-import React, { useMemo, useState } from "react";
+import React from "react";
+import { X, Share2 } from "lucide-react";
 import { apiPost } from "../api.js";
-
-const STRATEGY_OPTIONS = [
-  { value: "", label: "No specific strategy" },
-  { value: "growth_tech", label: "Growth Tech" },
-  { value: "index_core", label: "Index Core" },
-  { value: "dividends", label: "Dividend Focus" },
-  { value: "balanced", label: "Balanced Mix" },
-  { value: "crypto_satellite", label: "Crypto Satellite" },
-];
 
 export default function SharePointsSheet({
   open,
@@ -20,205 +12,199 @@ export default function SharePointsSheet({
   primaryTicker,
   tickers = [],
 }) {
-  const [copied, setCopied] = useState(false);
-  const [shareToCommunity, setShareToCommunity] = useState(true);
-  const [strategyTag, setStrategyTag] = useState("");
-  const [caption, setCaption] = useState("");
-  const [posting, setPosting] = useState(false);
-
-  const safePoints = pointsUsed ?? 0;
-  const safeCash = cashValue ?? 0;
-
-  const shareUrl = useMemo(() => {
-    const base = window.location.origin || "https://app.stockloyal.com";
-    const params = new URLSearchParams();
-    if (memberId) params.set("ref", memberId);
-    return `${base}/#/login?${params.toString()}`;
-  }, [memberId]);
-
-  const shareText = useMemo(() => {
-    const pts = safePoints.toLocaleString();
-    const cash = safeCash.toFixed(2);
-
-    const lines = [
-      `I just converted ${pts} loyalty points into $${cash} of stock using StockLoyal 📈💙`,
-      caption ? `"${caption}"` : null,
-      "",
-      `Everyday spending → real investments.`,
-      `Check it out: ${shareUrl}`,
-      `#StockLoyal #InvestYourPoints`,
-    ].filter(Boolean);
-
-    return lines.join("\n");
-  }, [safePoints, safeCash, shareUrl, caption]);
-
-  // CRITICAL FIX: Early return MUST come AFTER all hooks
-  // This prevents the "Rendered more hooks than during the previous render" error
+  // If sheet is closed, render nothing (this is safe – no hooks above this)
   if (!open) return null;
 
-  const canNativeShare =
-    typeof navigator !== "undefined" && !!navigator.share;
+  const displayCash =
+    typeof cashValue === "number"
+      ? cashValue.toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+          minimumFractionDigits: 2,
+        })
+      : "$0.00";
 
-  const handleCopyOnly = async () => {
-    try {
-      await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("[SharePointsSheet] clipboard error:", err);
-    }
-  };
+  const tickerText =
+    primaryTicker ||
+    (Array.isArray(tickers) && tickers.length > 0
+      ? tickers.join(", ")
+      : "my stock portfolio");
 
-  const handleShare = async () => {
-    setPosting(true);
-    try {
-      // 1) Optionally create on-site social post
-      if (shareToCommunity && memberId) {
-        await apiPost("social_create_post.php", {
-          member_id: memberId,
-          points_used: safePoints,
-          cash_value: safeCash,
-          strategy_tag: strategyTag,
-          primary_ticker: primaryTicker || null,
-          tickers,
-          text: caption,
-        });
-      }
-
-      // 2) External/native share or fallback to copy
-      if (canNativeShare) {
-        await navigator.share({
-          title: "I'm investing my loyalty points with StockLoyal",
-          text: shareText,
-          url: shareUrl,
-        });
-      } else {
-        await navigator.clipboard.writeText(shareText);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-
-      onClose && onClose();
-    } catch (err) {
-      console.error("[SharePointsSheet] handleShare error:", err);
-      // optional: show a toast or alert
-    } finally {
-      setPosting(false);
-    }
-  };
+  const shareMessage = `I just converted ${pointsUsed || 0} loyalty points into ${displayCash} of stock using StockLoyal! 🚀 #StockLoyal #LoyaltyPoints #Investing`;
 
   return (
-    <div className="share-overlay" onClick={onClose}>
+    <div
+      className="sheet-backdrop"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
+        zIndex: 40,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-end",
+      }}
+      onClick={onClose}
+    >
       <div
-        className="share-sheet"
+        className="sheet-panel"
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          background: "#ffffff",
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          padding: "16px 16px 20px",
+          boxShadow: "0 -8px 24px rgba(0,0,0,0.15)",
+          marginBottom: "91px", 
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="share-sheet-header">
-          <div className="share-sheet-handle" />
-          <div className="share-sheet-title-row">
-            <h2 className="share-sheet-heading">Share your investment</h2>
-            <button
-              type="button"
-              className="share-close-btn"
-              onClick={onClose}
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Share2 size={18} />
+            <h3
+              style={{
+                margin: 0,
+                fontSize: "0.98rem",
+                fontWeight: 600,
+              }}
             >
-              ✕
-            </button>
+              Share Your Investment
+            </h3>
           </div>
-          <p className="share-subtitle">
-            Let friends and the StockLoyal community know you're turning
-            points into real investments.
-          </p>
-        </div>
-
-        <div className="share-sheet-content">
-          <div className="share-summary-card">
-            <p className="share-summary-label">You just allocated</p>
-            <p className="share-summary-main">
-              {safePoints.toLocaleString()} pts → ${safeCash.toFixed(2)} in stock
-            </p>
-            <p className="share-summary-caption">
-              Shared from your StockLoyal wallet
-            </p>
-          </div>
-
-          {/* Share to community toggle */}
-          <label className="share-preview-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={shareToCommunity}
-              onChange={(e) => setShareToCommunity(e.target.checked)}
-            />
-            Also post to the StockLoyal community
-          </label>
-
-          {/* Strategy select */}
-          {shareToCommunity && (
-            <div style={{ margin: "6px 0 10px" }}>
-              <label className="share-preview-label" htmlFor="strategySelect">
-                Strategy / Community tag
-              </label>
-              <select
-                id="strategySelect"
-                className="member-form-input"
-                value={strategyTag}
-                onChange={(e) => setStrategyTag(e.target.value)}
-                style={{ width: "100%", fontSize: "0.85rem" }}
-              >
-                {STRATEGY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Caption */}
-          <div style={{ marginTop: 4 }}>
-            <label className="share-preview-label" htmlFor="captionInput">
-              Optional caption
-            </label>
-            <input
-              id="captionInput"
-              className="member-form-input"
-              placeholder="e.g., Moving my airline points into tech instead ✈️➡️📈"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              style={{ width: "100%", marginBottom: 8 }}
-            />
-          </div>
-
-          <label className="share-preview-label">Post preview</label>
-          <textarea
-            readOnly
-            className="share-preview-textarea"
-            value={shareText}
-          />
-        </div>
-
-        <div className="share-sheet-footer">
           <button
             type="button"
-            className="btn-primary"
-            style={{ width: "100%", marginBottom: 8 }}
-            onClick={handleShare}
-            disabled={posting}
+            onClick={onClose}
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: 4,
+              cursor: "pointer",
+            }}
+            aria-label="Close share sheet"
           >
-            {posting ? "Sharing…" : "Share now"}
+            <X size={18} />
           </button>
-
-          {!canNativeShare && (
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ width: "100%" }}
-              onClick={handleCopyOnly}
-            >
-              {copied ? "Copied!" : "Copy text to share"}
-            </button>
-          )}
         </div>
+
+        {/* Summary blurb */}
+        <p
+          className="caption"
+          style={{
+            marginTop: 4,
+            marginBottom: 10,
+            fontSize: "0.8rem",
+            color: "#4b5563",
+          }}
+        >
+          You just turned{" "}
+          <strong>{pointsUsed?.toLocaleString("en-US") || 0} points</strong> into{" "}
+          <strong>{displayCash}</strong> of stock. Share your StockLoyal moment
+          with friends!
+        </p>
+
+        {/* Message preview */}
+        <div
+          style={{
+            fontSize: "0.8rem",
+            background: "#f9fafb",
+            borderRadius: 10,
+            padding: "10px 12px",
+            marginBottom: 12,
+            border: "1px solid #e5e7eb",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {shareMessage}
+        </div>
+
+        {/* Share buttons (side by side, matching your Wallet layout) */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            marginTop: 8,
+          }}
+        >
+          <button
+  type="button"
+  className="btn-primary"
+  style={{ flex: 1 }}
+  onClick={async () => {
+    try {
+      // This is the text the API wants
+      const text = shareMessage;
+
+      // TODO: use the real post/thread id once you know it.
+      // For now, you can use 1 as a “global feed” post id
+      const payload = {
+        member_id: memberId,   // 🔴 REQUIRED
+        text,                  // 🔴 REQUIRED
+        // Optional extra fields (backend will likely just ignore them)
+        points_used: pointsUsed || 0,
+        cash_value:
+          typeof cashValue === "number" ? cashValue : 0,
+        primary_ticker: primaryTicker || null,
+        tickers: tickers || [],
+      };
+
+      console.log("[SharePointsSheet] posting payload:", payload);
+
+      const res = await apiPost("social_create_post.php", payload);
+
+      if (!res || res.success === false) {
+        console.error("[SharePointsSheet] share failed", res);
+        alert(
+          res?.error ||
+            res?.message ||
+            "We couldn't save your share to the StockLoyal feed."
+        );
+      } else {
+        alert("Shared to your StockLoyal community feed! 🎉");
+      }
+    } catch (err) {
+      console.error("[SharePointsSheet] share error", err);
+      alert("Network error when posting your share. Please try again.");
+    } finally {
+      onClose && onClose();
+    }
+  }}
+>
+  Share
+</button>
+
+
+
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ flex: 1 }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Tiny footer note */}
+        <p
+          className="caption"
+          style={{
+            marginTop: 10,
+            fontSize: "0.7rem",
+            color: "#9ca3af",
+          }}
+        >
+          Member ID: {memberId}
+        </p>
       </div>
     </div>
   );
