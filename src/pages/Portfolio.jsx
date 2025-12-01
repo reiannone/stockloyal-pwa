@@ -46,6 +46,8 @@ export default function Portfolio() {
           member_id: memberId,
         });
 
+        console.log("[Portfolio] response data:", data);
+
         if (!data.success) {
           setError(data.error || "Failed to load portfolio.");
           return;

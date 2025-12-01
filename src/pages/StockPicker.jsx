@@ -55,6 +55,7 @@ export default function StockPicker() {
   const [results, setResults] = useState([]);
   const [stockError, setStockError] = useState("");
   const [selectedStocks, setSelectedStocks] = useState([]);
+  const [loadingCategory, setLoadingCategory] = useState(false);
 
   // --- Symbol search state ---
   const [symbolInput, setSymbolInput] = useState("");
@@ -62,37 +63,11 @@ export default function StockPicker() {
 
   // --- Refs ---
   const sliderRef = useRef(null);
-  const tableRef = useRef(null);
 
-  // --- Helper: robust scroll to stock list (desktop + iOS) ---
-  const scrollToStockList = () => {
-    // Try multiple methods to find the element
-    const el = tableRef.current || document.getElementById("stock-list");
-    if (!el) {
-      console.log("Stock list element not found");
-      return;
-    }
+  // ✅ Bottom-sheet open/close state
+  const [isStockListOpen, setIsStockListOpen] = useState(false);
 
-    console.log("Scrolling to stock list");
-    
-    // Method 1: Try scrollIntoView first
-    try {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (e) {
-      console.log("scrollIntoView failed, trying window.scrollTo");
-      // Method 2: Fallback to window.scrollTo
-      const rect = el.getBoundingClientRect();
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      const targetY = rect.top + scrollTop - 20;
-      
-      window.scrollTo({
-        top: targetY,
-        behavior: "smooth"
-      });
-    }
-  };
-
-  // --- Slider drag logic ---
+  // --- Slider drag logic for categories ---
   const isDragging = useRef(false);
   const startX = useRef(0);
   const scrollLeft = useRef(0);
@@ -166,22 +141,6 @@ export default function StockPicker() {
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
 
-  // --- When results load, scroll to stock list ---
-  useEffect(() => {
-    if (!category || results.length === 0) return;
-
-    console.log("Results loaded, scheduling scroll. Results count:", results.length);
-    
-    // Wait for React to paint the stock-list div with results
-    // Using longer timeout to ensure DOM is fully rendered
-    const timer = setTimeout(() => {
-      console.log("Timer fired, calling scrollToStockList");
-      scrollToStockList();
-    }, 300);
-    
-    return () => clearTimeout(timer);
-  }, [results]);
-
   // --- Points handler ---
   const handlePointsChange = (val) => {
     let v = parseInt(val ?? "0", 10);
@@ -194,10 +153,12 @@ export default function StockPicker() {
   // --- Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
     try {
-      // Set category first; effect above will scroll after render
       setCategory(cat);
       setStockError("");
       setResults([]);
+      setSelectedStocks([]);
+      setIsStockListOpen(true);      // 🔥 open the bottom sheet
+      setLoadingCategory(true);
 
       const data = await apiPost("proxy.php", { scrId });
       if (!data || data.error) throw new Error(data.error || "Failed to load");
@@ -227,15 +188,19 @@ export default function StockPicker() {
     } catch (err) {
       console.error("[StockPicker] proxy error:", err);
       setStockError("Failed to fetch stocks.");
+    } finally {
+      setLoadingCategory(false);
     }
   };
 
-  // --- Symbol lookup ---
+  // --- Symbol lookup (OPTIONAL: also open sheet on symbol search) ---
   const handleSymbolSearch = async () => {
     if (!symbolInput.trim()) return;
     setSearching(true);
     setStockError("");
     setResults([]);
+    setSelectedStocks([]);
+    setIsStockListOpen(true);    // also use sheet for symbol lookup
 
     try {
       const data = await apiPost("symbol-lookup.php", {
@@ -256,7 +221,6 @@ export default function StockPicker() {
           change: data.change,
         },
       ]);
-      // Scroll handled by useEffect on [category]
     } catch (err) {
       console.error("[StockPicker] symbol search error:", err);
       setStockError("Symbol lookup failed.");
@@ -284,6 +248,10 @@ export default function StockPicker() {
     navigate("/basket", {
       state: { category, amount: cashValue, pointsUsed: selectedPoints, memberId },
     });
+  };
+
+  const handleCloseStockList = () => {
+    setIsStockListOpen(false);
   };
 
   // --- Render ---
@@ -467,7 +435,9 @@ export default function StockPicker() {
           </div>
         </div>
         {searching && <p className="caption" style={{ marginTop: 8 }}>Searching…</p>}
-        {stockError && <p className="points-error" style={{ marginTop: 8 }}>{stockError}</p>}
+        {stockError && !isStockListOpen && (
+          <p className="points-error" style={{ marginTop: 8 }}>{stockError}</p>
+        )}
       </div>
 
       {/* Categories */}
@@ -524,95 +494,117 @@ export default function StockPicker() {
         ))}
       </div>
 
-      {/* Stock list */}
-      {category && (
-        <div
-          id="stock-list"
-          ref={tableRef}
-          className={`stocklist-container ${results.length > 0 ? "show" : ""}`}
-          style={{ marginTop: 16, marginBottom: 120 }}
-        >
-          <h2 className="stocklist-heading" style={{ textAlign: "center" }}>
-            {category} Stocks
-          </h2>
-          {stockError && <p className="stocklist-error">{stockError}</p>}
-          {!stockError && results.length === 0 && (
-            <p className="stocklist-empty">No stocks found.</p>
-          )}
-          {results.length > 0 && (
-            <div className="stocklist-table-wrapper">
-              <table className="stocklist-table">
-                <thead>
-                  <tr>
-                    <th>Select</th>
-                    <th>Symbol</th>
-                    <th>Name</th>
-                    <th>
-                      Price
-                      <br />
-                      Change %
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((stock) => (
-                    <tr key={stock.symbol} className="stock-row">
-                      <td className="text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedStocks.includes(stock.symbol)}
-                          onChange={() => toggleSelect(stock.symbol)}
-                        />
-                      </td>
-                      <td className="symbol">{stock.symbol}</td>
-                      <td className="text-left">{stock.name || "-"}</td>
-                      <td className="price-change">
-                        <div className="price">
-                          {stock.price ? `$${stock.price.toFixed(2)}` : "N/A"}
-                        </div>
-                        <div
-                          className={
-                            stock.change > 0
-                              ? "change-positive"
-                              : stock.change < 0
-                              ? "change-negative"
-                              : "change-neutral"
-                          }
-                        >
-                          {typeof stock.change === "number"
-                            ? stock.change.toFixed(2)
-                            : Number(stock.change || 0).toFixed(2)}
-                          %
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* 🔥 Bottom-sheet Stock list overlay */}
+      {isStockListOpen && (
+        <div className="stocklist-overlay" onClick={handleCloseStockList}>
+          <div
+            className="stocklist-sheet"
+            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+          >
+            <div className="stocklist-sheet-header">
+              <div className="stocklist-sheet-handle" />
+              <div className="stocklist-sheet-title-row">
+                <h2 className="stocklist-heading">
+                  {category ? `${category} Stocks` : "Stocks"}
+                </h2>
+                <button
+                  type="button"
+                  className="stocklist-close-btn"
+                  onClick={handleCloseStockList}
+                >
+                  ✕
+                </button>
+              </div>
+              {loadingCategory && (
+                <p className="stocklist-loading">Loading stocks…</p>
+              )}
+              {stockError && !loadingCategory && (
+                <p className="stocklist-error">{stockError}</p>
+              )}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* Floating actions */}
-      {(category || selectedStocks.length > 0) && (
-        <div className="floating-actions">
-          <button
-            type="button"
-            onClick={handleContinueStocks}
-            className="btn-primary"
-            style={{ width: "90%", maxWidth: 320, marginBottom: 8 }}
-          >
-            Continue with Selected
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate("/wallet")}
-            className="btn-secondary"
-            style={{ width: "90%", maxWidth: 320 }}
-          >
-            Back to Wallet
-          </button>
+            <div className="stocklist-sheet-content">
+              {!loadingCategory && !stockError && results.length === 0 && (
+                <p className="stocklist-empty">No stocks found.</p>
+              )}
+
+              {results.length > 0 && (
+                <div className="stocklist-table-wrapper">
+                  <table className="stocklist-table">
+                    <thead>
+                      <tr>
+                        <th>Select</th>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>
+                          Price
+                          <br />
+                          Change %
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.map((stock) => (
+                        <tr key={stock.symbol} className="stock-row">
+                          <td className="text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedStocks.includes(stock.symbol)}
+                              onChange={() => toggleSelect(stock.symbol)}
+                            />
+                          </td>
+                          <td className="symbol">{stock.symbol}</td>
+                          <td className="text-left">{stock.name || "-"}</td>
+                          <td className="price-change">
+                            <div className="price">
+                              {stock.price ? `$${stock.price.toFixed(2)}` : "N/A"}
+                            </div>
+                            <div
+                              className={
+                                stock.change > 0
+                                  ? "change-positive"
+                                  : stock.change < 0
+                                  ? "change-negative"
+                                  : "change-neutral"
+                              }
+                            >
+                              {typeof stock.change === "number"
+                                ? stock.change.toFixed(2)
+                                : Number(stock.change || 0).toFixed(2)}
+                              %
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Sheet footer actions */}
+            <div className="stocklist-sheet-footer">
+              <button
+                type="button"
+                onClick={handleContinueStocks}
+                className="btn-primary"
+                style={{ width: "100%", marginBottom: 8 }}
+              >
+                Continue with Selected
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStockListOpen(false);
+                  navigate("/wallet");
+                }}
+                className="btn-secondary"
+                style={{ width: "100%" }}
+              >
+                Back to Wallet
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

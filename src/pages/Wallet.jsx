@@ -3,11 +3,13 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { CreditCard, BarChart2, RefreshCw } from "lucide-react";
+import SharePointsSheet from "../components/SharePointsSheet.jsx"; // ✅ NEW
 
 export default function Wallet() {
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isShareOpen, setIsShareOpen] = useState(false); // ✅ NEW
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
 
@@ -40,17 +42,35 @@ export default function Wallet() {
         // Sync to localStorage
         try {
           if (data.wallet?.points != null)
-            localStorage.setItem("points", String(parseInt(data.wallet.points, 10) || 0));
+            localStorage.setItem(
+              "points",
+              String(parseInt(data.wallet.points, 10) || 0)
+            );
           if (data.wallet?.cash_balance != null)
-            localStorage.setItem("cashBalance", Number(data.wallet.cash_balance).toFixed(2));
+            localStorage.setItem(
+              "cashBalance",
+              Number(data.wallet.cash_balance).toFixed(2)
+            );
           if (typeof data.wallet?.portfolio_value !== "undefined")
-            localStorage.setItem("portfolio_value", Number(data.wallet.portfolio_value).toFixed(2));
+            localStorage.setItem(
+              "portfolio_value",
+              Number(data.wallet.portfolio_value).toFixed(2)
+            );
           if (typeof data.wallet?.sweep_percentage !== "undefined")
-            localStorage.setItem("sweep_percentage", String(data.wallet.sweep_percentage));
+            localStorage.setItem(
+              "sweep_percentage",
+              String(data.wallet.sweep_percentage)
+            );
           if (typeof data.wallet?.broker !== "undefined")
             localStorage.setItem("broker", String(data.wallet.broker));
-          console.log("[Wallet] successful sync to localStorage item broker:", localStorage.getItem("broker"));
-          console.log("[Wallet] successful sync to localStorage with wallet.broker:", data.wallet?.broker);
+          console.log(
+            "[Wallet] successful sync to localStorage item broker:",
+            localStorage.getItem("broker")
+          );
+          console.log(
+            "[Wallet] successful sync to localStorage with wallet.broker:",
+            data.wallet?.broker
+          );
         } catch (e) {
           console.warn("[Wallet] failed to sync to localStorage", e);
         }
@@ -75,7 +95,8 @@ export default function Wallet() {
       minimumFractionDigits: 2,
     });
 
-  const formatPoints = (val) => (parseInt(val, 10) || 0).toLocaleString("en-US");
+  const formatPoints = (val) =>
+    (parseInt(val, 10) || 0).toLocaleString("en-US");
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -112,11 +133,21 @@ export default function Wallet() {
         <h2 className="wallet-heading">Wallet</h2>
         <div className="card card--muted">
           <p className="form-error">{error}</p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              justifyContent: "center",
+              marginTop: 12,
+            }}
+          >
             <button className="btn-primary" onClick={handleRefresh}>
               Retry
             </button>
-            <button className="btn-secondary" onClick={() => navigate("/login")}>
+            <button
+              className="btn-secondary"
+              onClick={() => navigate("/login")}
+            >
               Sign In
             </button>
           </div>
@@ -136,7 +167,9 @@ export default function Wallet() {
 
   // --- Determine broker status ---
   const notLinked =
-    !wallet.broker || wallet.broker === "Not linked" || wallet.broker === "unlinked";
+    !wallet.broker ||
+    wallet.broker === "Not linked" ||
+    wallet.broker === "unlinked";
 
   const points = parseInt(wallet.points || 0, 10);
   const baseCash = Number(wallet.cash_balance || 0);
@@ -145,7 +178,13 @@ export default function Wallet() {
   const sweepPct = wallet.sweep_percentage ?? null;
   const merchantName = wallet.merchant_name || "Merchant";
 
-  const effectiveCashBalance = baseCash + (conversionRate > 0 ? points * conversionRate : 0);
+  const effectiveCashBalance =
+    baseCash + (conversionRate > 0 ? points * conversionRate : 0);
+
+  // ✅ Social share stats: focus on the points → $ portion
+  const sharePoints = points > 0 ? points : 0;
+  const shareCashValue =
+    conversionRate > 0 ? sharePoints * conversionRate : 0;
 
   return (
     <div className="wallet-container">
@@ -181,7 +220,9 @@ export default function Wallet() {
               <CreditCard size={24} />
             </div>
             <div>
-              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Available Cash</div>
+              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+                Available Cash
+              </div>
               <div className="caption">Spendable balance</div>
             </div>
           </div>
@@ -227,7 +268,30 @@ export default function Wallet() {
             className={notLinked ? "btn-primary" : "btn-secondary"}
             onClick={() => navigate("/select-broker")}
           >
-            {notLinked ? "Link Broker" : `Active Broker: ${wallet.broker || "Unknown"}`}
+            {notLinked
+              ? "Link Broker"
+              : `Active Broker: ${wallet.broker || "Unknown"}`}
+          </button>
+        </div>
+
+        {/* ✅ Social actions under the main wallet actions */}
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ width: "100%", marginBottom: 6 }}
+            onClick={() => setIsShareOpen(true)}
+            disabled={sharePoints <= 0}
+          >
+            Share my investment
+          </button>
+          <button
+            type="button"
+            className="btn-tertiary"
+            style={{ width: "100%", fontSize: "0.85rem" }}
+            onClick={() => navigate("/social")}
+          >
+            View community feed
           </button>
         </div>
       </div>
@@ -257,7 +321,9 @@ export default function Wallet() {
               <BarChart2 size={24} />
             </div>
             <div>
-              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Portfolio Value</div>
+              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+                Portfolio Value
+              </div>
               <div className="caption">Market value of investments</div>
             </div>
           </div>
@@ -281,10 +347,16 @@ export default function Wallet() {
             justifyContent: "flex-end",
           }}
         >
-          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>
+          <button
+            className="btn-secondary"
+            onClick={() => navigate("/portfolio")}
+          >
             View Portfolio
           </button>
-          <button className="btn-secondary" onClick={() => navigate("/transactions")}>
+          <button
+            className="btn-secondary"
+            onClick={() => navigate("/transactions")}
+          >
             View Transactions
           </button>
         </div>
@@ -293,11 +365,19 @@ export default function Wallet() {
       {/* --- Sweep CTA --- */}
       <div style={{ marginTop: 14 }}>
         {wallet.election_type === "monthly" ? (
-          <button type="button" onClick={() => navigate("/election")} className="btn-gold">
+          <button
+            type="button"
+            onClick={() => navigate("/election")}
+            className="btn-gold"
+          >
             You are a Monthly Sweep subscriber
           </button>
         ) : (
-          <button type="button" onClick={() => navigate("/election")} className="btn-gold">
+          <button
+            type="button"
+            onClick={() => navigate("/election")}
+            className="btn-gold"
+          >
             Enroll in Monthly Sweep subscription
           </button>
         )}
@@ -305,7 +385,8 @@ export default function Wallet() {
 
       {/* --- Footer --- */}
       <p className="wallet-note" style={{ marginTop: 12 }}>
-        Investment portfolio reflects shares purchased through the StockLoyal app only.{" "}
+        Investment portfolio reflects shares purchased through the StockLoyal
+        app only.{" "}
         {wallet.broker && wallet.broker_url && (
           <>
             To see your full portfolio at {wallet.broker}, click{" "}
@@ -329,13 +410,27 @@ export default function Wallet() {
         title="Refresh"
         style={{ width: "auto", padding: "0.4rem 0.6rem" }}
       >
-        <RefreshCw size={16} style={{ verticalAlign: "middle", marginRight: 6 }} />
+        <RefreshCw
+          size={16}
+          style={{ verticalAlign: "middle", marginRight: 6 }}
+        />
         Refresh
       </button>
 
       <p className="caption" style={{ marginTop: 12 }}>
         StockLoyal Member ID: {wallet.member_id}
       </p>
+
+      {/* ✅ Social share bottom sheet */}
+      <SharePointsSheet
+        open={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        memberId={memberId}
+        pointsUsed={sharePoints}
+        cashValue={shareCashValue}
+        primaryTicker={null} // later: pass real tickers from last order
+        tickers={[]}
+      />
     </div>
   );
 }

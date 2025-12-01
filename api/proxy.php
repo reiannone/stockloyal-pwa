@@ -38,7 +38,7 @@ $scrId = isset($_GET['scrId'])
 
 $symbol = is_array($post) && !empty($post['symbol']) ? trim($post['symbol']) : null;
 
-$ua = "Mozilla/5.0 (StockLoyal Proxy; +https://stockloyal.com)";
+$ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 $curlTimeout = 20;
 $cacheDir = __DIR__ . "/cache";
 @mkdir($cacheDir, 0755);
@@ -61,8 +61,8 @@ try {
             exit;
         }
 
-        if (count($symbols) > 1) {
-            // --- Multi-symbol quote API ---
+        if (count($symbols) >= 1) {
+            // --- Multi-symbol quote API (also works for single symbol) ---
             $url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" . urlencode($symbolKey);
             L("multi-symbol fetch: {$url}");
 
@@ -72,109 +72,117 @@ try {
                 CURLOPT_FOLLOWLOCATION => true,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_USERAGENT => $ua,
-                CURLOPT_TIMEOUT => $curlTimeout
+                CURLOPT_TIMEOUT => $curlTimeout,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json',
+                    'Accept-Language: en-US,en;q=0.9',
+                ]
             ]);
 
             $resp = curl_exec($curl);
             $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            
             if ($resp === false || $http !== 200) {
-                echo json_encode(["success" => false, "error" => "Yahoo proxy quote request failed", "http" => $http]);
-                exit;
+                L("Quote API failed with HTTP {$http}, trying chart fallback");
+                // Fall through to chart-based fallback below
+            } else {
+                $data = json_decode($resp, true);
+                $results = $data['quoteResponse']['result'] ?? [];
+
+                if (!empty($results)) {
+                    $out = [
+                        "success" => true,
+                        "count"   => count($results),
+                        "data"    => array_map(function ($q) {
+                            // Calculate change percentage from price and previous close if not directly available
+                            $price = $q['regularMarketPrice'] ?? null;
+                            $prevClose = $q['regularMarketPreviousClose'] ?? $q['previousClose'] ?? null;
+                            
+                            // Try to get change percent directly first
+                            $changePercent = $q['regularMarketChangePercent'] ?? null;
+                            
+                            // If not available, calculate it
+                            if ($changePercent === null && $price !== null && $prevClose !== null && $prevClose > 0) {
+                                $changePercent = (($price - $prevClose) / $prevClose) * 100;
+                            }
+                            
+                            // Also check for regularMarketChange and calculate from that
+                            if ($changePercent === null && isset($q['regularMarketChange']) && $prevClose !== null && $prevClose > 0) {
+                                $changePercent = ($q['regularMarketChange'] / $prevClose) * 100;
+                            }
+                            
+                            return [
+                                "symbol"    => $q['symbol'],
+                                "name"      => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
+                                "price"     => $price,
+                                "change"    => $changePercent !== null ? round((float)$changePercent, 2) : 0,
+                                "currency"  => $q['currency'] ?? "USD",
+                                "prevClose" => $prevClose,
+                            ];
+                        }, $results)
+                    ];
+
+                    @file_put_contents($cacheFile, json_encode($out));
+                    echo json_encode($out);
+                    exit;
+                }
             }
+            
+            // --- Fallback: Use chart API for each symbol ---
+            L("Using chart API fallback for symbols: {$symbolKey}");
+            $chartResults = [];
+            
+            foreach ($symbols as $sym) {
+                $chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/{$sym}?interval=1d&range=5d";
+                L("chart fetch: {$chartUrl}");
 
-            $data = json_decode($resp, true);
-            $results = $data['quoteResponse']['result'] ?? [];
+                curl_setopt_array($curl, [
+                    CURLOPT_URL => $chartUrl,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_USERAGENT => $ua,
+                    CURLOPT_TIMEOUT => $curlTimeout
+                ]);
 
+                $chartResp = curl_exec($curl);
+                $price = $change = $name = null;
+                $prevClose = null;
+
+                if ($chartResp) {
+                    $cj = json_decode($chartResp, true);
+                    $meta = $cj['chart']['result'][0]['meta'] ?? null;
+                    if ($meta) {
+                        $price = $meta['regularMarketPrice'] ?? null;
+                        $prevClose = $meta['chartPreviousClose'] ?? $meta['previousClose'] ?? null;
+                        $name = $meta['shortName'] ?? $meta['longName'] ?? $sym;
+                        
+                        if ($price !== null && $prevClose !== null && $prevClose > 0) {
+                            $change = (($price - $prevClose) / $prevClose) * 100;
+                        }
+                    }
+                }
+                
+                $chartResults[] = [
+                    "symbol"    => $sym,
+                    "name"      => $name ?? $sym,
+                    "price"     => $price !== null ? (float)$price : null,
+                    "change"    => $change !== null ? round((float)$change, 2) : 0,
+                    "currency"  => "USD",
+                    "prevClose" => $prevClose,
+                ];
+            }
+            
             $out = [
                 "success" => true,
-                "count"   => count($results),
-                "data"    => array_map(function ($q) {
-                    return [
-                        "symbol"    => $q['symbol'],
-                        "name"      => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
-                        "price"     => $q['regularMarketPrice'] ?? null,
-                        "change"    => $q['regularMarketChangePercent'] ?? 0,
-                        "currency"  => $q['currency'] ?? "USD",
-                    ];
-                }, $results)
+                "count"   => count($chartResults),
+                "data"    => $chartResults
             ];
 
             @file_put_contents($cacheFile, json_encode($out));
             echo json_encode($out);
             exit;
         }
-
-        // --- Single-symbol path (search + chart fallback) ---
-        $q = urlencode($symbol);
-        $searchUrl = "https://query1.finance.yahoo.com/v1/finance/search?q={$q}&lang=en-US&region=US&quotesCount=1";
-        L("symbol search: {$symbol} -> {$searchUrl}");
-
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $searchUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_USERAGENT => $ua,
-            CURLOPT_TIMEOUT => $curlTimeout
-        ]);
-
-        $resp = curl_exec($curl);
-        $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        if ($resp === false || $http !== 200) {
-            echo json_encode(["Proxy success" => false, "error" => "Yahoo search failed", "http" => $http]);
-            exit;
-        }
-
-        $j = json_decode($resp, true);
-        $quotes = $j['quotes'] ?? ($j['finance']['result'][0]['quotes'] ?? []);
-        if (empty($quotes)) {
-            echo json_encode(["success" => false, "error" => "Yahoo Proxy Symbol not found"]);
-            exit;
-        }
-
-        $q0 = $quotes[0];
-        $outSymbol = $q0['symbol'] ?? ($q0['id'] ?? $symbol);
-        $name = $q0['shortname'] ?? $q0['longname'] ?? $q0['name'] ?? ($q0['title'] ?? $outSymbol);
-
-        // --- Chart fallback to get latest price ---
-        $chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/{$outSymbol}?interval=1d&range=1d";
-        L("chart fetch: {$chartUrl}");
-
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $chartUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_USERAGENT => $ua,
-            CURLOPT_TIMEOUT => $curlTimeout
-        ]);
-
-        $chartResp = curl_exec($curl);
-        $price = $change = null;
-
-        if ($chartResp) {
-            $cj = json_decode($chartResp, true);
-            $meta = $cj['chart']['result'][0]['meta'] ?? null;
-            if ($meta) {
-                $price = $meta['regularMarketPrice'] ?? null;
-                $prevClose = $meta['regularMarketPreviousClose'] ?? null; 
-                if ($price && $prevClose) {
-                    $change = (($price - $prevClose) / $prevClose) * 100;
-                }
-            }
-        }
-
-        $out = [
-            "success" => true,
-            "symbol"  => $outSymbol,
-            "name"    => $name,
-            "price"   => ($price !== null ? floatval($price) : null),
-            "change"  => ($change !== null ? floatval($change) : 0)
-        ];
-
-        @file_put_contents($cacheFile, json_encode($out));
-        echo json_encode($out);
-        exit;
     }
 
     // -----------------------------------------------------------

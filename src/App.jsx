@@ -34,6 +34,9 @@ import DemoLaunch from "./pages/DemoLaunch.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
 
+// ⭐ NEW: community feed
+import SocialFeed from "./pages/SocialFeed.jsx";
+
 function App() {
   const location = useLocation();
 
@@ -46,23 +49,43 @@ function App() {
             <Route path="/" element={<SplashScreen />} />
             <Route
               path="/promotions"
-              element={<PageWrapper><Promotions /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Promotions />
+                </PageWrapper>
+              }
             />
             <Route
               path="/login"
-              element={<PageWrapper><Login /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Login />
+                </PageWrapper>
+              }
             />
             <Route
               path="/terms"
-              element={<PageWrapper><Terms /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Terms />
+                </PageWrapper>
+              }
             />
             <Route
               path="/goodbye"
-              element={<PageWrapper><Goodbye /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Goodbye />
+                </PageWrapper>
+              }
             />
             <Route
               path="/skyblue-rewards"
-              element={<PageWrapper><SkyBlueRewards /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <SkyBlueRewards />
+                </PageWrapper>
+              }
             />
           </Route>
 
@@ -70,75 +93,157 @@ function App() {
           <Route element={<Layout />}>
             <Route
               path="/about"
-              element={<PageWrapper><About /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <About />
+                </PageWrapper>
+              }
             />
             <Route
               path="/member-onboard"
-              element={<PageWrapper><MemberOnboard /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <MemberOnboard />
+                </PageWrapper>
+              }
             />
             <Route
               path="/wallet"
-              element={<PageWrapper><Wallet /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Wallet />
+                </PageWrapper>
+              }
             />
             <Route
               path="/convert"
-              element={<PageWrapper><Convert /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Convert />
+                </PageWrapper>
+              }
             />
             <Route
               path="/order"
-              element={<PageWrapper><Order /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Order />
+                </PageWrapper>
+              }
             />
             <Route
               path="/order-confirmation"
-              element={<PageWrapper><OrderConfirmation /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <OrderConfirmation />
+                </PageWrapper>
+              }
             />
             <Route
               path="/select-broker"
-              element={<PageWrapper><SelectBroker /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <SelectBroker />
+                </PageWrapper>
+              }
             />
             <Route
               path="/election"
-              element={<PageWrapper><Election /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Election />
+                </PageWrapper>
+              }
             />
             <Route
               path="/points-select"
-              element={<PageWrapper><PointsSelect /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <PointsSelect />
+                </PageWrapper>
+              }
             />
             <Route
               path="/stock-picker"
-              element={<PageWrapper><StockPicker /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <StockPicker />
+                </PageWrapper>
+              }
             />
             <Route
               path="/basket"
-              element={<PageWrapper><Basket /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Basket />
+                </PageWrapper>
+              }
             />
             <Route
               path="/portfolio"
-              element={<PageWrapper><Portfolio /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Portfolio />
+                </PageWrapper>
+              }
             />
             <Route
               path="/transactions"
-              element={<PageWrapper><Transactions /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Transactions />
+                </PageWrapper>
+              }
             />
             <Route
               path="/admin"
-              element={<PageWrapper><Admin /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <Admin />
+                </PageWrapper>
+              }
             />
             <Route
               path="/wallet-admin"
-              element={<PageWrapper><WalletAdmin /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <WalletAdmin />
+                </PageWrapper>
+              }
             />
             <Route
               path="/ledger-admin"
-              element={<PageWrapper><LedgerAdmin /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <LedgerAdmin />
+                </PageWrapper>
+              }
             />
             <Route
               path="/admin-faq"
-              element={<PageWrapper><AdminFAQ /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <AdminFAQ />
+                </PageWrapper>
+              }
             />
             <Route
               path="/demo-launch"
-              element={<PageWrapper><DemoLaunch /></PageWrapper>}
+              element={
+                <PageWrapper>
+                  <DemoLaunch />
+                </PageWrapper>
+              }
+            />
+
+            {/* ⭐ NEW: social / community feed route */}
+            <Route
+              path="/social"
+              element={
+                <PageWrapper>
+                  <SocialFeed />
+                </PageWrapper>
+              }
             />
           </Route>
         </Routes>

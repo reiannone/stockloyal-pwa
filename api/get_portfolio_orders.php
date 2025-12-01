@@ -55,7 +55,7 @@ try {
     $symbols = array_column($rows, 'symbol');
     $symbolList = implode(',', $symbols);
 
-    $proxyUrl = "http://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/proxy.php";
+    $proxyUrl = "http://localhost/api/proxy.php";
     $ch = curl_init($proxyUrl);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,

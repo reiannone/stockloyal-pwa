@@ -47,23 +47,24 @@ function Login() {
       return;
     }
 
-    // Otherwise, auto-detect if this is a new vs existing member based on wallet.member_email
+    // Otherwise, auto-detect if this is a new vs existing member
     (async () => {
       try {
         const data = await apiPost("check_wallet_member.php", {
           merchant_id: lsMerchantId,
-          member_email: initialEmail, // 👈 key check: wallet.member_email
+          // 🔴 API expects member_id, not member_email
+          member_id: initialId || initialEmail,
         });
 
         console.log("[Login] check_wallet_member response:", data);
 
         if (data && data.success) {
           if (data.exists) {
-            // wallet row found for this email → existing member → login mode
+            // wallet row found → existing member → login mode
             setMode("login");
             localStorage.setItem("mode", "login");
           } else {
-            // NO wallet row for this email → first-time member → create mode
+            // no wallet row → first-time member → create mode
             setMode("create");
             localStorage.setItem("mode", "create");
           }
@@ -172,34 +173,51 @@ function Login() {
 
         console.log("[Login] login.php response:", data);
 
-        if (data && data.success) {
-          localStorage.setItem("memberId", effectiveMemberId);
-          localStorage.setItem(
-            "memberEmail",
-            data.member_email || email || effectiveMemberId
-          );
-          if (merchantId) localStorage.setItem("merchantId", merchantId);
+        // Case A: backend returns 200 with { success: false, error/message: "Invalid password" }
+        if (!data?.success) {
+          const rawMsg =
+            data?.message ||
+            data?.error ||
+            "Login failed. Please check your credentials.";
+          const msg = rawMsg.toLowerCase();
 
-          // Only after successful login do we apply inbound points
-          await applyPointsIfAny(effectiveMemberId);
-
-          navigate("/wallet");
-        } else {
-          setError(
-            data?.message || "Login failed. Please check your credentials."
-          );
+          if (msg.includes("invalid password")) {
+            setError("Invalid password. Please try again.");
+          } else if (msg.includes("not found") || msg.includes("no account")) {
+            setError("No account found. Please create an account.");
+          } else {
+            setError("Login failed. Please check your credentials.");
+          }
+          return;
         }
+
+        // 🔹 Successful login
+        localStorage.setItem("memberId", effectiveMemberId);
+        localStorage.setItem(
+          "memberEmail",
+          data.member_email || email || effectiveMemberId
+        );
+        if (merchantId) localStorage.setItem("merchantId", merchantId);
+
+        // Only after successful login do we apply inbound points
+        await applyPointsIfAny(effectiveMemberId);
+
+        navigate("/wallet");
       } catch (err) {
+        // Case B: backend returned non-2xx (401/404/etc) and apiPost threw
         console.error("Login error:", err);
 
-        if (err.status === 404) {
-          setError(
-            "No account found for this Member ID / Email. Please create an account."
-          );
-        } else if (err.status === 401) {
-          setError("Invalid password.");
+        const raw = String(err?.message || "").toLowerCase();
+
+        if (raw.includes("invalid password")) {
+          // e.g. "Error: HTTP 401 Unauthorized – {...\"error\":\"Invalid password\"}"
+          setError("Invalid password. Please try again.");
+        } else if (raw.includes("401")) {
+          setError("Invalid password. Please try again.");
+        } else if (raw.includes("404")) {
+          setError("No account found. Please create an account.");
         } else {
-          setError("Server error. Please try again later.");
+          setError("Network or server error. Please try again.");
         }
       }
     }
