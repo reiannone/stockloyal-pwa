@@ -13,6 +13,18 @@ export default function Wallet() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
 
+  // Listen for footer Share button
+  useEffect(() => {
+    function openShareFromFooter() {
+      console.log("[Wallet] Footer triggered share sheet");
+      setIsShareOpen(true);
+    }
+
+    window.addEventListener("open-share-sheet", openShareFromFooter);
+    return () =>
+      window.removeEventListener("open-share-sheet", openShareFromFooter);
+  }, []);
+
   useEffect(() => {
     if (!memberId) {
       setError("No member ID found — please log in again.");
@@ -46,23 +58,41 @@ export default function Wallet() {
               "points",
               String(parseInt(data.wallet.points, 10) || 0)
             );
+
           if (data.wallet?.cash_balance != null)
             localStorage.setItem(
               "cashBalance",
               Number(data.wallet.cash_balance).toFixed(2)
             );
+
           if (typeof data.wallet?.portfolio_value !== "undefined")
             localStorage.setItem(
               "portfolio_value",
               Number(data.wallet.portfolio_value).toFixed(2)
             );
+
           if (typeof data.wallet?.sweep_percentage !== "undefined")
             localStorage.setItem(
               "sweep_percentage",
               String(data.wallet.sweep_percentage)
             );
-          if (typeof data.wallet?.broker !== "undefined")
+
+          if (typeof data.wallet?.broker !== "undefined") {
             localStorage.setItem("broker", String(data.wallet.broker));
+          }
+
+          // ⭐ NEW: merchant name -> localStorage
+          if (typeof data.wallet?.merchant_name !== "undefined") {
+            localStorage.setItem(
+              "merchantName",
+              String(data.wallet.merchant_name)
+            );
+            console.log(
+              "[Wallet] successful sync to localStorage merchantName:",
+              localStorage.getItem("merchantName")
+            );
+          }
+
           console.log(
             "[Wallet] successful sync to localStorage item broker:",
             localStorage.getItem("broker")
@@ -107,6 +137,34 @@ export default function Wallet() {
         setError(data?.error || "Failed to refresh wallet.");
       } else {
         setWallet(data.wallet ?? null);
+
+        // Optional: re-sync merchant/broker/points/cash on refresh too
+        try {
+          if (data.wallet?.points != null)
+            localStorage.setItem(
+              "points",
+              String(parseInt(data.wallet.points, 10) || 0)
+            );
+
+          if (data.wallet?.cash_balance != null)
+            localStorage.setItem(
+              "cashBalance",
+              Number(data.wallet.cash_balance).toFixed(2)
+            );
+
+          if (typeof data.wallet?.broker !== "undefined") {
+            localStorage.setItem("broker", String(data.wallet.broker));
+          }
+
+          if (typeof data.wallet?.merchant_name !== "undefined") {
+            localStorage.setItem(
+              "merchantName",
+              String(data.wallet.merchant_name)
+            );
+          }
+        } catch (e) {
+          console.warn("[Wallet] failed to sync to localStorage on refresh", e);
+        }
       }
     } catch (e) {
       console.error("[Wallet] refresh failed", e);
@@ -341,68 +399,68 @@ export default function Wallet() {
         </div>
       </div>
 
-{/* --- Social Media Share Card --- */}
-<div className="card card--accent" style={{ marginTop: 14 }}>
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      marginBottom: 6,
-    }}
-  >
-    <div
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        background: "#f9fafb",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Share2 size={20} />
-    </div>
+      {/* --- Social Media Share Card --- */}
+      <div className="card card--accent" style={{ marginTop: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 6,
+          }}
+        >
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: "#f9fafb",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Share2 size={20} />
+          </div>
 
-    <div>
-      <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
-        Share Your Investment
-      </h3>
-      <p className="caption" style={{ marginTop: 2 }}>
-        Show friends how your loyalty points became real stock ownership.
-      </p>
-    </div>
-  </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>
+              Share Your Investment
+            </h3>
+            <p className="caption" style={{ marginTop: 2 }}>
+              Show friends how your loyalty points became real stock ownership.
+            </p>
+          </div>
+        </div>
 
-  <div
-    style={{
-      marginTop: 12,
-      display: "flex",
-      gap: 10,
-      justifyContent: "space-between",
-    }}
-  >
-    <button
-      type="button"
-      className="btn-primary"
-      style={{ flex: 1 }}
-      onClick={() => setIsShareOpen(true)}
-      disabled={sharePoints <= 0}
-    >
-      Share
-    </button>
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            gap: 10,
+            justifyContent: "space-between",
+          }}
+        >
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ flex: 1 }}
+            onClick={() => setIsShareOpen(true)}
+            disabled={sharePoints <= 0}
+          >
+            Share
+          </button>
 
-    <button
-      type="button"
-      className="btn-secondary"
-      style={{ flex: 1 }}
-      onClick={() => navigate("/social")}
-    >
-      Community Feed
-    </button>
-  </div>
-</div>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ flex: 1 }}
+            onClick={() => navigate("/social")}
+          >
+            Community Feed
+          </button>
+        </div>
+      </div>
 
       {/* --- Sweep CTA --- */}
       <div style={{ marginTop: 14 }}>

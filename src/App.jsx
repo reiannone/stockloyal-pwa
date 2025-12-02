@@ -1,5 +1,5 @@
 // App.jsx
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 
@@ -37,217 +37,285 @@ import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition w
 // ⭐ NEW: community feed
 import SocialFeed from "./pages/SocialFeed.jsx";
 
+// ⭐ NEW: global share sheet
+import SharePointsSheet from "./components/SharePointsSheet.jsx";
+
 function App() {
   const location = useLocation();
 
+  // ⭐ Global share sheet state
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareProps, setShareProps] = useState({
+    memberId: "",
+    pointsUsed: 0,
+    cashValue: 0,
+    primaryTicker: null,
+    tickers: [],
+  });
+
+  // ⭐ Listen globally for "open-share-sheet" from Footer / Wallet / anywhere
+useEffect(() => {
+  function handleOpenShareSheet(event) {
+    const detail = event.detail || {};
+
+    const memberId =
+      detail.memberId ||
+      localStorage.getItem("memberId") ||
+      "";
+
+    const pointsUsed =
+      detail.pointsUsed ??
+      parseInt(localStorage.getItem("points") || "0", 10);
+
+    const cashRaw =
+      detail.cashValue ??
+      detail.cash ??
+      localStorage.getItem("cashBalance") ??
+      0;
+
+    const cashValue =
+      typeof cashRaw === "number"
+        ? cashRaw
+        : parseFloat(cashRaw);
+
+    setShareProps({
+      memberId,
+      pointsUsed,
+      cashValue,
+      primaryTicker: detail.primaryTicker ?? null,
+      tickers: detail.tickers || [],
+    });
+
+    setShareOpen(true);
+  }
+
+  window.addEventListener("open-share-sheet", handleOpenShareSheet);
+  return () =>
+    window.removeEventListener("open-share-sheet", handleOpenShareSheet);
+}, []);
+
+
   return (
     <ErrorBoundary>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          {/* Pages WITHOUT header/footer (always full screen) */}
-          <Route element={<FrameOnly />}>
-            <Route path="/" element={<SplashScreen />} />
-            <Route
-              path="/promotions"
-              element={
-                <PageWrapper>
-                  <Promotions />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/login"
-              element={
-                <PageWrapper>
-                  <Login />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/terms"
-              element={
-                <PageWrapper>
-                  <Terms />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/goodbye"
-              element={
-                <PageWrapper>
-                  <Goodbye />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/skyblue-rewards"
-              element={
-                <PageWrapper>
-                  <SkyBlueRewards />
-                </PageWrapper>
-              }
-            />
-          </Route>
+      <>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            {/* Pages WITHOUT header/footer (always full screen) */}
+            <Route element={<FrameOnly />}>
+              <Route path="/" element={<SplashScreen />} />
+              <Route
+                path="/promotions"
+                element={
+                  <PageWrapper>
+                    <Promotions />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/login"
+                element={
+                  <PageWrapper>
+                    <Login />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/terms"
+                element={
+                  <PageWrapper>
+                    <Terms />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/goodbye"
+                element={
+                  <PageWrapper>
+                    <Goodbye />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/skyblue-rewards"
+                element={
+                  <PageWrapper>
+                    <SkyBlueRewards />
+                  </PageWrapper>
+                }
+              />
+            </Route>
 
-          {/* Pages WITH layout (Header hidden in prod, Footer always visible) */}
-          <Route element={<Layout />}>
-            <Route
-              path="/about"
-              element={
-                <PageWrapper>
-                  <About />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/member-onboard"
-              element={
-                <PageWrapper>
-                  <MemberOnboard />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/wallet"
-              element={
-                <PageWrapper>
-                  <Wallet />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/convert"
-              element={
-                <PageWrapper>
-                  <Convert />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/order"
-              element={
-                <PageWrapper>
-                  <Order />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/order-confirmation"
-              element={
-                <PageWrapper>
-                  <OrderConfirmation />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/select-broker"
-              element={
-                <PageWrapper>
-                  <SelectBroker />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/election"
-              element={
-                <PageWrapper>
-                  <Election />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/points-select"
-              element={
-                <PageWrapper>
-                  <PointsSelect />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/stock-picker"
-              element={
-                <PageWrapper>
-                  <StockPicker />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/basket"
-              element={
-                <PageWrapper>
-                  <Basket />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/portfolio"
-              element={
-                <PageWrapper>
-                  <Portfolio />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/transactions"
-              element={
-                <PageWrapper>
-                  <Transactions />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <PageWrapper>
-                  <Admin />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/wallet-admin"
-              element={
-                <PageWrapper>
-                  <WalletAdmin />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/ledger-admin"
-              element={
-                <PageWrapper>
-                  <LedgerAdmin />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/admin-faq"
-              element={
-                <PageWrapper>
-                  <AdminFAQ />
-                </PageWrapper>
-              }
-            />
-            <Route
-              path="/demo-launch"
-              element={
-                <PageWrapper>
-                  <DemoLaunch />
-                </PageWrapper>
-              }
-            />
+            {/* Pages WITH layout (Header hidden in prod, Footer always visible) */}
+            <Route element={<Layout />}>
+              <Route
+                path="/about"
+                element={
+                  <PageWrapper>
+                    <About />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/member-onboard"
+                element={
+                  <PageWrapper>
+                    <MemberOnboard />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/wallet"
+                element={
+                  <PageWrapper>
+                    <Wallet />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/convert"
+                element={
+                  <PageWrapper>
+                    <Convert />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/order"
+                element={
+                  <PageWrapper>
+                    <Order />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/order-confirmation"
+                element={
+                  <PageWrapper>
+                    <OrderConfirmation />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/select-broker"
+                element={
+                  <PageWrapper>
+                    <SelectBroker />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/election"
+                element={
+                  <PageWrapper>
+                    <Election />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/points-select"
+                element={
+                  <PageWrapper>
+                    <PointsSelect />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/stock-picker"
+                element={
+                  <PageWrapper>
+                    <StockPicker />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/basket"
+                element={
+                  <PageWrapper>
+                    <Basket />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/portfolio"
+                element={
+                  <PageWrapper>
+                    <Portfolio />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/transactions"
+                element={
+                  <PageWrapper>
+                    <Transactions />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <PageWrapper>
+                    <Admin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/wallet-admin"
+                element={
+                  <PageWrapper>
+                    <WalletAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/ledger-admin"
+                element={
+                  <PageWrapper>
+                    <LedgerAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/admin-faq"
+                element={
+                  <PageWrapper>
+                    <AdminFAQ />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/demo-launch"
+                element={
+                  <PageWrapper>
+                    <DemoLaunch />
+                  </PageWrapper>
+                }
+              />
 
-            {/* ⭐ NEW: social / community feed route */}
-            <Route
-              path="/social"
-              element={
-                <PageWrapper>
-                  <SocialFeed />
-                </PageWrapper>
-              }
-            />
-          </Route>
-        </Routes>
-      </AnimatePresence>
+              {/* ⭐ NEW: social / community feed route */}
+              <Route
+                path="/social"
+                element={
+                  <PageWrapper>
+                    <SocialFeed />
+                  </PageWrapper>
+                }
+              />
+            </Route>
+          </Routes>
+        </AnimatePresence>
+
+        {/* ⭐ Global share sheet, available from any route */}
+        <SharePointsSheet
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          memberId={shareProps.memberId}
+          pointsUsed={shareProps.pointsUsed}
+          cashValue={shareProps.cashValue}
+          primaryTicker={shareProps.primaryTicker}
+          tickers={shareProps.tickers}
+        />
+      </>
     </ErrorBoundary>
   );
 }

@@ -2,17 +2,23 @@
 import React, { useEffect, useState } from "react";
 import { apiPost, apiGet } from "../api.js";
 
-function formatRelativeTime(iso) {
+// Format full date + time for posts/comments
+function formatTimestamp(iso) {
   if (!iso) return "";
-  const date = new Date(iso);
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin} min ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} hr${diffHr > 1 ? "s" : ""} ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  return `${diffDay} day${diffDay > 1 ? "s" : ""} ago`;
+  // Handle MySQL-style "YYYY-MM-DD HH:MM:SS" safely
+  let date = new Date(iso);
+  if (Number.isNaN(date.getTime()) && typeof iso === "string") {
+    date = new Date(iso.replace(" ", "T"));
+  }
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function SocialFeed() {
@@ -147,11 +153,23 @@ export default function SocialFeed() {
       <h2 className="page-title" style={{ textAlign: "center" }}>
         StockLoyal Community
       </h2>
-      <p style={{ textAlign: "center", marginBottom: "0.75rem", fontSize: "0.9rem" }}>
+      <p
+        style={{
+          textAlign: "center",
+          marginBottom: "0.75rem",
+          fontSize: "0.9rem",
+        }}
+      >
         See how members are turning everyday points into investment strategies.
       </p>
 
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.75rem" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "0.75rem",
+        }}
+      >
         <select
           value={strategyFilter}
           onChange={(e) => setStrategyFilter(e.target.value)}
@@ -181,13 +199,23 @@ export default function SocialFeed() {
 
       <div style={{ marginBottom: 120 }}>
         {posts.map((post) => (
-          <div key={post.id} className="card" style={{ marginBottom: "0.75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <div
+            key={post.id}
+            className="card"
+            style={{ marginBottom: "0.75rem" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
               <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
                 {post.member_handle || "Member"}
               </div>
               <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                {formatRelativeTime(post.created_at)}
+                {formatTimestamp(post.created_at)}
               </div>
             </div>
 
@@ -195,7 +223,10 @@ export default function SocialFeed() {
               <strong>{post.points_used.toLocaleString()} pts</strong> → $
               {post.cash_value.toFixed(2)}
               {post.primary_ticker && (
-                <> in <strong>{post.primary_ticker}</strong></>
+                <>
+                  {" "}
+                  in <strong>{post.primary_ticker}</strong>
+                </>
               )}
             </div>
 
@@ -222,7 +253,14 @@ export default function SocialFeed() {
             )}
 
             {Array.isArray(post.tickers) && post.tickers.length > 0 && (
-              <div style={{ marginBottom: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <div
+                style={{
+                  marginBottom: 6,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 4,
+                }}
+              >
                 {post.tickers.map((t) => (
                   <span
                     key={t}
@@ -271,7 +309,13 @@ export default function SocialFeed() {
             {/* Comments */}
             {expandedCommentsPostId === post.id && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ maxHeight: 180, overflowY: "auto", marginBottom: 6 }}>
+                <div
+                  style={{
+                    maxHeight: 180,
+                    overflowY: "auto",
+                    marginBottom: 6,
+                  }}
+                >
                   {(comments[post.id] || []).map((c) => (
                     <div
                       key={c.id}
@@ -295,7 +339,7 @@ export default function SocialFeed() {
                             color: "#9ca3af",
                           }}
                         >
-                          {formatRelativeTime(c.created_at)}
+                          {formatTimestamp(c.created_at)}
                         </span>
                       </div>
                       <div style={{ fontSize: "0.8rem" }}>{c.text}</div>

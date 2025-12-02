@@ -8,6 +8,7 @@ import {
   ShoppingBasket,
   User,
   Settings,
+  Share2,
 } from "lucide-react";
 import { X } from "lucide-react";
 import { useBasket } from "../context/BasketContext";
@@ -30,14 +31,14 @@ export default function Footer() {
     { to: "/member-onboard", label: "Member Onboard", icon: <User className="nav-icon" /> },
   ];
 
-    // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
+  // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
   const allPages = [
-    { to: "/admin",               label: "Merchant Admin" },
-    { to: "/wallet-admin",        label: "Wallet Admin" },
-    { to: "/ledger-admin",        label: "Ledger Admin" },
-    { to: "/admin-faq",           label: "FAQ Admin" },
-    { to: "/demo-launch",         label: "Demo Launch" },
-    { to: "/skyblue-rewards",         label: "Sky Blue Airlines Miles" },
+    { to: "/admin",           label: "Merchant Admin" },
+    { to: "/wallet-admin",    label: "Wallet Admin" },
+    { to: "/ledger-admin",    label: "Ledger Admin" },
+    { to: "/admin-faq",       label: "FAQ Admin" },
+    { to: "/demo-launch",     label: "Demo Launch" },
+    { to: "/skyblue-rewards", label: "Sky Blue Airlines Miles" },
   ];
 
   return (
@@ -61,6 +62,33 @@ export default function Footer() {
               </div>
             </Link>
           ))}
+
+          {/* NEW: Share button to open SharePointsSheet */}
+          <button
+            type="button"
+            onClick={() => {
+              const evt = new CustomEvent("open-share-sheet");
+              window.dispatchEvent(evt);
+            }}
+            className="nav-item"
+            style={{
+              background: "transparent",
+              border: 0,
+              padding: 0,
+              margin: 0,
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "inherit",
+            }}
+            aria-label="Share Points"
+          >
+            <div className="relative">
+              <Share2 className="nav-icon" />
+            </div>
+          </button>
 
           {/* Settings toggle styled like other icons */}
           <button
