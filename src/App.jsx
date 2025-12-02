@@ -31,11 +31,10 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
+import SocialFeed from "./pages/SocialFeed.jsx";
+import PostDetail from "./pages/PostDetail.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
-
-// ⭐ NEW: community feed
-import SocialFeed from "./pages/SocialFeed.jsx";
 
 // ⭐ NEW: global share sheet
 import SharePointsSheet from "./components/SharePointsSheet.jsx";
@@ -54,46 +53,45 @@ function App() {
   });
 
   // ⭐ Listen globally for "open-share-sheet" from Footer / Wallet / anywhere
-useEffect(() => {
-  function handleOpenShareSheet(event) {
-    const detail = event.detail || {};
+  useEffect(() => {
+    function handleOpenShareSheet(event) {
+      const detail = event.detail || {};
 
-    const memberId =
-      detail.memberId ||
-      localStorage.getItem("memberId") ||
-      "";
+      const memberId =
+        detail.memberId ||
+        localStorage.getItem("memberId") ||
+        "";
 
-    const pointsUsed =
-      detail.pointsUsed ??
-      parseInt(localStorage.getItem("points") || "0", 10);
+      const pointsUsed =
+        detail.pointsUsed ??
+        parseInt(localStorage.getItem("points") || "0", 10);
 
-    const cashRaw =
-      detail.cashValue ??
-      detail.cash ??
-      localStorage.getItem("cashBalance") ??
-      0;
+      const cashRaw =
+        detail.cashValue ??
+        detail.cash ??
+        localStorage.getItem("cashBalance") ??
+        0;
 
-    const cashValue =
-      typeof cashRaw === "number"
-        ? cashRaw
-        : parseFloat(cashRaw);
+      const cashValue =
+        typeof cashRaw === "number"
+          ? cashRaw
+          : parseFloat(cashRaw);
 
-    setShareProps({
-      memberId,
-      pointsUsed,
-      cashValue,
-      primaryTicker: detail.primaryTicker ?? null,
-      tickers: detail.tickers || [],
-    });
+      setShareProps({
+        memberId,
+        pointsUsed,
+        cashValue,
+        primaryTicker: detail.primaryTicker ?? null,
+        tickers: detail.tickers || [],
+      });
 
-    setShareOpen(true);
-  }
+      setShareOpen(true);
+    }
 
-  window.addEventListener("open-share-sheet", handleOpenShareSheet);
-  return () =>
-    window.removeEventListener("open-share-sheet", handleOpenShareSheet);
-}, []);
-
+    window.addEventListener("open-share-sheet", handleOpenShareSheet);
+    return () =>
+      window.removeEventListener("open-share-sheet", handleOpenShareSheet);
+  }, []);
 
   return (
     <ErrorBoundary>
@@ -298,6 +296,16 @@ useEffect(() => {
                 element={
                   <PageWrapper>
                     <SocialFeed />
+                  </PageWrapper>
+                }
+              />
+
+              {/* ⭐ NEW: single post + full thread view */}
+              <Route
+                path="/social/post/:postId"
+                element={
+                  <PageWrapper>
+                    <PostDetail />
                   </PageWrapper>
                 }
               />

@@ -1,5 +1,6 @@
 // src/pages/SocialFeed.jsx
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiPost, apiGet } from "../api.js";
 
 // Format full date + time for posts/comments
@@ -30,6 +31,8 @@ export default function SocialFeed() {
   const [comments, setComments] = useState({});
   const [commentInput, setCommentInput] = useState({});
   const memberId = localStorage.getItem("memberId") || "";
+
+  const navigate = useNavigate();
 
   const STRATEGIES = [
     { value: "", label: "All strategies" },
@@ -304,9 +307,19 @@ export default function SocialFeed() {
                   💬 {post.comment_count}
                 </button>
               </div>
+
+              {/* Single-post view button */}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => navigate(`/social/post/${post.id}`)}
+                style={{ fontSize: "0.8rem" }}
+              >
+                View post & thread →
+              </button>
             </div>
 
-            {/* Comments */}
+            {/* Comments (inline preview) */}
             {expandedCommentsPostId === post.id && (
               <div style={{ marginTop: 8 }}>
                 <div
