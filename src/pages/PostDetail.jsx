@@ -33,7 +33,6 @@ export default function PostDetail() {
     if (!postId) return;
     setLoadingPost(true);
     try {
-      // ✅ call the new backend endpoint
       const data = await apiGet(`social_get_post.php?post_id=${postId}`);
       if (data?.success) {
         setPost(data.post);
@@ -51,7 +50,6 @@ export default function PostDetail() {
     if (!postId) return;
     setLoadingComments(true);
     try {
-      // ✅ match the working pattern from SocialFeed.jsx
       const data = await apiGet(`social_get_comments.php?post_id=${postId}`);
       if (data?.success) {
         setComments(data.comments || []);
@@ -74,11 +72,10 @@ export default function PostDetail() {
     }
 
     try {
-      // match what works in SocialFeed: social_add_comment.php expects `text`
       const data = await apiPost("social_add_comment.php", {
         post_id: postId,
         member_id: memberId,
-        text: newComment,
+        text: newComment, // matches PHP: $_POST['text']
       });
 
       if (data?.success) {
@@ -99,19 +96,28 @@ export default function PostDetail() {
     loadComments();
   }, [postId]);
 
-  if (loadingPost) return <div className="p-4">Loading…</div>;
+  if (loadingPost) {
+    return (
+      <div className="page-container">
+        <div style={{ padding: "1rem" }}>Loading…</div>
+      </div>
+    );
+  }
+
   if (!post) {
     return (
-      <div className="p-4">
+      <div className="page-container">
         <button
           type="button"
           onClick={() => navigate("/social")}
-          className="link-button mb-3 text-sm"
+          className="link-button"
           style={{ marginBottom: "0.75rem", fontSize: "0.85rem" }}
         >
           ← Back to community feed
         </button>
-        <div>Post not found.</div>
+        <div className="card" style={{ padding: "1rem" }}>
+          Post not found.
+        </div>
       </div>
     );
   }
@@ -119,75 +125,213 @@ export default function PostDetail() {
   const createdAt = post.created_at || post.createdAt;
   const headerTitle = post.member_handle || "Community post";
   const mainText = post.text || "";
+  const strategyTag = post.strategy_tag || "";
+  const pointsUsed = post.points_used;
+  const cashValue = post.cash_value;
+  const primaryTicker = post.primary_ticker;
+  const tickers = Array.isArray(post.tickers) ? post.tickers : [];
 
   return (
-    <div className="p-4">
+    <div className="page-container" style={{ paddingBottom: 120 }}>
       {/* Back link */}
       <button
         type="button"
         onClick={() => navigate("/social")}
-        className="link-button mb-3 text-sm"
+        className="link-button"
         style={{ marginBottom: "0.75rem", fontSize: "0.85rem" }}
       >
         ← Back to community feed
       </button>
 
-      {/* Post header */}
-      <h2 className="text-xl font-semibold">{headerTitle}</h2>
-
-      {mainText && (
-        <p className="mt-2 text-gray-700" style={{ marginTop: "0.5rem" }}>
-          {mainText}
-        </p>
-      )}
-
-      {createdAt && (
-        <div className="text-sm text-gray-500 mt-1">
-          Posted {formatRelativeTime(createdAt)}
-        </div>
-      )}
-
-      {/* Comments */}
-      <h3 className="text-lg font-semibold mt-6 mb-2">Comments</h3>
-
-      {loadingComments ? (
-        <div className="text-gray-500">Loading comments…</div>
-      ) : comments.length === 0 ? (
-        <div className="text-gray-500">No comments yet.</div>
-      ) : (
-        <div className="space-y-3">
-          {comments.map((c) => (
-            <div
-              key={c.id ?? c.comment_id}
-              className="p-3 bg-gray-100 rounded-lg"
-            >
-              <div className="text-sm font-medium">
-                {c.member_name || c.author || "Member"}
-              </div>
-              <div>{c.text || c.comment || c.body}</div>
-              <div className="text-xs text-gray-500">
-                {formatRelativeTime(c.created_at || c.createdAt)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Add comment */}
-      <div className="mt-6">
-        <textarea
-          value={newComment}
-          onChange={(e) => setNewComment(e.target.value)}
-          placeholder="Write a comment…"
-          className="w-full p-2 border rounded-lg text-sm"
-          rows={3}
-        />
-        <button
-          onClick={handleAddComment}
-          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+      {/* Post card */}
+      <div className="card" style={{ marginBottom: "0.75rem" }}>
+        {/* Header row */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 4,
+          }}
         >
-          Post Comment
-        </button>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+            {headerTitle}
+          </div>
+          {createdAt && (
+            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+              {formatRelativeTime(createdAt)}
+            </div>
+          )}
+        </div>
+
+        {/* Points / cash / primary ticker line */}
+        {(pointsUsed != null || cashValue != null || primaryTicker) && (
+          <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>
+            {pointsUsed != null && (
+              <>
+                <strong>{Number(pointsUsed).toLocaleString()} pts</strong>
+              </>
+            )}
+            {cashValue != null && (
+              <>
+                {" "}
+                → ${Number(cashValue).toFixed(2)}
+              </>
+            )}
+            {primaryTicker && (
+              <>
+                {" "}
+                in <strong>{primaryTicker}</strong>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Strategy pill */}
+        {strategyTag && (
+          <div
+            style={{
+              display: "inline-block",
+              padding: "2px 8px",
+              borderRadius: 999,
+              fontSize: "0.75rem",
+              background: "#eff6ff",
+              color: "#1d4ed8",
+              marginBottom: 4,
+              textTransform: "capitalize",
+            }}
+          >
+            {strategyTag.replace(/_/g, " ")}
+          </div>
+        )}
+
+        {/* Main text */}
+        {mainText && (
+          <p
+            style={{
+              fontSize: "0.85rem",
+              margin: "4px 0 6px",
+            }}
+          >
+            {mainText}
+          </p>
+        )}
+
+        {/* Ticker chips */}
+        {tickers.length > 0 && (
+          <div
+            style={{
+              marginTop: 4,
+              marginBottom: 4,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 4,
+            }}
+          >
+            {tickers.map((t) => (
+              <span
+                key={t}
+                style={{
+                  fontSize: "0.75rem",
+                  padding: "2px 6px",
+                  borderRadius: 999,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Comments card */}
+      <div className="card">
+        <h3
+          className="text-lg font-semibold"
+          style={{ fontSize: "1rem", marginBottom: "0.5rem" }}
+        >
+          Comments
+        </h3>
+
+        {loadingComments ? (
+          <div
+            className="text-gray-500"
+            style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}
+          >
+            Loading comments…
+          </div>
+        ) : comments.length === 0 ? (
+          <div
+            className="text-gray-500"
+            style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}
+          >
+            No comments yet.
+          </div>
+        ) : (
+          <div
+            style={{
+              marginBottom: "0.75rem",
+              maxHeight: 220,
+              overflowY: "auto",
+            }}
+          >
+            {comments.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  borderBottom: "1px solid #f3f4f6",
+                  padding: "6px 0",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    marginBottom: 2,
+                  }}
+                >
+                  {c.member_id || "Member"}
+                  {c.created_at && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontSize: "0.7rem",
+                        color: "#9ca3af",
+                      }}
+                    >
+                      {formatRelativeTime(c.created_at)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: "0.8rem" }}>{c.text}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add comment */}
+        <div style={{ marginTop: "0.25rem" }}>
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Write a comment…"
+            className="member-form-input"
+            rows={3}
+            style={{ fontSize: "0.8rem", width: "100%", resize: "vertical" }}
+          />
+          <button
+            type="button"
+            onClick={handleAddComment}
+            className="btn-primary"
+            style={{
+              marginTop: "0.5rem",
+              fontSize: "0.8rem",
+              padding: "6px 12px",
+            }}
+          >
+            Post Comment
+          </button>
+        </div>
       </div>
     </div>
   );

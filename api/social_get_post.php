@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/_loadenv.php';
+require_once __DIR__ . '/config.php';
+
+header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
-header('Content-Type: application/json');
-
-require_once 'config.php'; // $conn = PDO
-
 try {
+    // Accept GET ?post_id=... and JSON POST { "post_id": ... }
     $postId = 0;
 
-    // Allow both GET ?post_id= and JSON POST { "post_id": ... }
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if (isset($_GET['post_id'])) {
             $postId = (int) $_GET['post_id'];
@@ -38,19 +37,10 @@ try {
         exit;
     }
 
-    // 🔎 Adjust table/columns if your schema uses different names.
+    // 🟢 SAFE: don't assume the exact column list, just select the row
+    // social_feed.php is already using social_posts, so we reuse that table
     $sql = "
-        SELECT
-            id,
-            member_id,
-            member_handle,
-            points_used,
-            cash_value,
-            primary_ticker,
-            strategy_tag,
-            text,
-            tickers,
-            created_at
+        SELECT *
         FROM social_posts
         WHERE id = :id
         LIMIT 1
@@ -69,16 +59,12 @@ try {
         exit;
     }
 
-    // If tickers are stored as JSON string, decode them
+    // If tickers is a JSON string, decode it
     if (isset($row['tickers']) && is_string($row['tickers'])) {
         $decoded = json_decode($row['tickers'], true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
             $row['tickers'] = $decoded;
-        } else {
-            $row['tickers'] = [];
         }
-    } elseif (!isset($row['tickers'])) {
-        $row['tickers'] = [];
     }
 
     echo json_encode([
