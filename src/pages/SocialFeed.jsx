@@ -1,6 +1,6 @@
 // src/pages/SocialFeed.jsx
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost, apiGet } from "../api.js";
 
 // Format full date + time for posts/comments
@@ -33,6 +33,11 @@ export default function SocialFeed() {
   const memberId = localStorage.getItem("memberId") || "";
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 🔍 Read ?member_id=XYZ from query string (e.g. from OrderTicker link)
+  const params = new URLSearchParams(location.search);
+  const filterMemberId = params.get("member_id") || "";
 
   const STRATEGIES = [
     { value: "", label: "All strategies" },
@@ -49,6 +54,7 @@ export default function SocialFeed() {
     try {
       const data = await apiPost("social_feed.php", {
         strategy_tag: strategyFilter || undefined,
+        member_id: filterMemberId || undefined, // ⭐ send member filter to backend
         offset: 0,
         limit: 20,
       });
@@ -69,7 +75,8 @@ export default function SocialFeed() {
 
   useEffect(() => {
     loadFeed();
-  }, [strategyFilter]);
+    // rerun when strategy OR member filter changes
+  }, [strategyFilter, filterMemberId]);
 
   const toggleLike = async (postId) => {
     if (!memberId) {
@@ -151,6 +158,21 @@ export default function SocialFeed() {
     }
   };
 
+  // 🧠 Optional client-side guard on top of backend filter
+  const filteredPosts = useMemo(() => {
+    if (!filterMemberId) return posts;
+    const fid = filterMemberId.toString().trim().toLowerCase();
+    return posts.filter((p) => {
+      const pid = (p.member_id ?? "").toString().trim().toLowerCase();
+      return pid === fid;
+    });
+  }, [posts, filterMemberId]);
+
+  const handleClearMemberFilter = () => {
+    // Remove ?member_id from URL but stay on /social
+    navigate("/social", { replace: true });
+  };
+
   return (
     <div className="page-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
@@ -165,6 +187,42 @@ export default function SocialFeed() {
       >
         See how members are turning everyday points into investment strategies.
       </p>
+
+      {/* 🔎 Banner when filtering by member (from ticker) */}
+      {filterMemberId && (
+        <div
+          className="card"
+          style={{
+            marginBottom: "0.75rem",
+            padding: "0.5rem 0.75rem",
+            fontSize: "0.8rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            background: "#fefce8",
+            border: "1px solid #facc15",
+          }}
+        >
+          <span>
+            Showing posts from{" "}
+            <strong style={{ color: "#92400e" }}>{filterMemberId}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={handleClearMemberFilter}
+            style={{
+              fontSize: "0.75rem",
+              background: "none",
+              border: "none",
+              color: "#2563eb",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       <div
         style={{
@@ -194,14 +252,16 @@ export default function SocialFeed() {
         </p>
       )}
 
-      {!loading && !error && posts.length === 0 && (
+      {!loading && !error && filteredPosts.length === 0 && (
         <p style={{ textAlign: "center", fontSize: "0.9rem" }}>
-          No posts yet. Be the first to share from your wallet!
+          {filterMemberId
+            ? "No posts found for this member."
+            : "No posts yet. Be the first to share from your wallet!"}
         </p>
       )}
 
       <div style={{ marginBottom: 120 }}>
-        {posts.map((post) => (
+        {filteredPosts.map((post) => (
           <div
             key={post.id}
             className="card"
@@ -215,7 +275,7 @@ export default function SocialFeed() {
               }}
             >
               <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-                {post.member_handle || "Member"}
+                {post.member_handle || post.member_id || "Member"}
               </div>
               <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
                 {formatTimestamp(post.created_at)}
@@ -292,28 +352,49 @@ export default function SocialFeed() {
               <div style={{ display: "flex", gap: 12, fontSize: "0.85rem" }}>
                 <button
                   type="button"
-                  className="link-button"
                   onClick={() => toggleLike(post.id)}
-                  style={{ fontSize: "0.85rem" }}
+                  style={{
+                    fontSize: "0.85rem",
+                    background: "none",
+                    border: "none",
+                    color: "#2563eb",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
                 >
                   ❤️ {post.like_count}
                 </button>
+
                 <button
                   type="button"
-                  className="link-button"
                   onClick={() => handleToggleComments(post.id)}
-                  style={{ fontSize: "0.85rem" }}
+                  style={{
+                    fontSize: "0.85rem",
+                    background: "none",
+                    border: "none",
+                    color: "#2563eb",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
                 >
                   💬 {post.comment_count}
                 </button>
               </div>
 
-              {/* Single-post view button */}
+              {/* Single post + thread view */}
               <button
                 type="button"
-                className="link-button"
                 onClick={() => navigate(`/social/post/${post.id}`)}
-                style={{ fontSize: "0.8rem" }}
+                style={{
+                  fontSize: "0.85rem",
+                  background: "none",
+                  border: "none",
+                  color: "#1d4ed8",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
               >
                 View post & thread →
               </button>

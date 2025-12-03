@@ -1,5 +1,6 @@
 // src/components/OrderTicker.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
 const POLL_MS = 15000; // refresh every 15s
 
@@ -24,43 +25,84 @@ export default function OrderTicker() {
   }, []);
 
   const line = useMemo(() => {
-    if (!items.length) return "No recent orders.";
+    if (!items.length) {
+      return [
+        <span key="empty" className="inline-block mr-6">
+          No recent orders.
+        </span>,
+      ];
+    }
 
-    return items
-      .map((order) => {
-        const member = order.member_id ?? "—";
+    return items.map((order, idx) => {
+      const member = order.member_id ?? "—";
 
-        // prefer points_used if present, fallback to pts
-        const totalPts = Number(
-          order.points_used ?? order.pts ?? 0
-        ).toLocaleString("en-US");
+      const totalPts = Number(
+        order.points_used ?? order.pts ?? 0
+      ).toLocaleString("en-US");
 
-        // each symbol + shares for this order (grouped by order_id in PHP)
-        const sharesStr = (order.lines || [])
-          .map((ln) => {
-            const sym = String(ln.symbol || "").toUpperCase();
-            // 4 decimal places, trim trailing zeros and trailing dot
-            let shrs = Number(ln.shares ?? 0).toFixed(4);
-            shrs = shrs.replace(/0+$/, "").replace(/\.$/, "");
-            return `${sym} ${shrs} shrs`;
-          })
-          .join(", ");
+      const sharesStr = (order.lines || [])
+        .map((ln) => {
+          const sym = String(ln.symbol || "").toUpperCase();
+          let shrs = Number(ln.shares ?? 0).toFixed(4);
+          shrs = shrs.replace(/0+$/, "").replace(/\.$/, "");
+          return `${sym} ${shrs} shrs`;
+        })
+        .join(", ");
 
-        return sharesStr
-          ? `${member} • ${totalPts}pts → ${sharesStr}`
-          : `${member} • ${totalPts}pts`;
-      })
-      .join("   |   ");
+      return (
+        <span
+          key={`${member}-${totalPts}-${idx}`}
+          className="inline-block mr-6"
+          style={{
+            pointerEvents: "auto", // ⭐ allow clicks inside this span
+          }}
+        >
+          {/* leading | separator */}
+          <span style={{ color: "#AAAAAA", marginRight: 6 }}>|</span>
+
+          {/* CLICKABLE MEMBER */}
+          <Link
+            to={`/social?member_id=${member}`}
+            className="font-semibold"
+            style={{
+              color: "#FFD700", // bright gold
+              textDecoration: "underline",
+              cursor: "pointer",
+              pointerEvents: "auto", // ⭐ make sure link itself is clickable
+              position: "relative",
+              zIndex: 2,
+            }}
+            onMouseEnter={(e) => (e.target.style.color = "#FFF8D0")}
+            onMouseLeave={(e) => (e.target.style.color = "#FFD700")}
+          >
+            {member}
+          </Link>
+
+          {" • "}
+          {totalPts}pts
+          {sharesStr ? ` → ${sharesStr}` : ""}
+        </span>
+      );
+    });
   }, [items]);
 
   return (
-    <div className="order-ticker">
+    <div
+      className="order-ticker"
+      style={{
+        pointerEvents: "auto", // ⭐ allow interaction on the ticker generally
+      }}
+    >
       <div className="rounded-t-2xl bg-black/80 text-white text-sm leading-8 overflow-hidden backdrop-blur px-3">
-        <div className="ticker-track whitespace-nowrap">
-          <span className="ticker-copy">{line}</span>
-          <span aria-hidden="true" className="ticker-copy">
-            {line}
-          </span>
+        <div
+          className="ticker-track whitespace-nowrap flex"
+          style={{
+            pointerEvents: "auto", // ⭐ make sure the track isn't blocking clicks
+          }}
+        >
+          {/* We render line twice for the infinite scroll effect */}
+          {line}
+          {line}
         </div>
       </div>
     </div>

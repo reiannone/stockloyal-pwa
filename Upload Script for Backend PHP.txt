@@ -1,0 +1,24 @@
+PowerShell Use this exact working script:
+
+# 1. Path to your PEM key
+$KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
+
+# 2. Local file to upload
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\social_feed.php"
+
+# 3. EC2 Host (rename variable so we avoid conflict with $Host)
+$EC2 = "ec2-user@3.150.49.91"
+
+# 4. Destination on remote server
+$DEST = "/home/ec2-user/social_feed.php"
+
+# 5. Upload using scp — THIS WORKS IN POWERSHELL
+scp -i $KEY "$SRC" "${EC2}:${DEST}"
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After upload, SSH into EC2:
+
+sudo mv /home/ec2-user/social_feed.php /var/www/html/api/social_feed.php
+sudo chown apache:apache /var/www/html/api/social_feed.php
+sudo chmod 644 /var/www/html/api/social_feed.php
