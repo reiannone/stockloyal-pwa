@@ -25,6 +25,7 @@ export default function Header() {
     { to: "/stock-picker", label: "Stock Picker" },
     { to: "/basket", label: "Basket" },
     { to: "/portfolio", label: "StockLoyal Portfolio" },
+    { to: "/social", label: "Community Feed" },
     { to: "/goodbye", label: "Exit App" },
   ];
 

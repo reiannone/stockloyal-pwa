@@ -24,45 +24,47 @@ function formatTimestamp(iso) {
 
 export default function SocialFeed() {
   const [posts, setPosts] = useState([]);
-  const [strategyFilter, setStrategyFilter] = useState("");
+  const [filterType, setFilterType] = useState("all"); // "all" | "liked" | "commented"
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [expandedCommentsPostId, setExpandedCommentsPostId] = useState(null);
   const [comments, setComments] = useState({});
   const [commentInput, setCommentInput] = useState({});
+
   const memberId = localStorage.getItem("memberId") || "";
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 🔍 Read ?member_id=XYZ from query string (e.g. from OrderTicker link)
+  // 🔍 Read ?member_id=XYZ from query string (e.g. from OrderTicker link) – this is the AUTHOR filter
   const params = new URLSearchParams(location.search);
   const filterMemberId = params.get("member_id") || "";
-
-  const STRATEGIES = [
-    { value: "", label: "All strategies" },
-    { value: "growth_tech", label: "Growth Tech" },
-    { value: "index_core", label: "Index Core" },
-    { value: "dividends", label: "Dividend Focus" },
-    { value: "balanced", label: "Balanced Mix" },
-    { value: "crypto_satellite", label: "Crypto Satellite" },
-  ];
 
   const loadFeed = async () => {
     setLoading(true);
     setError("");
+
     try {
-      const data = await apiPost("social_feed.php", {
-        strategy_tag: strategyFilter || undefined,
-        member_id: filterMemberId || undefined, // ⭐ send member filter to backend
+      const payload = {
+        filter_type: filterType,          // "all" | "liked" | "commented"
+        member_id: memberId || undefined, // "me" for likes/comments filters
         offset: 0,
         limit: 20,
-      });
+      };
+
+      // optional author filter from ticker (?member_id=XYZ)
+      if (filterMemberId) {
+        payload.author_member_id = filterMemberId;
+      }
+
+      const data = await apiPost("social_feed.php", payload);
+
       if (!data.success) {
         setError(data.error || "Failed to load feed.");
         setPosts([]);
         return;
       }
+
       setPosts(data.posts || []);
     } catch (e) {
       console.error("[SocialFeed] error:", e);
@@ -75,8 +77,8 @@ export default function SocialFeed() {
 
   useEffect(() => {
     loadFeed();
-    // rerun when strategy OR member filter changes
-  }, [strategyFilter, filterMemberId]);
+    // rerun when interaction filter, author filter, or memberId changes
+  }, [filterType, filterMemberId, memberId]);
 
   const toggleLike = async (postId) => {
     if (!memberId) {
@@ -158,7 +160,7 @@ export default function SocialFeed() {
     }
   };
 
-  // 🧠 Optional client-side guard on top of backend filter
+  // 🧠 Optional *extra* client-side guard for AUTHOR filter only (likes/comments handled server-side)
   const filteredPosts = useMemo(() => {
     if (!filterMemberId) return posts;
     const fid = filterMemberId.toString().trim().toLowerCase();
@@ -188,7 +190,7 @@ export default function SocialFeed() {
         See how members are turning everyday points into investment strategies.
       </p>
 
-      {/* 🔎 Banner when filtering by member (from ticker) */}
+      {/* 🔎 Banner when filtering by author (from ticker) */}
       {filterMemberId && (
         <div
           className="card"
@@ -224,6 +226,7 @@ export default function SocialFeed() {
         </div>
       )}
 
+      {/* 🔽 Interaction filter: All / Liked / Commented */}
       <div
         style={{
           display: "flex",
@@ -232,16 +235,14 @@ export default function SocialFeed() {
         }}
       >
         <select
-          value={strategyFilter}
-          onChange={(e) => setStrategyFilter(e.target.value)}
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
           className="member-form-input"
           style={{ width: "80%", maxWidth: 320, fontSize: "0.85rem" }}
         >
-          {STRATEGIES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
+          <option value="all">All community posts</option>
+          <option value="liked">Posts I&apos;ve liked</option>
+          <option value="commented">Posts I&apos;ve commented on</option>
         </select>
       </div>
 
@@ -396,7 +397,7 @@ export default function SocialFeed() {
                   textDecoration: "underline",
                 }}
               >
-                View post & thread →
+                View post &amp; thread →
               </button>
             </div>
 

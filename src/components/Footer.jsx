@@ -29,6 +29,7 @@ export default function Footer() {
     { to: "/about",          label: "About",          icon: <Info className="nav-icon" /> },
     { to: "/basket",         label: "Basket",         icon: <ShoppingBasket className="nav-icon" /> },
     { to: "/member-onboard", label: "Member Onboard", icon: <User className="nav-icon" /> },
+    { to: "/social",         label: "Community Feed", icon: <Share2 className="nav-icon" /> },
   ];
 
   // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
@@ -62,33 +63,6 @@ export default function Footer() {
               </div>
             </Link>
           ))}
-
-          {/* NEW: Share button to open SharePointsSheet */}
-          <button
-            type="button"
-            onClick={() => {
-              const evt = new CustomEvent("open-share-sheet");
-              window.dispatchEvent(evt);
-            }}
-            className="nav-item"
-            style={{
-              background: "transparent",
-              border: 0,
-              padding: 0,
-              margin: 0,
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "inherit",
-            }}
-            aria-label="Share Points"
-          >
-            <div className="relative">
-              <Share2 className="nav-icon" />
-            </div>
-          </button>
 
           {/* Settings toggle styled like other icons */}
           <button
