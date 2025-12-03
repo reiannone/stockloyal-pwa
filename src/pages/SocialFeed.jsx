@@ -442,9 +442,15 @@ export default function SocialFeed() {
                   ))}
                 </div>
 
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input
-                    type="text"
+                {/* 🔁 WIDER / TALLER textarea + SMALL Post button */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "flex-end",
+                  }}
+                >
+                  <textarea
                     className="member-form-input"
                     placeholder="Add a comment…"
                     value={commentInput[post.id] || ""}
@@ -454,12 +460,22 @@ export default function SocialFeed() {
                         [post.id]: e.target.value,
                       }))
                     }
-                    style={{ flex: 1, fontSize: "0.8rem" }}
+                    rows={3}
+                    style={{
+                      flex: 1,
+                      fontSize: "0.8rem",
+                      minHeight: "3.5rem",
+                      resize: "vertical",
+                    }}
                   />
                   <button
                     type="button"
-                    className="btn-primary"
-                    style={{ fontSize: "0.8rem", padding: "6px 10px" }}
+                    className="refresh-btn"
+                    style={{
+                      fontSize: "0.75rem",
+                      padding: "4px 8px",
+                      whiteSpace: "nowrap",
+                    }}
                     onClick={() => handleAddComment(post.id)}
                   >
                     Post
