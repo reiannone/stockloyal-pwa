@@ -30,6 +30,10 @@ export default function Basket() {
       : [];
 
   const handleProceed = () => {
+    // 🔥 Save to localStorage so SharePointsSheet can access them
+    localStorage.setItem("lastPointsUsed", pointsUsed.toString());
+    localStorage.setItem("lastInvestedAmount", investedAmount.toString());
+    
     navigate("/order", {
       state: {
         basket: enrichedBasket,
@@ -60,7 +64,7 @@ export default function Basket() {
     <div className="basket-container">
       <h2 className="page-title">Your Basket</h2>
       <p className="page-deck">
-        You’re investing <strong>${investedAmount.toFixed(2)}</strong> across{" "}
+        You're investing <strong>${investedAmount.toFixed(2)}</strong> across{" "}
         {basket.length} stocks, using <strong>{pointsUsed}</strong> points.
       </p>
 

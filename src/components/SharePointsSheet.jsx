@@ -18,12 +18,12 @@ export default function SharePointsSheet({
   // 🔥 Load dynamic values from localStorage (always available globally)
   // ----------------------------
   const storedMerchant =
-    localStorage.getItem("merchantName") || "my merchant";  // ✅ use merchantName
+    localStorage.getItem("merchantName") || "my merchant";
 
   const storedBroker =
     localStorage.getItem("broker") || "my broker";
 
-  // optional: last order saved in Wallet / Order
+  // 🔥 Get last order details from localStorage
   let storedOrder = null;
   try {
     const raw = localStorage.getItem("lastOrder");
@@ -32,12 +32,19 @@ export default function SharePointsSheet({
     // ignore JSON parse errors
   }
 
+  // 🔥 Get pointsUsed and investedAmount from localStorage (set during order flow)
+  const storedPointsUsed = parseInt(localStorage.getItem("lastPointsUsed")) || pointsUsed || 0;
+  const storedInvestedAmount = parseFloat(localStorage.getItem("lastInvestedAmount")) || cashValue || 0;
+
+  console.log("[SharePointsSheet] storedPointsUsed:" + storedPointsUsed);
+  console.log("[SharePointsSheet] storedInvestedAmount:" + storedInvestedAmount);
+
   // ----------------------------
   // 💰 Format cash
   // ----------------------------
   const displayCash =
-    typeof cashValue === "number"
-      ? cashValue.toLocaleString("en-US", {
+    typeof storedInvestedAmount === "number"
+      ? storedInvestedAmount.toLocaleString("en-US", {
           style: "currency",
           currency: "USD",
           minimumFractionDigits: 2,
@@ -49,10 +56,10 @@ export default function SharePointsSheet({
   // ----------------------------
   const defaultMessage = storedOrder
     ? `I just bought ${storedOrder.shares} shares of ${storedOrder.ticker} for ${displayCash} using ${storedBroker} through ${storedMerchant} on StockLoyal! 🚀 #StockLoyal #Investing`
-    : `I just converted ${pointsUsed || 0} loyalty points from ${storedMerchant} into ${displayCash} of stock using ${storedBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
+    : `I converted ${storedPointsUsed} loyalty points from ${storedMerchant} into ${displayCash} of stock using ${storedBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
 
   // ----------------------------
-  // ✍️ Editable text box
+  // ✏️ Editable text box
   // ----------------------------
   const [text, setText] = useState(defaultMessage);
 
@@ -124,7 +131,7 @@ export default function SharePointsSheet({
           onChange={(e) => setText(e.target.value)}
           style={{
             width: "100%",
-            boxSizing: "border-box", // ensures perfect fit inside panel
+            boxSizing: "border-box",
             minHeight: 100,
             fontSize: "0.85rem",
             border: "1px solid #e5e7eb",
@@ -147,8 +154,8 @@ export default function SharePointsSheet({
                 const payload = {
                   member_id: memberId,
                   text: text.trim(),
-                  points_used: pointsUsed || 0,
-                  cash_value: typeof cashValue === "number" ? cashValue : 0,
+                  points_used: storedPointsUsed,
+                  cash_value: storedInvestedAmount,
                   primary_ticker: primaryTicker || null,
                   tickers: tickers || [],
                   merchant_name: storedMerchant,

@@ -56,7 +56,6 @@ try {
             INNER JOIN social_likes l
                 ON l.post_id = p.id
                AND l.member_id = :current_mid
-               AND l.is_deleted = 0
         ";
         $params[':current_mid'] = $currentMemberId;
     } elseif ($filterType === 'commented') {
