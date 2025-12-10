@@ -27,6 +27,7 @@ import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import Admin from "./pages/Admin.jsx";
+import AdminBroker from "./pages/AdminBroker.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
@@ -254,6 +255,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <Admin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/admin-broker"
+                element={
+                  <PageWrapper>
+                    <AdminBroker />
                   </PageWrapper>
                 }
               />
