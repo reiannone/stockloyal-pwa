@@ -1,0 +1,22 @@
+scp "C:\xampp\htdocs\stockloyal-pwa\api\proxy.php" ec2-user@<your-ec2-ip>:/var/www/html/api/
+
+# From Windows
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" "C:\xampp\htdocs\stockloyal-pwa\api\proxy.php" ec2-user@3.150.49.91:/tmp/
+
+# Then SSH into EC2 and move it
+sudo mv /tmp/proxy.php /var/www/html/api/
+sudo chown apache:apache /var/www/html/api/proxy.php
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" "C:\xampp\htdocs\stockloyal-pwa\api\proxy.php" ec2-user@3.150.49.91:/tmp/
+
+# Then SSH in and move it
+ssh -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" ec2-user@3.150.49.91
+sudo mv /tmp/proxy.php /var/www/html/api/
+sudo chown www-data:www-data /var/www/html/api/proxy.php  # or apache:apache depending on your setup
+
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" "C:\path\to\proxy.php" ec2-user@3.150.49.91:/tmp/
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" "C:\xampp\htdocs\stockloyal-pwa\api\proxy.php" ec2-user@3.150.49.91:/tmp/
+
+curl -s -X POST -H "Content-Type: application/json" -d '{"member_id":"logan104"}' http://localhost/api/get_portfolio_orders.php
