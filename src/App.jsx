@@ -29,6 +29,8 @@ import Transactions from "./pages/Transactions.jsx";
 import Admin from "./pages/Admin.jsx";
 import AdminBroker from "./pages/AdminBroker.jsx";
 import PaymentsProcessing from "./pages/PaymentsProcessing.jsx";
+import PaymentsBroker from "./pages/PaymentsBroker.jsx";
+import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
@@ -272,6 +274,22 @@ function App() {
                 element={
                   <PageWrapper>
                     <PaymentsProcessing />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/payments-broker"
+                element={
+                  <PageWrapper>
+                    <PaymentsBroker />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/payments-basket"
+                element={
+                  <PageWrapper>
+                    <PaymentsBasketDetail />
                   </PageWrapper>
                 }
               />
