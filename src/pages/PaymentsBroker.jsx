@@ -7,6 +7,52 @@ function useQuery() {
   return new URLSearchParams(useLocation().search);
 }
 
+function normalizeExportResult(res) {
+  // Expecting either:
+  // A) { success:true, detail_filename, detail_relative_path, ach_filename, ach_relative_path }
+  // B) { success:true, files:[ {type:'detail'|'ach', filename, relative_path} ] }
+  if (!res || !res.success) return null;
+
+  let detail = null;
+  let ach = null;
+
+  if (Array.isArray(res.files)) {
+    for (const f of res.files) {
+      if (!f) continue;
+      const t = String(f.type || "").toLowerCase();
+      if (t === "detail" || t === "details" || t === "orders") {
+        detail = { filename: f.filename || "", relative_path: f.relative_path || "" };
+      }
+      if (t === "ach" || t === "payment" || t === "settlement") {
+        ach = { filename: f.filename || "", relative_path: f.relative_path || "" };
+      }
+    }
+  }
+
+  // Direct fields (preferred if present)
+  const directDetail =
+    res.detail_filename || res.detail_relative_path
+      ? {
+          filename: res.detail_filename || res.filename || "",
+          relative_path: res.detail_relative_path || res.relative_path || "",
+        }
+      : null;
+
+  const directAch =
+    res.ach_filename || res.ach_relative_path
+      ? {
+          filename: res.ach_filename || "",
+          relative_path: res.ach_relative_path || "",
+        }
+      : null;
+
+  return {
+    raw: res,
+    detail: directDetail || detail,
+    ach: directAch || ach,
+  };
+}
+
 export default function PaymentsBroker() {
   const query = useQuery();
   const navigate = useNavigate();
@@ -59,10 +105,7 @@ export default function PaymentsBroker() {
 
   // Filter orders to this broker
   const brokerOrders = useMemo(
-    () =>
-      orders.filter(
-        (o) => (!broker ? true : o.broker === broker)
-      ),
+    () => orders.filter((o) => (!broker ? true : o.broker === broker)),
     [orders, broker]
   );
 
@@ -99,6 +142,7 @@ export default function PaymentsBroker() {
           : o.amount != null
           ? Number(o.amount)
           : 0;
+
       if (!Number.isNaN(payment)) {
         entry.totalPaymentAmount += payment;
       }
@@ -149,18 +193,24 @@ export default function PaymentsBroker() {
     setExportResult(null);
 
     try {
+      // Backend should generate:
+      // 1) detail CSV (order-level rows)
+      // 2) ach CSV (single line for broker payment record)
       const res = await apiPost("export-payments-file.php", {
         merchant_id: merchantId,
         broker,
       });
+
       if (!res?.success) {
-        setError(res?.error || "Failed to generate export file.");
+        setError(res?.error || "Failed to generate export files.");
+        setExportResult(null);
       } else {
-        setExportResult(res);
+        setExportResult(normalizeExportResult(res));
       }
     } catch (err) {
       console.error("[PaymentsBroker] export error:", err);
-      setError("Network/server error while generating export file.");
+      setError("Network/server error while generating export files.");
+      setExportResult(null);
     } finally {
       setLoading(false);
     }
@@ -181,8 +231,9 @@ export default function PaymentsBroker() {
       <h1 className="page-title">Broker Settlement</h1>
       <p className="page-deck">
         ACH settlement view for broker <strong>{broker || "(all brokers)"}</strong>{" "}
-        under merchant <code>{merchantId || "(missing)"}</code>. This page shows
-        ACH details and basket-level totals for the broker.
+        under merchant <code>{merchantId || "(missing)"}</code>.
+        <br />
+        Export generates <strong>two CSV files</strong>: a detailed order file and a single-line ACH payment record for this broker.
       </p>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -194,37 +245,62 @@ export default function PaymentsBroker() {
           >
             &larr; Back to Payments Processing
           </button>
+
           <button
             type="button"
             className="btn-primary"
             onClick={handleExport}
             disabled={loading || !merchantId || !broker}
+            title={!broker ? "Select a broker first" : "Generate export CSVs"}
           >
-            {loading ? "Processing…" : "Generate SFTP File for Broker"}
+            {loading ? "Processing…" : "Generate Broker CSVs (Detail + ACH)"}
           </button>
         </div>
 
         {error && (
-          <p
-            className="body-text"
-            style={{ color: "#dc2626", marginTop: "0.5rem" }}
-          >
+          <p className="body-text" style={{ color: "#dc2626", marginTop: "0.5rem" }}>
             {error}
           </p>
         )}
 
-        {exportResult?.success && (
+        {exportResult?.raw?.success && (
           <div className="body-text" style={{ marginTop: "0.5rem" }}>
-            <strong>Export file created:</strong>{" "}
-            <code>{exportResult.filename}</code>
-            {exportResult?.relative_path && (
-              <>
-                <br />
-                <span>
-                  Server path: <code>{exportResult.relative_path}</code>
-                </span>
-              </>
-            )}
+            <strong>Export created:</strong>
+
+            <div style={{ marginTop: "0.5rem" }}>
+              <div style={{ marginBottom: "0.35rem" }}>
+                <strong>1) Detail CSV:</strong>{" "}
+                <code>{exportResult.detail?.filename || "(missing from response)"}</code>
+                {exportResult.detail?.relative_path ? (
+                  <>
+                    <br />
+                    <span>
+                      Server path: <code>{exportResult.detail.relative_path}</code>
+                    </span>
+                  </>
+                ) : null}
+              </div>
+
+              <div>
+                <strong>2) ACH CSV (single payment record):</strong>{" "}
+                <code>{exportResult.ach?.filename || "(missing from response)"}</code>
+                {exportResult.ach?.relative_path ? (
+                  <>
+                    <br />
+                    <span>
+                      Server path: <code>{exportResult.ach.relative_path}</code>
+                    </span>
+                  </>
+                ) : null}
+              </div>
+
+              {/* If backend still only returns legacy single filename, show it too */}
+              {!exportResult.detail?.filename && exportResult.raw?.filename ? (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <strong>Legacy filename:</strong> <code>{exportResult.raw.filename}</code>
+                </div>
+              ) : null}
+            </div>
           </div>
         )}
       </div>
@@ -240,51 +316,35 @@ export default function PaymentsBroker() {
             </div>
             <div className="form-row">
               <label className="form-label">Broker ID</label>
-              <div className="form-input">
-                {brokerAchDetails.brokerId || "-"}
-              </div>
+              <div className="form-input">{brokerAchDetails.brokerId || "-"}</div>
             </div>
             <div className="form-row">
               <label className="form-label">ACH Payment Amount</label>
-              <div className="form-input">
-                ${brokerAchDetails.achPaymentAmount.toFixed(2)}
-              </div>
+              <div className="form-input">${brokerAchDetails.achPaymentAmount.toFixed(2)}</div>
             </div>
             <div className="form-row">
               <label className="form-label">ACH Bank Name</label>
-              <div className="form-input">
-                {brokerAchDetails.bankName || "-"}
-              </div>
+              <div className="form-input">{brokerAchDetails.bankName || "-"}</div>
             </div>
             <div className="form-row">
               <label className="form-label">ACH Routing Number</label>
-              <div className="form-input">
-                {brokerAchDetails.routingNumber || "-"}
-              </div>
+              <div className="form-input">{brokerAchDetails.routingNumber || "-"}</div>
             </div>
             <div className="form-row">
               <label className="form-label">ACH Account Number</label>
-              <div className="form-input">
-                {brokerAchDetails.accountNumber || "-"}
-              </div>
+              <div className="form-input">{brokerAchDetails.accountNumber || "-"}</div>
             </div>
             <div className="form-row">
               <label className="form-label">ACH Account Type</label>
-              <div className="form-input">
-                {brokerAchDetails.accountType || "-"}
-              </div>
+              <div className="form-input">{brokerAchDetails.accountType || "-"}</div>
             </div>
             <div className="form-row">
               <label className="form-label">Total Orders</label>
-              <div className="form-input">
-                {brokerAchDetails.orderCount || brokerOrders.length}
-              </div>
+              <div className="form-input">{brokerAchDetails.orderCount || brokerOrders.length}</div>
             </div>
           </div>
         ) : (
-          <p className="body-text">
-            No unpaid confirmed/executed orders found for this broker.
-          </p>
+          <p className="body-text">No unpaid confirmed/executed orders found for this broker.</p>
         )}
       </div>
 

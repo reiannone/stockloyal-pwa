@@ -1,5 +1,21 @@
-PowerShell Use this exact working script:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FRONTEND: AWS Amplify and GitHub from PowerShell:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+# If you haven't initialized git yet
+git init
+git add .
+git commit -m "Update social feed pages to filter on member selection"
+
+# Create a new repository on GitHub, then:
+git remote add origin https://github.com/reiannone/stockloyal-pwa.git
+git branch -M main
+git push -u origin main
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # 1. Path to your PEM key
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
@@ -15,10 +31,49 @@ $DEST = "/home/ec2-user/social_feed.php"
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-After upload, SSH into EC2:
-
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sudo mv /home/ec2-user/social_feed.php /var/www/html/api/social_feed.php
 sudo chown apache:apache /var/www/html/api/social_feed.php
 sudo chmod 644 /var/www/html/api/social_feed.php
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+BACKEND Step 1: MULTIPLE Endpoints PHP: PowerShell Use this exact working script:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+$KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
+$EC2 = "ec2-user@3.150.49.91"
+$BASE_DIR = "C:\xampp\htdocs\stockloyal-pwa\api"
+
+# Upload files
+scp -i $KEY "$BASE_DIR\get-brokers.php" "${EC2}:/home/ec2-user/"
+scp -i $KEY "$BASE_DIR\save-broker.php" "${EC2}:/home/ec2-user/"
+scp -i $KEY "$BASE_DIR\delete-broker.php" "${EC2}:/home/ec2-user/"
+
+# Move to web directory and set permissions
+ssh -i $KEY $EC2 "sudo mv /home/ec2-user/get-brokers.php /var/www/html/api/ && sudo mv /home/ec2-user/save-broker.php /var/www/html/api/ && sudo mv /home/ec2-user/delete-broker.php /var/www/html/api/ && sudo chown apache:apache /var/www/html/api/get-brokers.php /var/www/html/api/save-broker.php /var/www/html/api/delete-broker.php && sudo chmod 644 /var/www/html/api/get-brokers.php /var/www/html/api/save-broker.php /var/www/html/api/delete-broker.php"
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+BACKEND Step 2: After MULTIPLE uploads, SSH into EC2: (AWS EC2 Connection)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ssh -i C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem ec2-user@3.150.49.91
+
+# Check if files exist
+ls -la /var/www/html/api/get-brokers.php
+ls -la /var/www/html/api/save-broker.php
+ls -la /var/www/html/api/delete-broker.php
+
+# Test the endpoint
+curl https://api.stockloyal.com/api/get-brokers.php
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+MYSQL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Connect to RDS
+mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com \
+      -u admin \
+      -p'StockLoyal2025!' \
+      stockloyal

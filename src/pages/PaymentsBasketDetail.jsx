@@ -64,6 +64,26 @@ export default function PaymentsBasketDetail() {
     [orders, broker, basketId]
   );
 
+  // Unique member IDs for this basket (display in summary)
+  const basketMemberIds = useMemo(() => {
+    const set = new Set();
+    for (const o of basketOrders || []) {
+      if (o?.member_id) set.add(String(o.member_id));
+    }
+    const arr = Array.from(set);
+    arr.sort((a, b) => a.localeCompare(b));
+    return arr;
+  }, [basketOrders]);
+
+  const basketMemberIdsDisplay = useMemo(() => {
+    if (!basketMemberIds || basketMemberIds.length === 0) return "-";
+    if (basketMemberIds.length === 1) return basketMemberIds[0];
+    // If many, show a compact preview with count
+    const preview = basketMemberIds.slice(0, 5).join(", ");
+    const more = basketMemberIds.length > 5 ? ` … (+${basketMemberIds.length - 5} more)` : "";
+    return `${preview}${more}`;
+  }, [basketMemberIds]);
+
   const totals = useMemo(() => {
     if (!basketOrders || basketOrders.length === 0) {
       return {
@@ -112,6 +132,12 @@ export default function PaymentsBasketDetail() {
           </button>
         </div>
 
+        {loading && (
+          <p className="body-text" style={{ marginTop: "0.5rem" }}>
+            Loading...
+          </p>
+        )}
+
         {error && (
           <p
             className="body-text"
@@ -128,9 +154,17 @@ export default function PaymentsBasketDetail() {
         {basketOrders && basketOrders.length > 0 ? (
           <div className="form-grid">
             <div className="form-row">
+              <label className="form-label">Member ID(s)</label>
+              <div className="form-input" title={basketMemberIds.join(", ")}>
+                {basketMemberIdsDisplay}
+              </div>
+            </div>
+
+            <div className="form-row">
               <label className="form-label">Total Orders in Basket</label>
               <div className="form-input">{totals.totalOrders}</div>
             </div>
+
             <div className="form-row">
               <label className="form-label">Total Payment Amount</label>
               <div className="form-input">
@@ -155,7 +189,7 @@ export default function PaymentsBasketDetail() {
               <thead>
                 <tr>
                   <th>Order ID</th>
-                  <th>Member ID</th>
+                  {/* Member ID removed (now shown in summary) */}
                   <th>Symbol</th>
                   <th>Status</th>
                   <th>Requested Amount ($)</th>
@@ -170,7 +204,6 @@ export default function PaymentsBasketDetail() {
                 {basketOrders.map((o) => (
                   <tr key={o.order_id}>
                     <td>{o.order_id}</td>
-                    <td>{o.member_id}</td>
                     <td>{o.symbol}</td>
                     <td>{o.status}</td>
                     <td>
@@ -197,9 +230,7 @@ export default function PaymentsBasketDetail() {
             </table>
           </div>
         ) : (
-          <p className="body-text">
-            No orders to display for this basket.
-          </p>
+          <p className="body-text">No orders to display for this basket.</p>
         )}
       </div>
     </div>

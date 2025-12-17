@@ -58,6 +58,7 @@ try {
             break;
     }
 
+    // Orders (raw-ish) — also includes computed payment_amount for convenience
     $sqlOrders = "
         SELECT 
             o.*,
@@ -78,6 +79,7 @@ try {
     $stmtOrders->execute();
     $orders = $stmtOrders->fetchAll(PDO::FETCH_ASSOC);
 
+    // Summary by broker (one row per broker)
     $sqlSummary = "
         SELECT
             o.broker,
@@ -88,7 +90,9 @@ try {
             bm.ach_account_num,
             bm.ach_account_type,
             COUNT(*) AS order_count,
-            SUM(COALESCE(o.executed_amount, o.amount)) AS total_payment_amount
+            COUNT(DISTINCT o.basket_id) AS basket_count,
+            SUM(COALESCE(o.executed_amount, o.amount)) AS total_payment_amount,
+            SUM(COALESCE(o.executed_amount, o.amount)) AS total_payment_due
         FROM orders o
         LEFT JOIN broker_credentials bc
             ON o.broker COLLATE utf8mb4_general_ci = bc.broker COLLATE utf8mb4_general_ci
