@@ -1500,7 +1500,14 @@ button.nav-item {
   width: max-content;
   white-space: nowrap;
   will-change: transform;
-  animation: ticker-scroll 150s linear infinite;
+  animation: ticker-scroll 120s linear infinite;
+  /* Prevent animation from pausing on updates */
+  animation-play-state: running;
+}
+
+/* Ensure animation continues even during React re-renders */
+.order-ticker .ticker-track > * {
+  flex-shrink: 0;
 }
 
 .order-ticker .ticker-copy {
@@ -1510,6 +1517,7 @@ button.nav-item {
 @keyframes ticker-scroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
+}
 }
 
 /* Full-screen dimmed backdrop */

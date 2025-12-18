@@ -73,7 +73,7 @@ try {
         return strcmp($b['event_time'], $a['event_time']);
     });
 
-    // Prepare final payload (limit to 50 most recent)
+    // Prepare final payload (limit to 20 most recent for optimal ticker performance)
     $items = [];
     $count = 0;
     foreach ($byOrder as $order) {
@@ -86,7 +86,7 @@ try {
             'placed_at'   => $order['event_time'],
             'lines'       => $order['items'],           // each {symbol, shares, amount}
         ];
-        if (++$count >= 50) break;
+        if (++$count >= 20) break;
     }
 
     echo json_encode([
