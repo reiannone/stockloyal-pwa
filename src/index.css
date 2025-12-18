@@ -351,6 +351,10 @@ body.dev-frame .iphone-frame::before {
 
   display: flex;
   justify-content: center; /* center the inner container */
+  
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin: 0 auto;
 }
 
 .nav-inner {
@@ -1480,16 +1484,15 @@ button.nav-item {
 
 /* ---- Order Ticker ---- */
 .order-ticker {
-  position: fixed;
-  bottom: 70px;
-  left: 50%;
+  position: relative;
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin: 0 auto;
   background-color:#333;
-  transform: translateX(-50%);
   z-index: 60;
   pointer-events: none;
   user-select: none;
-  max-width: var(--app-max-width);
-  width: 100%;
+  overflow: hidden;
 }
 
 .order-ticker .ticker-track {

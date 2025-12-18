@@ -54,7 +54,7 @@ export default function OrderTicker() {
           key={`${member}-${totalPts}-${idx}`}
           className="inline-block mr-6"
           style={{
-            pointerEvents: "auto", // ⭐ allow clicks inside this span
+            pointerEvents: "auto",
           }}
         >
           {/* leading | separator */}
@@ -68,7 +68,7 @@ export default function OrderTicker() {
               color: "#FFD700", // bright gold
               textDecoration: "underline",
               cursor: "pointer",
-              pointerEvents: "auto", // ⭐ make sure link itself is clickable
+              pointerEvents: "auto",
               position: "relative",
               zIndex: 2,
             }}
@@ -87,19 +87,9 @@ export default function OrderTicker() {
   }, [items]);
 
   return (
-    <div
-      className="order-ticker"
-      style={{
-        pointerEvents: "auto", // ⭐ allow interaction on the ticker generally
-      }}
-    >
+    <div className="order-ticker" style={{ pointerEvents: "auto" }}>
       <div className="rounded-t-2xl bg-black/80 text-white text-sm leading-8 overflow-hidden backdrop-blur px-3">
-        <div
-          className="ticker-track whitespace-nowrap flex"
-          style={{
-            pointerEvents: "auto", // ⭐ make sure the track isn't blocking clicks
-          }}
-        >
+        <div className="ticker-track whitespace-nowrap flex" style={{ pointerEvents: "auto" }}>
           {/* We render line twice for the infinite scroll effect */}
           {line}
           {line}
@@ -108,4 +98,3 @@ export default function OrderTicker() {
     </div>
   );
 }
-

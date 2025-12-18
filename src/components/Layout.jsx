@@ -2,7 +2,6 @@
 import React from "react";
 import { Outlet } from "react-router-dom";
 import Header from "./Header";
-import OrderTicker from "./OrderTicker";
 import Footer from "./Footer";
 
 export default function Layout() {
@@ -14,7 +13,6 @@ export default function Layout() {
       <main className="iphone-content flex-1 overflow-y-auto">
         <Outlet />
       </main>
-      <OrderTicker />   {/* ⬅️ absolute to .iphone-frame */}
       <Footer />
     </div>
   );

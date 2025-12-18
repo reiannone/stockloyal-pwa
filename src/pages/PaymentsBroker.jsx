@@ -8,49 +8,89 @@ function useQuery() {
 }
 
 function normalizeExportResult(res) {
-  // Expecting either:
-  // A) { success:true, detail_filename, detail_relative_path, ach_filename, ach_relative_path }
-  // B) { success:true, files:[ {type:'detail'|'ach', filename, relative_path} ] }
+  // Supports:
+  // A) NEW: { success:true, detail_csv:{filename,relative_path,url}, ach_csv:{...}, legacy_csv:{...} }
+  // B) OLD: { success:true, detail_filename, detail_relative_path, ach_filename, ach_relative_path }
+  // C) ALT: { success:true, files:[ {type:'detail'|'ach', filename, relative_path, url} ] }
   if (!res || !res.success) return null;
 
   let detail = null;
   let ach = null;
 
-  if (Array.isArray(res.files)) {
+  // NEW canonical format
+  if (res.detail_csv) {
+    detail = {
+      filename: res.detail_csv.filename || "",
+      relative_path: res.detail_csv.relative_path || "",
+      url: res.detail_csv.url || "",
+    };
+  }
+  if (res.ach_csv) {
+    ach = {
+      filename: res.ach_csv.filename || "",
+      relative_path: res.ach_csv.relative_path || "",
+      url: res.ach_csv.url || "",
+    };
+  }
+
+  // ALT array format
+  if ((!detail || !ach) && Array.isArray(res.files)) {
     for (const f of res.files) {
       if (!f) continue;
       const t = String(f.type || "").toLowerCase();
-      if (t === "detail" || t === "details" || t === "orders") {
-        detail = { filename: f.filename || "", relative_path: f.relative_path || "" };
+      if (!detail && (t === "detail" || t === "details" || t === "orders")) {
+        detail = {
+          filename: f.filename || "",
+          relative_path: f.relative_path || "",
+          url: f.url || "",
+        };
       }
-      if (t === "ach" || t === "payment" || t === "settlement") {
-        ach = { filename: f.filename || "", relative_path: f.relative_path || "" };
+      if (!ach && (t === "ach" || t === "payment" || t === "settlement")) {
+        ach = {
+          filename: f.filename || "",
+          relative_path: f.relative_path || "",
+          url: f.url || "",
+        };
       }
     }
   }
 
-  // Direct fields (preferred if present)
-  const directDetail =
-    res.detail_filename || res.detail_relative_path
+  // OLD direct fields
+  if (!detail && (res.detail_filename || res.detail_relative_path)) {
+    detail = {
+      filename: res.detail_filename || res.filename || "",
+      relative_path: res.detail_relative_path || res.relative_path || "",
+      url: res.detail_url || "",
+    };
+  }
+  if (!ach && (res.ach_filename || res.ach_relative_path)) {
+    ach = {
+      filename: res.ach_filename || "",
+      relative_path: res.ach_relative_path || "",
+      url: res.ach_url || "",
+    };
+  }
+
+  // Legacy (optional)
+  const legacy =
+    res.legacy_csv || res.filename || res.relative_path
       ? {
-          filename: res.detail_filename || res.filename || "",
-          relative_path: res.detail_relative_path || res.relative_path || "",
+          filename:
+            (typeof res.legacy_csv === "object" && res.legacy_csv?.filename) ||
+            res.filename ||
+            "",
+          relative_path:
+            (typeof res.legacy_csv === "object" && res.legacy_csv?.relative_path) ||
+            res.relative_path ||
+            "",
+          url:
+            (typeof res.legacy_csv === "object" && res.legacy_csv?.url) ||
+            res.url ||
+            "",
         }
       : null;
 
-  const directAch =
-    res.ach_filename || res.ach_relative_path
-      ? {
-          filename: res.ach_filename || "",
-          relative_path: res.ach_relative_path || "",
-        }
-      : null;
-
-  return {
-    raw: res,
-    detail: directDetail || detail,
-    ach: directAch || ach,
-  };
+  return { raw: res, detail, ach, legacy };
 }
 
 export default function PaymentsBroker() {
@@ -78,10 +118,9 @@ export default function PaymentsBroker() {
     (async () => {
       setLoading(true);
       try {
-        const res = await apiPost("get-payments.php", {
-          merchant_id: merchantId,
-        });
+        const res = await apiPost("get-payments.php", { merchant_id: merchantId });
         if (!mounted) return;
+
         if (!res?.success) {
           setError(res?.error || "Failed to fetch payments.");
           setOrders([]);
@@ -143,9 +182,7 @@ export default function PaymentsBroker() {
           ? Number(o.amount)
           : 0;
 
-      if (!Number.isNaN(payment)) {
-        entry.totalPaymentAmount += payment;
-      }
+      if (!Number.isNaN(payment)) entry.totalPaymentAmount += payment;
     }
 
     return Array.from(map.values()).map((entry) => ({
@@ -174,7 +211,12 @@ export default function PaymentsBroker() {
     return {
       brokerName: brokerSummary.broker || broker || "",
       brokerId: brokerSummary.broker_id || "",
-      achPaymentAmount: Number(brokerSummary.total_payment_amount || 0),
+      achPaymentAmount: Number(
+        brokerSummary.total_payment_due ??
+          brokerSummary.total_payment_amount ??
+          brokerSummary.total_amount ??
+          0
+      ),
       bankName: brokerSummary.ach_bank_name || "",
       routingNumber: brokerSummary.ach_routing_num || "",
       accountNumber: brokerSummary.ach_account_num || "",
@@ -193,9 +235,6 @@ export default function PaymentsBroker() {
     setExportResult(null);
 
     try {
-      // Backend should generate:
-      // 1) detail CSV (order-level rows)
-      // 2) ach CSV (single line for broker payment record)
       const res = await apiPost("export-payments-file.php", {
         merchant_id: merchantId,
         broker,
@@ -226,6 +265,34 @@ export default function PaymentsBroker() {
     );
   };
 
+  const renderDownload = (fileObj) => {
+    if (!fileObj) return <code>(missing from response)</code>;
+
+    // Preferred: clickable URL
+    if (fileObj.url) {
+      return (
+        <a href={fileObj.url} target="_blank" rel="noreferrer">
+          {fileObj.filename || fileObj.url}
+        </a>
+      );
+    }
+
+    // Fallback: show filename and/or relative path
+    return (
+      <>
+        <code>{fileObj.filename || "(no filename)"}</code>
+        {fileObj.relative_path ? (
+          <>
+            <br />
+            <span>
+              Server path: <code>{fileObj.relative_path}</code>
+            </span>
+          </>
+        ) : null}
+      </>
+    );
+  };
+
   return (
     <div className="app-container app-content">
       <h1 className="page-title">Broker Settlement</h1>
@@ -233,16 +300,13 @@ export default function PaymentsBroker() {
         ACH settlement view for broker <strong>{broker || "(all brokers)"}</strong>{" "}
         under merchant <code>{merchantId || "(missing)"}</code>.
         <br />
-        Export generates <strong>two CSV files</strong>: a detailed order file and a single-line ACH payment record for this broker.
+        Export generates <strong>two CSV files</strong>: a detailed order file and a
+        single-line ACH payment record for this broker.
       </p>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
         <div className="card-actions" style={{ marginBottom: "0.75rem" }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => navigate(-1)}
-          >
+          <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>
             &larr; Back to Payments Processing
           </button>
 
@@ -269,35 +333,24 @@ export default function PaymentsBroker() {
 
             <div style={{ marginTop: "0.5rem" }}>
               <div style={{ marginBottom: "0.35rem" }}>
-                <strong>1) Detail CSV:</strong>{" "}
-                <code>{exportResult.detail?.filename || "(missing from response)"}</code>
-                {exportResult.detail?.relative_path ? (
-                  <>
-                    <br />
-                    <span>
-                      Server path: <code>{exportResult.detail.relative_path}</code>
-                    </span>
-                  </>
-                ) : null}
+                <strong>1) Detail CSV:</strong> {renderDownload(exportResult.detail)}
               </div>
 
-              <div>
+              <div style={{ marginBottom: "0.35rem" }}>
                 <strong>2) ACH CSV (single payment record):</strong>{" "}
-                <code>{exportResult.ach?.filename || "(missing from response)"}</code>
-                {exportResult.ach?.relative_path ? (
-                  <>
-                    <br />
-                    <span>
-                      Server path: <code>{exportResult.ach.relative_path}</code>
-                    </span>
-                  </>
-                ) : null}
+                {renderDownload(exportResult.ach)}
               </div>
 
-              {/* If backend still only returns legacy single filename, show it too */}
-              {!exportResult.detail?.filename && exportResult.raw?.filename ? (
+              {/* Backward-compatible legacy display */}
+              {!exportResult.detail?.filename &&
+              !exportResult.detail?.url &&
+              exportResult.raw?.filename ? (
                 <div style={{ marginTop: "0.5rem" }}>
                   <strong>Legacy filename:</strong> <code>{exportResult.raw.filename}</code>
+                </div>
+              ) : exportResult.legacy?.filename || exportResult.legacy?.url ? (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <strong>Legacy CSV:</strong> {renderDownload(exportResult.legacy)}
                 </div>
               ) : null}
             </div>
@@ -381,8 +434,7 @@ export default function PaymentsBroker() {
           </table>
         ) : (
           <p className="body-text">
-            No baskets found for this broker. Make sure there are unpaid
-            confirmed/executed orders.
+            No baskets found for this broker. Make sure there are unpaid confirmed/executed orders.
           </p>
         )}
       </div>

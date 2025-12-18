@@ -13,6 +13,32 @@ header("Content-Type: application/json");
 
 require_once __DIR__ . "/config.php"; // $conn = PDO
 
+function safe_filename(string $s): string {
+    $s = trim($s);
+    $s = preg_replace('/[^A-Za-z0-9._-]+/', '_', $s);
+    $s = preg_replace('/_+/', '_', $s);
+    return trim($s, '_');
+}
+
+function num($v): float {
+    if ($v === null || $v === '') return 0.0;
+    if (is_numeric($v)) return (float)$v;
+    return 0.0;
+}
+
+function build_url(string $relativePath): string {
+    // Frontend can use relative_path, but this helps for direct clicking.
+    // If you set API_BASE_PUBLIC=https://api.stockloyal.com/api in your .env, it will be used.
+    $base = rtrim($_ENV['API_BASE_PUBLIC'] ?? '', '/');
+    if ($base === '') return $relativePath; // fallback
+    // relative path may be "api/exports/xxx.csv" OR "exports/xxx.csv"
+    $relativePath = ltrim($relativePath, '/');
+    if (str_starts_with($relativePath, 'api/')) {
+        $relativePath = substr($relativePath, 4); // remove "api/"
+    }
+    return $base . '/' . $relativePath;
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -53,7 +79,13 @@ try {
         exit;
     }
 
-    // Only confirmed/executed, unpaid orders for this merchant & broker
+    // Optional: paid_filter (default unpaid)
+    $paid_filter = strtolower(trim($input['paid_filter'] ?? 'unpaid'));
+    $paidWhere = " AND o.paid_flag = 0";
+    if ($paid_filter === 'paid') $paidWhere = " AND o.paid_flag = 1";
+    if ($paid_filter === 'all')  $paidWhere = "";
+
+    // Pull orders for this merchant+broker
     $sql = "
         SELECT
             o.*,
@@ -66,7 +98,7 @@ try {
         WHERE o.merchant_id = :merchant_id
           AND o.broker = :broker
           AND o.status IN ('confirmed','executed')
-          AND o.paid_flag = 0
+          $paidWhere
         ORDER BY o.order_id
     ";
 
@@ -79,11 +111,24 @@ try {
     if (!$rows) {
         echo json_encode([
             "success" => false,
-            "error"   => "No unpaid confirmed/executed orders found for this merchant and broker.",
+            "error"   => "No matching orders found for this merchant and broker (with current paid_filter).",
         ]);
         exit;
     }
 
+    // Pull broker ACH info (best-effort; do not fail export if missing)
+    $sqlAch = "
+        SELECT broker_id, broker_name, ach_bank_name, ach_routing_num, ach_account_num, ach_account_type
+        FROM broker_master
+        WHERE broker_name COLLATE utf8mb4_general_ci = :broker COLLATE utf8mb4_general_ci
+        LIMIT 1
+    ";
+    $stmtAch = $conn->prepare($sqlAch);
+    $stmtAch->bindValue(':broker', $broker, PDO::PARAM_STR);
+    $stmtAch->execute();
+    $ach = $stmtAch->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    // Export directory
     $exportDir = __DIR__ . "/exports";
     if (!is_dir($exportDir)) {
         if (!mkdir($exportDir, 0775, true) && !is_dir($exportDir)) {
@@ -91,38 +136,164 @@ try {
         }
     }
 
-    $timestamp = date("Ymd_His");
-    $safeBroker = preg_replace('/[^A-Za-z0-9]+/', '_', $broker);
-    $filename  = "payments_{$merchant_id}_{$safeBroker}_{$timestamp}.csv";
-    $filepath  = $exportDir . "/" . $filename;
+    $timestamp  = date("Ymd_His");
+    $safeBroker = safe_filename($broker);
+    $safeMerch  = safe_filename($merchant_id);
 
-    $fp = fopen($filepath, 'w');
-    if ($fp === false) {
-        throw new RuntimeException("Unable to open export file for writing");
+    // Legacy (keep existing behavior)
+    $legacyFilename = "payments_{$safeMerch}_{$safeBroker}_{$timestamp}.csv";
+    $legacyFilepath = $exportDir . "/" . $legacyFilename;
+
+    // New files
+    $detailFilename = "payments_{$safeMerch}_{$safeBroker}_{$timestamp}_detail.csv";
+    $detailFilepath = $exportDir . "/" . $detailFilename;
+
+    $achFilename    = "payments_{$safeMerch}_{$safeBroker}_{$timestamp}_ach.csv";
+    $achFilepath    = $exportDir . "/" . $achFilename;
+
+    // -------------------------
+    // Write LEGACY CSV (single file: same as before)
+    // -------------------------
+    $fpLegacy = fopen($legacyFilepath, 'w');
+    if ($fpLegacy === false) {
+        throw new RuntimeException("Unable to open legacy export file for writing");
     }
 
-    // Header based on keys from first row
-    $header = array_keys($rows[0]);
-    fputcsv($fp, $header);
-
+    $legacyHeader = array_keys($rows[0]);
+    fputcsv($fpLegacy, $legacyHeader);
     foreach ($rows as $row) {
         $line = [];
-        foreach ($header as $col) {
-            $line[] = $row[$col];
-        }
-        fputcsv($fp, $line);
+        foreach ($legacyHeader as $col) $line[] = $row[$col] ?? '';
+        fputcsv($fpLegacy, $line);
+    }
+    fclose($fpLegacy);
+
+    // -------------------------
+    // Write DETAIL CSV (explicit header, consistent)
+    // -------------------------
+    $fpDetail = fopen($detailFilepath, 'w');
+    if ($fpDetail === false) {
+        throw new RuntimeException("Unable to open detail export file for writing");
     }
 
-    fclose($fp);
+    $detailHeader = [
+        "merchant_id","broker","basket_id","order_id","member_id","symbol","side","qty",
+        "amount","executed_amount","payment_amount","status","created_at","broker_username"
+    ];
+    fputcsv($fpDetail, $detailHeader);
+
+    $totalAmount = 0.0;
+    $basketSet = [];
+
+    foreach ($rows as $r) {
+        $payment = num($r['payment_amount'] ?? ($r['executed_amount'] ?? ($r['amount'] ?? 0)));
+        $totalAmount += $payment;
+
+        $basketId = (string)($r['basket_id'] ?? '');
+        if ($basketId !== '') $basketSet[$basketId] = true;
+
+        fputcsv($fpDetail, [
+            $r['merchant_id'] ?? '',
+            $r['broker'] ?? '',
+            $r['basket_id'] ?? '',
+            $r['order_id'] ?? '',
+            $r['member_id'] ?? '',
+            $r['symbol'] ?? '',
+            $r['side'] ?? '',
+            $r['qty'] ?? '',
+            $r['amount'] ?? '',
+            $r['executed_amount'] ?? '',
+            number_format($payment, 2, '.', ''),
+            $r['status'] ?? '',
+            $r['created_at'] ?? '',
+            $r['broker_username'] ?? '',
+        ]);
+    }
+
+    fclose($fpDetail);
+
+    $orderCount  = count($rows);
+    $basketCount = count($basketSet);
+
+    // -------------------------
+    // Write ACH CSV (single payment record)
+    // -------------------------
+    $fpAch = fopen($achFilepath, 'w');
+    if ($fpAch === false) {
+        throw new RuntimeException("Unable to open ach export file for writing");
+    }
+
+    $achHeader = [
+        "merchant_id",
+        "broker",
+        "ach_bank_name",
+        "ach_routing_num",
+        "ach_account_num",
+        "ach_account_type",
+        "payment_amount_total",
+        "unpaid_order_count",
+        "unpaid_basket_count",
+        "memo"
+    ];
+    fputcsv($fpAch, $achHeader);
+
+    fputcsv($fpAch, [
+        $merchant_id,
+        $broker,
+        $ach['ach_bank_name'] ?? '',
+        $ach['ach_routing_num'] ?? '',
+        $ach['ach_account_num'] ?? '',
+        $ach['ach_account_type'] ?? '',
+        number_format($totalAmount, 2, '.', ''),
+        $orderCount,
+        $basketCount,
+        "StockLoyal ACH payment"
+    ]);
+
+    fclose($fpAch);
+
+    // relative paths (match your existing convention)
+    $legacyRel = "api/exports/" . $legacyFilename;
+    $detailRel = "api/exports/" . $detailFilename;
+    $achRel    = "api/exports/" . $achFilename;
 
     echo json_encode([
-        "success"       => true,
-        "message"       => "Export file created",
-        "filename"      => $filename,
-        "relative_path" => "api/exports/" . $filename,
+        "success"  => true,
+        "message"  => "Export files created",
+        "merchant_id" => $merchant_id,
+        "broker" => $broker,
+        "paid_filter" => $paid_filter,
+
+        "totals" => [
+            "unpaid_orders" => $orderCount,
+            "unpaid_baskets" => $basketCount,
+            "total_payment_due" => (float)number_format($totalAmount, 2, '.', '')
+        ],
+
+        // NEW (your PaymentsBroker page should use these)
+        "detail_csv" => [
+            "filename" => $detailFilename,
+            "relative_path" => $detailRel,
+            "url" => build_url($detailRel),
+        ],
+        "ach_csv" => [
+            "filename" => $achFilename,
+            "relative_path" => $achRel,
+            "url" => build_url($achRel),
+        ],
+
+        // LEGACY (keep existing consumers working)
+        "legacy_csv" => [
+            "filename" => $legacyFilename,
+            "relative_path" => $legacyRel,
+            "url" => build_url($legacyRel),
+        ],
+        "filename" => $legacyFilename,              // backward compatible
+        "relative_path" => $legacyRel,              // backward compatible
     ]);
 
 } catch (Exception $e) {
+    error_log("export-payments-file.php ERROR: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         "success" => false,

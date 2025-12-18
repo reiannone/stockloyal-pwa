@@ -13,6 +13,7 @@ import {
 import { X } from "lucide-react";
 import { useBasket } from "../context/BasketContext";
 import SlideOutPanel from "./SlideOutPanel";
+import OrderTicker from "./OrderTicker";
 
 // Footer.jsx
 console.log("FOOTER LIVE:", import.meta.url, import.meta.env.MODE);
@@ -46,50 +47,53 @@ export default function Footer() {
 
   return (
     <>
+      {/* OrderTicker above the footer navigation */}
+      <OrderTicker />
+      
       {/* Bottom footer navigation bar */}
       <footer className="nav-bar">
         <div className="nav-inner">
-          {mainLinks.map(({ to, icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className={`nav-item ${location.pathname === to ? "nav-item-active" : ""}`}
+            {mainLinks.map(({ to, icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className={`nav-item ${location.pathname === to ? "nav-item-active" : ""}`}
+              >
+                <div className="relative">
+                  {icon}
+                  {to === "/basket" && basket.length > 0 && (
+                    <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                      {basket.length}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            ))}
+
+            {/* Settings toggle styled like other icons */}
+            <button
+              type="button"
+              onClick={() => setShowMenu(true)}
+              className="nav-item"
+              style={{
+                background: "transparent",
+                border: 0,
+                padding: 0,
+                margin: 0,
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "inherit",
+              }}
             >
               <div className="relative">
-                {icon}
-                {to === "/basket" && basket.length > 0 && (
-                  <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
-                    {basket.length}
-                  </span>
-                )}
+                <Settings className="nav-icon" />
               </div>
-            </Link>
-          ))}
-
-          {/* Settings toggle styled like other icons */}
-          <button
-            type="button"
-            onClick={() => setShowMenu(true)}
-            className="nav-item"
-            style={{
-              background: "transparent",
-              border: 0,
-              padding: 0,
-              margin: 0,
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "inherit",
-            }}
-          >
-            <div className="relative">
-              <Settings className="nav-icon" />
-            </div>
-          </button>
-        </div>
-      </footer>
+            </button>
+          </div>
+        </footer>
 
       {/* Slide-out menu */}
       <SlideOutPanel
