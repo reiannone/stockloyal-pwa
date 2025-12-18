@@ -116,6 +116,22 @@ try {
         exit;
     }
 
+    // Pull merchant name (best-effort; use merchant_id as fallback)
+    $merchant_name = $merchant_id; // default fallback
+    try {
+        $sqlMerchant = "SELECT name FROM merchant WHERE merchant_id = :merchant_id LIMIT 1";
+        $stmtMerchant = $conn->prepare($sqlMerchant);
+        $stmtMerchant->bindValue(':merchant_id', $merchant_id, PDO::PARAM_STR);
+        $stmtMerchant->execute();
+        $merchantRow = $stmtMerchant->fetch(PDO::FETCH_ASSOC);
+        if ($merchantRow && !empty($merchantRow['name'])) {
+            $merchant_name = $merchantRow['name'];
+        }
+    } catch (Exception $e) {
+        // Table might not exist, just use merchant_id
+        error_log("Could not fetch merchant name: " . $e->getMessage());
+    }
+
     // Pull broker ACH info (best-effort; do not fail export if missing)
     $sqlAch = "
         SELECT broker_id, broker_name, ach_bank_name, ach_routing_num, ach_account_num, ach_account_type
@@ -178,7 +194,7 @@ try {
 
     $detailHeader = [
         "merchant_id","broker","basket_id","order_id","member_id","symbol","side","qty",
-        "amount","executed_amount","payment_amount","status","created_at","broker_username"
+        "amount","executed_amount","payment_amount","status","placed_at","executed_at","created_at","broker_username"
     ];
     fputcsv($fpDetail, $detailHeader);
 
@@ -205,6 +221,8 @@ try {
             $r['executed_amount'] ?? '',
             number_format($payment, 2, '.', ''),
             $r['status'] ?? '',
+            $r['placed_at'] ?? '',
+            $r['executed_at'] ?? '',
             $r['created_at'] ?? '',
             $r['broker_username'] ?? '',
         ]);
@@ -224,8 +242,11 @@ try {
     }
 
     $achHeader = [
+        "payment_date",
         "merchant_id",
-        "broker",
+        "merchant_name",
+        "broker_id",
+        "broker_name",
         "ach_bank_name",
         "ach_routing_num",
         "ach_account_num",
@@ -238,8 +259,11 @@ try {
     fputcsv($fpAch, $achHeader);
 
     fputcsv($fpAch, [
+        date('Y-m-d H:i:s'), // payment_date (current timestamp)
         $merchant_id,
-        $broker,
+        $merchant_name,
+        $ach['broker_id'] ?? '',
+        $ach['broker_name'] ?? $broker,
         $ach['ach_bank_name'] ?? '',
         $ach['ach_routing_num'] ?? '',
         $ach['ach_account_num'] ?? '',

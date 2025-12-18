@@ -162,7 +162,7 @@ export default function SelectBroker() {
       }
 
       updateBroker(selected);
-      navigate("/wallet");
+      navigate("/terms");
     } catch (err) {
       console.error("SelectBroker error:", err);
       setError("Network error — please try again.");

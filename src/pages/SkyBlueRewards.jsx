@@ -8,13 +8,13 @@ const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
 export default function SkyBlueRewards() {
   const navigate = useNavigate();
 
-  const [memberEmail, setMemberEmail] = useState("");
-  const [pointsAvailable, setPointsAvailable] = useState("");
+  const [memberEmail, setMemberEmail] = useState("logan104");
+  const [pointsAvailable, setPointsAvailable] = useState("442231");
   const merchantId = "merchant001";
 
   const handleStartDemo = () => {
     if (!memberEmail.trim()) {
-      alert("Please enter an email");
+      alert("Please enter a member ID");
       return;
     }
     if (!pointsAvailable.trim() || isNaN(pointsAvailable)) {
@@ -56,11 +56,11 @@ export default function SkyBlueRewards() {
 
         <div className="demo-inputs">
           <label className="demo-label">
-            Member Email
+            Member
             <input
-              type="email"
+              type="text"
               className="demo-input"
-              placeholder="you@example.com"
+              placeholder="logan104"
               value={memberEmail}
               onChange={(e) => setMemberEmail(e.target.value)}
             />
@@ -71,7 +71,7 @@ export default function SkyBlueRewards() {
             <input
               type="number"
               className="demo-input"
-              placeholder="e.g. 500"
+              placeholder="442231"
               value={pointsAvailable}
               onChange={(e) => setPointsAvailable(e.target.value)}
             />

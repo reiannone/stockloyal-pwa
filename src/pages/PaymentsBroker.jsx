@@ -265,15 +265,73 @@ export default function PaymentsBroker() {
     );
   };
 
-  const renderDownload = (fileObj) => {
+  const handleDownload = async (fileObj, fileType) => {
+    if (!fileObj?.url) {
+      alert("No download URL available");
+      return;
+    }
+
+    try {
+      let downloadUrl = fileObj.url;
+      
+      console.log('[PaymentsBroker] Original URL:', downloadUrl);
+      
+      // If it's a relative path, construct the full API URL
+      if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+        // Get the API base from window or default
+        const apiBase = window.__VITE_API_BASE__ || 'https://api.stockloyal.com/api';
+        
+        // Remove leading slashes and 'api/' prefix if present
+        const cleanPath = downloadUrl.replace(/^\/+/, '').replace(/^api\/+/, '');
+        
+        // Construct full URL
+        downloadUrl = `${apiBase.replace(/\/+$/, '')}/${cleanPath}`;
+      }
+      
+      console.log('[PaymentsBroker] Final download URL:', downloadUrl);
+
+      // Create a temporary anchor element and trigger download
+      // This bypasses CORS since it's a direct navigation, not a fetch
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileObj.filename || `${fileType}_export.csv`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup after a short delay
+      setTimeout(() => {
+        document.body.removeChild(a);
+      }, 100);
+      
+      console.log('[PaymentsBroker] Download initiated successfully');
+    } catch (err) {
+      console.error(`[PaymentsBroker] Download error for ${fileType}:`, err);
+      alert(`Failed to download ${fileType} file: ${err.message}\n\nCheck browser console for details.`);
+    }
+  };
+
+  const renderDownload = (fileObj, fileType) => {
     if (!fileObj) return <code>(missing from response)</code>;
 
-    // Preferred: clickable URL
+    // Preferred: clickable URL with download trigger
     if (fileObj.url) {
       return (
-        <a href={fileObj.url} target="_blank" rel="noreferrer">
+        <button
+          type="button"
+          onClick={() => handleDownload(fileObj, fileType)}
+          style={{ 
+            color: "#2563eb", 
+            textDecoration: "underline",
+            cursor: "pointer",
+            background: "none",
+            border: "none",
+            padding: 0,
+            font: "inherit"
+          }}
+        >
           {fileObj.filename || fileObj.url}
-        </a>
+        </button>
       );
     }
 
@@ -333,12 +391,12 @@ export default function PaymentsBroker() {
 
             <div style={{ marginTop: "0.5rem" }}>
               <div style={{ marginBottom: "0.35rem" }}>
-                <strong>1) Detail CSV:</strong> {renderDownload(exportResult.detail)}
+                <strong>1) Detail CSV:</strong> {renderDownload(exportResult.detail, "detail")}
               </div>
 
               <div style={{ marginBottom: "0.35rem" }}>
                 <strong>2) ACH CSV (single payment record):</strong>{" "}
-                {renderDownload(exportResult.ach)}
+                {renderDownload(exportResult.ach, "ach")}
               </div>
 
               {/* Backward-compatible legacy display */}
@@ -350,7 +408,7 @@ export default function PaymentsBroker() {
                 </div>
               ) : exportResult.legacy?.filename || exportResult.legacy?.url ? (
                 <div style={{ marginTop: "0.5rem" }}>
-                  <strong>Legacy CSV:</strong> {renderDownload(exportResult.legacy)}
+                  <strong>Legacy CSV:</strong> {renderDownload(exportResult.legacy, "legacy")}
                 </div>
               ) : null}
             </div>

@@ -5,7 +5,7 @@ const Terms = () => {
   const navigate = useNavigate();
 
   const handleAccept = () => {
-    navigate("/select-broker");
+    navigate("/election");
   };
 
   const handleReject = () => {
