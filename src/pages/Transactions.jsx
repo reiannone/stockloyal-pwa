@@ -12,7 +12,7 @@ export default function Transactions() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ✅ StockPicker-style bottom sheet state
+  // ✅ StockPicker-style slider state (NO portal)
   const [isTxOpen, setIsTxOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
 
@@ -98,7 +98,6 @@ export default function Transactions() {
     }
   };
 
-  // ✅ Open / close (StockPicker pattern)
   const openTx = (order) => {
     setSelectedTx(order);
     setIsTxOpen(true);
@@ -106,7 +105,6 @@ export default function Transactions() {
 
   const closeTx = () => {
     setIsTxOpen(false);
-    // optional: clear after animation
     setTimeout(() => setSelectedTx(null), 180);
   };
 
@@ -195,7 +193,7 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* ✅ StockPicker-style bottom-sheet for transaction detail */}
+      {/* ✅ StockPicker-style slider (rendered INSIDE app; no portal) */}
       {isTxOpen && selectedTx && (
         <div className="stocklist-overlay" onClick={closeTx}>
           <div className="stocklist-sheet" onClick={(e) => e.stopPropagation()}>
@@ -224,18 +222,21 @@ export default function Transactions() {
                   value={selectedTx.placed_at ? toLocalZonedString(selectedTx.placed_at) : "-"}
                 />
 
-                {/* Optional fields if your API returns them */}
+                {/* Optional fields if your API includes them */}
                 {"order_id" in selectedTx && <Row label="Order ID" value={selectedTx.order_id || "-"} />}
                 {"basket_id" in selectedTx && <Row label="Basket ID" value={selectedTx.basket_id || "-"} />}
                 {"broker" in selectedTx && <Row label="Broker" value={selectedTx.broker || "-"} />}
-                {"merchant_id" in selectedTx && (
-                  <Row label="Merchant" value={selectedTx.merchant_id || "-"} />
-                )}
+                {"merchant_id" in selectedTx && <Row label="Merchant" value={selectedTx.merchant_id || "-"} />}
               </div>
             </div>
 
             <div className="stocklist-sheet-footer">
-              <button type="button" className="btn-secondary" style={{ width: "100%" }} onClick={closeTx}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ width: "100%" }}
+                onClick={closeTx}
+              >
                 Close
               </button>
             </div>
@@ -275,7 +276,6 @@ export default function Transactions() {
   );
 }
 
-// small helper component (keeps the detail view clean)
 function Row({ label, value }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>

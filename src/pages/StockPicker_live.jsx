@@ -324,6 +324,9 @@ export default function StockPicker() {
       {/* Points slider */}
       <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
         <p style={{ fontWeight: "600" }}>Points to Convert</p>
+        <p style={{ fontWeight: "100" }}>
+          Use slider to select points or enter a custom amount in the box below:
+        </p>
         <input
           id="pointsToConvert"
           type="number"

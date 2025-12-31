@@ -29,48 +29,147 @@ export default function Header() {
     { to: "/goodbye", label: "Exit App" },
   ];
 
+  // Progress steps in order
+  const progressSteps = [
+    { path: "/login", label: "Login" },
+    { path: "/member-onboard", label: "Onboarding" },
+    { path: "/select-broker", label: "Broker" },
+    { path: "/terms", label: "Terms" },
+    { path: "/election", label: "Election" },
+    { path: "/wallet", label: "Wallet" },
+    { path: "/stock-picker", label: "Convert" },
+    { path: "/basket", label: "Basket" },
+    { path: "/order", label: "Order" },
+  ];
+
+  const currentStepIndex = progressSteps.findIndex(
+    (step) => location.pathname === step.path
+  );
+  const isInProgressFlow = currentStepIndex !== -1;
+
+  const totalSteps = progressSteps.length;
+  const currentStep = isInProgressFlow
+    ? progressSteps[currentStepIndex]
+    : null;
+
+  // Donut progress values
+  const progressFraction = isInProgressFlow
+    ? (currentStepIndex + 1) / totalSteps
+    : 0;
+  const radius = 14;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - progressFraction);
+
   return (
     <div>
-      <header className="app-header relative bg-white flex items-center h-12 border-b border-gray-200 shadow-sm px-3">
-        {/* Logo (left) */}
-        <img
-          src={logo}
-          alt="StockLoyal"
-          className="object-contain flex-none"
-          style={{ height: 32, width: "auto" }}
-        />
+      <header
+        className="app-header bg-white border-b border-gray-200 shadow-sm h-12"
+        style={{ padding: "0 8px", position: "relative", display: "flex", alignItems: "center" }}
+      >
+        {/* LEFT: Menu button */}
+        <div style={{ width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <button
+            type="button"
+            aria-label="Open menu"
+            onClick={() => setShowMenu(true)}
+            style={{
+              width: 40,
+              height: 40,
+              border: "none",
+              background: "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            <Menu className="w-6 h-6 text-gray-800" strokeWidth={2} />
+          </button>
+        </div>
 
-        {/* Menu icon (right) */}
-        <button
-          type="button"
-          aria-label="Open menu"
-          onClick={() => setShowMenu(true)}
-          className="ml-auto grid place-items-center cursor-pointer"
+        {/* CENTER: Logo - absolutely positioned */}
+        <div
           style={{
-            width: 40,
-            height: 40,
-            background: "#ffffff",
-            border: 0,
-            padding: 0,
-            margin: 0,
-            cursor: "pointer",
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            transform: "translate(-50%, -50%)",
             display: "flex",
-            flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
-            color: "#1f2937",
-            outline: "none",
-            boxShadow: "none",
-            WebkitTapHighlightColor: "transparent",
-            position: "relative",
-            zIndex: 9999,
-            pointerEvents: "auto",
+            pointerEvents: "none",
           }}
         >
-          <Menu className="block w-6 h-6 text-gray-800" strokeWidth={2} style={{ position: "relative", zIndex: 9999, color: "#1f2937" }} />
-        </button>
+          <img
+            src={logo}
+            alt="StockLoyal"
+            style={{ height: 30, width: "auto" }}
+          />
+        </div>
+
+        {/* RIGHT: Donut progress indicator - pushed to the right with marginLeft auto */}
+        <div style={{ marginLeft: "auto", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {isInProgressFlow && currentStep && (
+            <div
+              style={{
+                position: "relative",
+                width: 40,
+                height: 40,
+              }}
+            >
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 44 44"
+                style={{ transform: "rotate(-90deg)" }}
+              >
+                <circle
+                  cx="22"
+                  cy="22"
+                  r={radius}
+                  fill="none"
+                  stroke="#e5e7eb"
+                  strokeWidth="5"
+                />
+                <circle
+                  cx="22"
+                  cy="22"
+                  r={radius}
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                />
+              </svg>
+
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "0.55rem",
+                    textAlign: "center",
+                    fontWeight: 700,
+                    color: "#111827",
+                  }}
+                >
+                  {currentStep.label}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       </header>
 
+      {/* Slide-out menu panel */}
       <SlideOutPanel
         isOpen={showMenu}
         onClose={() => setShowMenu(false)}
@@ -95,29 +194,27 @@ export default function Header() {
                     : ""
                 }`}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  width: "100%",
                   padding: "8px 12px",
                   textDecoration: "none",
-                  fontSize: "0.9rem",
-                  lineHeight: 1.25,
+                  display: "flex",
+                  alignItems: "center",
                 }}
               >
                 <span>{label}</span>
+
                 {to === "/basket" && basket.length > 0 && (
                   <span
                     style={{
+                      marginLeft: "auto",
                       minWidth: 18,
                       height: 18,
-                      fontSize: "0.7rem",
-                      display: "inline-flex",
+                      borderRadius: 9999,
+                      background: "#111827",
+                      color: "white",
+                      display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      borderRadius: "9999px",
-                      background: "#1f2937",
-                      color: "#fff",
-                      marginLeft: "auto",
+                      fontSize: "0.7rem",
                       padding: "0 4px",
                     }}
                   >

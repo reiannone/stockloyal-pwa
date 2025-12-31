@@ -1288,22 +1288,10 @@ button.nav-item {
   font-Size: 1rem;
 }
 /* Stock list row tweaks */
-.stocklist-table-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
 .stocklist-table {
   font-size: 0.85rem; /* smaller font */
   border-collapse: collapse;
   width: 100%;
-}
-
-.stocklist-table thead {
-  position: sticky;
-  top: 0;
-  background: #f9fafb;
-  z-index: 1;
 }
 
 .stocklist-table th,
@@ -1320,25 +1308,9 @@ button.nav-item {
   background: #f9fafb;
 }
 
-.stocklist-table tbody tr {
-  transition: background-color 0.15s;
-}
-
-.stocklist-table tbody tr:hover {
-  background-color: #f9fafb;
-}
-
 .stocklist-table .symbol {
   font-weight: 600;
   color: #2563eb;
-}
-
-.stocklist-table .text-center {
-  text-align: center;
-}
-
-.stocklist-table .text-left {
-  text-align: left;
 }
 
 /* stack price over change in a small column */
@@ -1555,16 +1527,13 @@ button.nav-item {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 9999; /* above everything including footer/nav */
+  width: 100%;
+  bottom: calc(var(--footer-height) + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 999; /* ensure above footer/nav */
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  overflow: hidden;
 }
 
 /* Constrain to app max-width */
@@ -1574,20 +1543,25 @@ button.nav-item {
   margin: 0 auto;
 }
 
+/* In dev-frame mode, constrain to frame */
+body.dev-frame .stocklist-overlay {
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--app-phone-width, 393px);
+  height: calc(900px - 40px - 91px); /* Frame height minus margins minus footer */
+  top: 20px; /* Frame top margin */
+  bottom: auto; /* Override bottom for frame mode */
+}
+
 /* Bottom sheet */
 .stocklist-sheet {
-  width: 100%;
-  max-width: var(--app-max-width);
+  width: min(520px, 100%);
   background: #fff;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
-  max-height: 85vh;
+  max-height: calc(100vh - var(--footer-height) - env(safe-area-inset-bottom) - 12px);
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  animation: stocklist-slide-up 0.3s ease-out;
-  margin: 0 auto;
 }
 
 /* Little drag handle bar */
@@ -1602,7 +1576,6 @@ button.nav-item {
 .stocklist-sheet-header {
   padding: 4px 16px 8px;
   border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
 }
 
 .stocklist-sheet-title-row {
@@ -1636,16 +1609,12 @@ button.nav-item {
   padding: 8px 12px 0;
   overflow-y: auto;
   flex: 1;
-  min-height: 0;
-  -webkit-overflow-scrolling: touch;
 }
 
 /* Footer buttons pinned to bottom of sheet */
 .stocklist-sheet-footer {
   padding: 12px 16px 16px;
   border-top: 1px solid #e5e7eb;
-  flex-shrink: 0;
-  background: #fff;
 }
 
 /* Optional loading text */
@@ -1653,21 +1622,6 @@ button.nav-item {
   font-size: 0.85rem;
   color: #6b7280;
   margin-top: 4px;
-  text-align: center;
-}
-
-.stocklist-error {
-  font-size: 0.85rem;
-  color: #dc2626;
-  margin-top: 4px;
-  text-align: center;
-}
-
-.stocklist-empty {
-  font-size: 0.9rem;
-  color: #6b7280;
-  text-align: center;
-  padding: 2rem 1rem;
 }
 
 /* Slide-up animation */
@@ -1677,27 +1631,5 @@ button.nav-item {
   }
   to {
     transform: translateY(0%);
-  }
-}
-
-/* Responsive adjustments for stocklist */
-@media (max-width: 640px) {
-  .stocklist-sheet {
-    max-height: 90vh;
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-  }
-  
-  .stocklist-table {
-    font-size: 0.8rem;
-  }
-  
-  .stocklist-table th,
-  .stocklist-table td {
-    padding: 8px 6px;
-  }
-  
-  .stocklist-heading {
-    font-size: 1rem;
   }
 }
