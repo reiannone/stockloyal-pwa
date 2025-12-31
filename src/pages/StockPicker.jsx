@@ -1,5 +1,6 @@
 // src/pages/StockPicker.jsx
 import React, { useEffect, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
@@ -66,6 +67,26 @@ export default function StockPicker() {
 
   // ✅ Bottom-sheet open/close state
   const [isStockListOpen, setIsStockListOpen] = useState(false);
+
+  // Create portal container on mount
+  useEffect(() => {
+    let portalRoot = document.getElementById('stocklist-portal-root');
+    if (!portalRoot) {
+      portalRoot = document.createElement('div');
+      portalRoot.id = 'stocklist-portal-root';
+      portalRoot.style.position = 'fixed';
+      portalRoot.style.top = '0';
+      portalRoot.style.left = '0';
+      portalRoot.style.right = '0';
+      portalRoot.style.bottom = '0';
+      portalRoot.style.zIndex = '999999';
+      portalRoot.style.pointerEvents = 'none';
+      document.body.appendChild(portalRoot);
+    }
+    return () => {
+      // Don't remove on unmount as other instances might use it
+    };
+  }, []);
 
   // --- Slider drag logic for categories ---
   const isDragging = useRef(false);
@@ -491,12 +512,47 @@ export default function StockPicker() {
         ))}
       </div>
 
-      {/* 🔥 Bottom-sheet Stock list overlay */}
-      {isStockListOpen && (
-        <div className="stocklist-overlay" onClick={handleCloseStockList}>
+      {/* 🔥 Bottom-sheet Stock list overlay - rendered via portal to dedicated container */}
+      {isStockListOpen && createPortal(
+        <div 
+          className="stocklist-overlay" 
+          onClick={handleCloseStockList}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 'var(--footer-height)',
+            width: '100vw',
+            height: 'calc(100vh - var(--footer-height))',
+            background: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 999999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-end',
+            pointerEvents: 'auto',
+          }}
+        >
           <div
             className="stocklist-sheet"
             onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+            style={{
+              position: 'relative',
+              width: '100%',
+              maxWidth: 'var(--app-max-width)',
+              background: '#fff',
+              borderTopLeftRadius: '20px',
+              borderTopRightRadius: '20px',
+              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.25)',
+              maxHeight: 'calc(85vh - var(--footer-height))',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'stocklist-slide-up 0.3s ease-out',
+              margin: '0 auto',
+              zIndex: 999999,
+              pointerEvents: 'auto',
+            }}
           >
             <div className="stocklist-sheet-header">
               <div className="stocklist-sheet-handle" />
@@ -602,7 +658,8 @@ export default function StockPicker() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.getElementById('stocklist-portal-root') || document.body
       )}
     </div>
   );

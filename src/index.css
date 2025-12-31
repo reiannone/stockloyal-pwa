@@ -192,13 +192,6 @@ body.dev-frame .iphone-frame::before {
   max-width: var(--app-max-width);
 }
 
-/* Footer sticks to bottom */
-.nav-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 50;
-}
-
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -343,7 +336,7 @@ body.dev-frame .iphone-frame::before {
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 2100; /* Above overlay (2000) */
+  z-index: 999999 !important; /* Same as overlay to stay visible */
 
   border-top: 1px solid #e5e7eb;
   background: #fff;
@@ -1549,22 +1542,42 @@ button.nav-item {
 }
 }
 
+/* Portal root container for stocklist overlay */
+#stocklist-portal-root {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 999999 !important;
+  pointer-events: none !important;
+}
+
 /* Full-screen dimmed backdrop */
-/* Fixed positioning - completely outside document flow */
+/* Fixed positioning - stops at footer */
 .stocklist-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100vw;
-  height: 100vh;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: var(--footer-height) !important; /* Stop at footer */
+  width: 100vw !important;
+  height: calc(100vh - var(--footer-height)) !important;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 9999; /* above everything including footer/nav */
+  z-index: 999999 !important;
   display: flex;
   justify-content: center;
   align-items: flex-end;
   overflow: hidden;
+  margin: 0 !important;
+  padding: 0 !important;
+  pointer-events: auto !important;
+}
+
+/* Ensure footer stays visible and above overlay backdrop */
+.nav-bar {
+  z-index: 999999 !important; /* Same as overlay to stay visible */
+  position: relative !important;
 }
 
 /* Constrain to app max-width */
@@ -1576,18 +1589,21 @@ button.nav-item {
 
 /* Bottom sheet */
 .stocklist-sheet {
+  position: relative;
   width: 100%;
   max-width: var(--app-max-width);
   background: #fff;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
-  max-height: 85vh;
+  max-height: calc(85vh - var(--footer-height)); /* Account for footer */
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: stocklist-slide-up 0.3s ease-out;
   margin: 0 auto;
+  z-index: 999999; /* Same as overlay */
+  pointer-events: auto;
 }
 
 /* Little drag handle bar */
