@@ -285,13 +285,8 @@ export default function SocialFeed() {
 
             <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>
               <strong>{post.points_used.toLocaleString()} pts</strong> → $
-              {post.cash_value.toFixed(2)}
-              {post.primary_ticker && (
-                <>
-                  {" "}
-                  in <strong>{post.primary_ticker}</strong>
-                </>
-              )}
+              {post.cash_value.toFixed(2)} 
+              {" worth in securities"}
             </div>
 
             {post.strategy_tag && (

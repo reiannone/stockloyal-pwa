@@ -37,6 +37,7 @@ if (
 }
 
 $member_id   = $input['member_id'];
+$merchant_id = $input['merchant_id'] ?? null; // ✅ Accept merchant_id
 $symbol      = $input['symbol'];
 $shares      = $input['shares'];
 $points_used = $input['points_used'];
@@ -48,22 +49,23 @@ $basket_id   = $input['basket_id'] ?? null;
 try {
     $sql = "
         INSERT INTO orders (
-            member_id, symbol, shares, points_used, amount, order_type, status, placed_at, broker, basket_id
+            member_id, merchant_id, symbol, shares, points_used, amount, order_type, status, placed_at, broker, basket_id
         ) VALUES (
-            :member_id, :symbol, :shares, :points_used, :amount, :order_type, 'placed', NOW(), :broker, :basket_id
+            :member_id, :merchant_id, :symbol, :shares, :points_used, :amount, :order_type, 'placed', NOW(), :broker, :basket_id
         )
     ";
 
     $stmt = $conn->prepare($sql);
     $stmt->execute([
-        ':member_id'  => $member_id,
-        ':symbol'     => $symbol,
-        ':shares'     => $shares,
-        ':amount'     => $amount,
+        ':member_id'   => $member_id,
+        ':merchant_id' => $merchant_id,
+        ':symbol'      => $symbol,
+        ':shares'      => $shares,
+        ':amount'      => $amount,
         ':points_used' => $points_used,
-        ':order_type' => $order_type,
-        ':broker'     => $broker,
-        ':basket_id'  => $basket_id
+        ':order_type'  => $order_type,
+        ':broker'      => $broker,
+        ':basket_id'   => $basket_id
     ]);
 
     $order_id = $conn->lastInsertId();
@@ -78,6 +80,7 @@ try {
         "order_id" => $order_id,
         "data"     => [
             "member_id"   => $row['member_id'],
+            "merchant_id" => $row['merchant_id'],
             "symbol"      => $row['symbol'],
             "shares"      => (float)$row['shares'],
             "points_used" => $row['points_used'],

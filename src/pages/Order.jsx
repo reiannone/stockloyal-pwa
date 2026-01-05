@@ -17,8 +17,10 @@ export default function Order() {
   const { clearBasket } = useBasket();
   const broker = localStorage.getItem("broker");
   const memberId = localStorage.getItem("memberId");
+  const merchantId = localStorage.getItem("merchantId"); // ✅ Get merchant_id
 
   console.log("[Order] localStorage item broker:", localStorage.getItem("broker"));
+  console.log("[Order] localStorage item merchantId:", merchantId);
 
   // ✅ Basket data passed from Basket.jsx
   const enrichedBasket = location.state?.basket || [];
@@ -117,6 +119,7 @@ export default function Order() {
 
         const payload = {
           member_id: memberId,
+          merchant_id: merchantId, // ✅ Include merchant_id
           basket_id: basketId, // ✅ tie all orders to this basket
           symbol: stock.symbol,
           shares: stock.shares || 0,

@@ -12,20 +12,20 @@ export default function Header() {
   const [showMenu, setShowMenu] = useState(false);
 
   const allPages = [
+    { to: "/login", label: "1. Login" },
+    { to: "/member-onboard", label: "2. Member Profile" },
+    { to: "/select-broker", label: "3. Select Broker" },
+    { to: "/election", label: "4. Investment Election" },
+    { to: "/wallet", label: "5. Wallet" },
+    { to: "/stock-picker", label: "6. Stock Picker" },
+    { to: "/basket", label: "7a. Basket" },
+    { to: "/order", label: "7b. Pending Order" },
+    { to: "/order-confirmation", label: "7c. Order Confirmation" },
+    { to: "/portfolio", label: "8. StockLoyal Portfolio" },    
     { to: "/promotions", label: "Promotions" },
-    { to: "/login", label: "Login" },
+    { to: "/social", label: "Community Feed" },
     { to: "/terms", label: "Terms & Conditions" },
     { to: "/about", label: "About & FAQs" },
-    { to: "/member-onboard", label: "Member Profile" },
-    { to: "/wallet", label: "Wallet" },
-    { to: "/order", label: "Pending Order" },
-    { to: "/order-confirmation", label: "Order Confirmation" },
-    { to: "/select-broker", label: "Select Broker" },
-    { to: "/election", label: "Investment Election" },
-    { to: "/stock-picker", label: "Stock Picker" },
-    { to: "/basket", label: "Basket" },
-    { to: "/portfolio", label: "StockLoyal Portfolio" },
-    { to: "/social", label: "Community Feed" },
     { to: "/goodbye", label: "Exit App" },
   ];
 

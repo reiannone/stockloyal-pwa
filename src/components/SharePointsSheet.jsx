@@ -11,40 +11,32 @@ export default function SharePointsSheet({
   cashValue,
   primaryTicker,
   tickers = [],
+  merchantName,
+  broker,
 }) {
   if (!open) return null;
 
   // ----------------------------
-  // 🔥 Load dynamic values from localStorage (always available globally)
+  // 🔥 Use props FIRST (from last order API), fallback to localStorage
   // ----------------------------
-  const storedMerchant =
-    localStorage.getItem("merchantName") || "my merchant";
+  const displayMerchant = merchantName || localStorage.getItem("merchantName") || "my merchant";
+  const displayBroker = broker || localStorage.getItem("broker") || "my broker";
 
-  const storedBroker =
-    localStorage.getItem("broker") || "my broker";
+  // 🔥 Use props from last order API (NOT localStorage)
+  const displayPointsUsed = pointsUsed || 0;
+  const displayInvestedAmount = cashValue || 0;
 
-  // 🔥 Get last order details from localStorage
-  let storedOrder = null;
-  try {
-    const raw = localStorage.getItem("lastOrder");
-    if (raw) storedOrder = JSON.parse(raw);
-  } catch {
-    // ignore JSON parse errors
-  }
-
-  // 🔥 Get pointsUsed and investedAmount from localStorage (set during order flow)
-  const storedPointsUsed = parseInt(localStorage.getItem("lastPointsUsed")) || pointsUsed || 0;
-  const storedInvestedAmount = parseFloat(localStorage.getItem("lastInvestedAmount")) || cashValue || 0;
-
-  console.log("[SharePointsSheet] storedPointsUsed:" + storedPointsUsed);
-  console.log("[SharePointsSheet] storedInvestedAmount:" + storedInvestedAmount);
+  console.log("[SharePointsSheet] Using points from props:", displayPointsUsed);
+  console.log("[SharePointsSheet] Using cash from props:", displayInvestedAmount);
+  console.log("[SharePointsSheet] merchant:", displayMerchant, "broker:", displayBroker);
+  console.log("[SharePointsSheet] symbols:", tickers);
 
   // ----------------------------
   // 💰 Format cash
   // ----------------------------
   const displayCash =
-    typeof storedInvestedAmount === "number"
-      ? storedInvestedAmount.toLocaleString("en-US", {
+    typeof displayInvestedAmount === "number"
+      ? displayInvestedAmount.toLocaleString("en-US", {
           style: "currency",
           currency: "USD",
           minimumFractionDigits: 2,
@@ -52,11 +44,11 @@ export default function SharePointsSheet({
       : "$0.00";
 
   // ----------------------------
-  // 📝 Build initial message
+  // 📝 Build initial message using last order data
   // ----------------------------
-  const defaultMessage = storedOrder
-    ? `I just bought ${storedOrder.shares} shares of ${storedOrder.ticker} for ${displayCash} using ${storedBroker} through ${storedMerchant} on StockLoyal! 🚀 #StockLoyal #Investing`
-    : `I converted ${storedPointsUsed} loyalty points from ${storedMerchant} into ${displayCash} of stock using ${storedBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
+  const symbolsList = tickers && tickers.length > 0 ? tickers.join(", ") : primaryTicker || "stocks";
+  const tickerMessage = tickers && tickers.length > 1 ? `${tickers.length} different securities` : `one security`;
+  const defaultMessage = `I converted ${displayPointsUsed} loyalty points from ${displayMerchant} into ${displayCash} of ${tickerMessage}, using ${displayBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
 
   // ----------------------------
   // ✏️ Editable text box
@@ -154,12 +146,12 @@ export default function SharePointsSheet({
                 const payload = {
                   member_id: memberId,
                   text: text.trim(),
-                  points_used: storedPointsUsed,
-                  cash_value: storedInvestedAmount,
+                  points_used: displayPointsUsed,
+                  cash_value: displayInvestedAmount,
                   primary_ticker: primaryTicker || null,
                   tickers: tickers || [],
-                  merchant_name: storedMerchant,
-                  broker_name: storedBroker,
+                  merchant_name: displayMerchant,
+                  broker_name: displayBroker,
                 };
 
                 console.log("[SharePointsSheet] posting payload:", payload);

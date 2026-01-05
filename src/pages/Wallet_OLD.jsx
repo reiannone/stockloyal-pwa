@@ -10,7 +10,6 @@ export default function Wallet() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [isShareOpen, setIsShareOpen] = useState(false); // ✅ NEW
-  const [lastOrder, setLastOrder] = useState(null); // ✅ Store last order
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
 
@@ -25,25 +24,6 @@ export default function Wallet() {
     return () =>
       window.removeEventListener("open-share-sheet", openShareFromFooter);
   }, []);
-
-  // ✅ Fetch last order when component mounts
-  useEffect(() => {
-    if (!memberId) return;
-
-    (async () => {
-      try {
-        const data = await apiPost("get_last_order.php", { member_id: memberId });
-        if (data && data.success && data.order) {
-          setLastOrder(data.order);
-          console.log("[Wallet] Last order fetched:", data.order);
-        } else {
-          console.log("[Wallet] No last order found");
-        }
-      } catch (err) {
-        console.error("[Wallet] Error fetching last order:", err);
-      }
-    })();
-  }, [memberId]);
 
   useEffect(() => {
     if (!memberId) {
@@ -110,18 +90,6 @@ export default function Wallet() {
             console.log(
               "[Wallet] successful sync to localStorage merchantName:",
               localStorage.getItem("merchantName")
-            );
-          }
-
-          // ⭐ NEW: merchant_id -> localStorage
-          if (typeof data.wallet?.merchant_id !== "undefined") {
-            localStorage.setItem(
-              "merchantId",
-              String(data.wallet.merchant_id)
-            );
-            console.log(
-              "[Wallet] successful sync to localStorage merchantId:",
-              localStorage.getItem("merchantId")
             );
           }
 
@@ -192,13 +160,6 @@ export default function Wallet() {
             localStorage.setItem(
               "merchantName",
               String(data.wallet.merchant_name)
-            );
-          }
-
-          if (typeof data.wallet?.merchant_id !== "undefined") {
-            localStorage.setItem(
-              "merchantId",
-              String(data.wallet.merchant_id)
             );
           }
         } catch (e) {
@@ -484,12 +445,8 @@ export default function Wallet() {
             type="button"
             className="btn-primary"
             style={{ flex: 1 }}
-            onClick={() => {
-              console.log("[Wallet] Opening share with lastOrder:", lastOrder);
-              console.log("[Wallet] Share values - points:", lastOrder?.points_used, "cash:", lastOrder?.cash_value);
-              setIsShareOpen(true);
-            }}
-            disabled={!lastOrder}
+            onClick={() => setIsShareOpen(true)}
+            disabled={sharePoints <= 0}
           >
             Share
           </button>
@@ -569,12 +526,10 @@ export default function Wallet() {
         open={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         memberId={memberId}
-        pointsUsed={lastOrder?.points_used || 0}
-        cashValue={lastOrder?.cash_value || 0}
-        primaryTicker={lastOrder?.primary_ticker || null}
-        tickers={lastOrder?.symbols ? lastOrder.symbols.split(',').map(t => t.trim()) : []}
-        merchantName={lastOrder?.merchant_name || merchantName}
-        broker={lastOrder?.broker || wallet.broker || "your broker"}
+        pointsUsed={sharePoints}
+        cashValue={shareCashValue}
+        primaryTicker={null} // later: pass real tickers from last order
+        tickers={[]}
       />
     </div>
   );
