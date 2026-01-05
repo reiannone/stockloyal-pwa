@@ -51,6 +51,10 @@ export default function StockPicker() {
   const [cashInput, setCashInput] = useState(initialAmount.toFixed(2));
   const [isEditingCash, setIsEditingCash] = useState(false);
 
+  // --- Broker limits ---
+  const [minOrderAmount, setMinOrderAmount] = useState(null);
+  const [maxOrderAmount, setMaxOrderAmount] = useState(null);
+
   // --- Stock categories state ---
   const [category, setCategory] = useState("");
   const [results, setResults] = useState([]);
@@ -118,7 +122,7 @@ export default function StockPicker() {
   };
   const handleTouchEnd = () => (isDragging.current = false);
 
-  // --- Load wallet ---
+  // --- Load wallet (and broker limits) ---
   useEffect(() => {
     (async () => {
       try {
@@ -132,6 +136,15 @@ export default function StockPicker() {
           return;
         }
         setWallet(data.wallet);
+
+        // 🔢 Broker limits from broker_master join (assumed fields)
+        if (data.wallet?.min_order_amount != null) {
+          setMinOrderAmount(Number(data.wallet.min_order_amount));
+        }
+        if (data.wallet?.max_order_amount != null) {
+          setMaxOrderAmount(Number(data.wallet.max_order_amount));
+        }
+
         if (data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
@@ -171,8 +184,26 @@ export default function StockPicker() {
     setSelectedPoints(v);
   };
 
+  // --- Derived broker-range check for cashValue ---
+  const hasLimits =
+    minOrderAmount != null && maxOrderAmount != null && maxOrderAmount > 0;
+  const isCashOutsideLimits =
+    hasLimits && (cashValue < minOrderAmount || cashValue > maxOrderAmount);
+
+  const cashLimitError =
+    hasLimits && isCashOutsideLimits
+      ? `Cash-Value for this order must be between $${minOrderAmount.toFixed(
+          2
+        )} and $${maxOrderAmount.toFixed(2)} for your broker.`
+      : "";
+
   // --- Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
+    // ❗ Do not allow category selection when cash is out of allowed range
+    if (isCashOutsideLimits) {
+      return;
+    }
+
     try {
       setCategory(cat);
       setStockError("");
@@ -259,6 +290,10 @@ export default function StockPicker() {
     );
 
   const handleContinueStocks = () => {
+    // ❗ Do not let user continue if cash is out of range
+    if (isCashOutsideLimits) {
+      return;
+    }
     if (selectedStocks.length === 0) {
       alert("Please select at least one stock to continue.");
       return;
@@ -275,7 +310,7 @@ export default function StockPicker() {
     setIsStockListOpen(false);
   };
 
-  // ✅ NEW: click handler to launch SymbolChart route
+  // ✅ Symbol chart route
   const handleSymbolClick = (symbol) => {
     if (!symbol) return;
     navigate(`/symbol-chart/${encodeURIComponent(symbol)}`);
@@ -442,6 +477,16 @@ export default function StockPicker() {
             }}
           />
         </div>
+
+        {/* Broker range validation */}
+        {cashLimitError && (
+          <p
+            className="points-error"
+            style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}
+          >
+            {cashLimitError}
+          </p>
+        )}
       </div>
 
       {/* Symbol search */}
@@ -489,6 +534,21 @@ export default function StockPicker() {
       <h2 className="categories-title" style={{ textAlign: "center" }}>
         Select a Category
       </h2>
+      {hasLimits && (
+        <p
+          className="caption"
+          style={{
+            textAlign: "center",
+            marginTop: "-0.25rem",
+            marginBottom: "0.75rem",
+            fontSize: "0.85rem",
+            color: isCashOutsideLimits ? "#b91c1c" : "#6b7280",
+          }}
+        >
+          Broker order range: ${minOrderAmount?.toFixed(2)} – $
+          {maxOrderAmount?.toFixed(2)}
+        </p>
+      )}
       <div
         ref={sliderRef}
         className="categories-slider"
@@ -507,6 +567,7 @@ export default function StockPicker() {
             type="button"
             onClick={() => handleCategoryClick(cat, scrId)}
             className="category-btn"
+            disabled={isCashOutsideLimits}
             style={{
               minWidth: "160px",
               height: "100px",
@@ -521,6 +582,8 @@ export default function StockPicker() {
               overflow: "hidden",
               color: "white",
               fontWeight: "600",
+              opacity: isCashOutsideLimits ? 0.4 : 1,
+              cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
             }}
           >
             <span
@@ -691,6 +754,7 @@ export default function StockPicker() {
                   onClick={handleContinueStocks}
                   className="btn-primary"
                   style={{ width: "100%", marginBottom: 8 }}
+                  disabled={isCashOutsideLimits}
                 >
                   Continue with Selected
                 </button>

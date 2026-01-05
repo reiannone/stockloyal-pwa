@@ -51,6 +51,10 @@ export default function StockPicker() {
   const [cashInput, setCashInput] = useState(initialAmount.toFixed(2));
   const [isEditingCash, setIsEditingCash] = useState(false);
 
+  // --- Broker limits ---
+  const [minOrderAmount, setMinOrderAmount] = useState(null);
+  const [maxOrderAmount, setMaxOrderAmount] = useState(null);
+
   // --- Stock categories state ---
   const [category, setCategory] = useState("");
   const [results, setResults] = useState([]);
@@ -70,17 +74,17 @@ export default function StockPicker() {
 
   // Create portal container on mount
   useEffect(() => {
-    let portalRoot = document.getElementById('stocklist-portal-root');
+    let portalRoot = document.getElementById("stocklist-portal-root");
     if (!portalRoot) {
-      portalRoot = document.createElement('div');
-      portalRoot.id = 'stocklist-portal-root';
-      portalRoot.style.position = 'fixed';
-      portalRoot.style.top = '0';
-      portalRoot.style.left = '0';
-      portalRoot.style.right = '0';
-      portalRoot.style.bottom = '0';
-      portalRoot.style.zIndex = '999999';
-      portalRoot.style.pointerEvents = 'none';
+      portalRoot = document.createElement("div");
+      portalRoot.id = "stocklist-portal-root";
+      portalRoot.style.position = "fixed";
+      portalRoot.style.top = "0";
+      portalRoot.style.left = "0";
+      portalRoot.style.right = "0";
+      portalRoot.style.bottom = "0";
+      portalRoot.style.zIndex = "999999";
+      portalRoot.style.pointerEvents = "none";
       document.body.appendChild(portalRoot);
     }
     return () => {
@@ -118,7 +122,7 @@ export default function StockPicker() {
   };
   const handleTouchEnd = () => (isDragging.current = false);
 
-  // --- Load wallet ---
+  // --- Load wallet (and broker limits) ---
   useEffect(() => {
     (async () => {
       try {
@@ -132,6 +136,15 @@ export default function StockPicker() {
           return;
         }
         setWallet(data.wallet);
+
+        // 🔢 Broker limits from broker_master join (assumed fields)
+        if (data.wallet?.min_order_amount != null) {
+          setMinOrderAmount(Number(data.wallet.min_order_amount));
+        }
+        if (data.wallet?.max_order_amount != null) {
+          setMaxOrderAmount(Number(data.wallet.max_order_amount));
+        }
+
         if (data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
@@ -171,14 +184,32 @@ export default function StockPicker() {
     setSelectedPoints(v);
   };
 
+  // --- Derived broker-range check for cashValue ---
+  const hasLimits =
+    minOrderAmount != null && maxOrderAmount != null && maxOrderAmount > 0;
+  const isCashOutsideLimits =
+    hasLimits && (cashValue < minOrderAmount || cashValue > maxOrderAmount);
+
+  const cashLimitError =
+    hasLimits && isCashOutsideLimits
+      ? `Cash-Value for this order must be between $${minOrderAmount.toFixed(
+          2
+        )} and $${maxOrderAmount.toFixed(2)} for your broker.`
+      : "";
+
   // --- Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
+    // ❗ Do not allow category selection when cash is out of allowed range
+    if (isCashOutsideLimits) {
+      return;
+    }
+
     try {
       setCategory(cat);
       setStockError("");
       setResults([]);
       setSelectedStocks([]);
-      setIsStockListOpen(true);      // 🔥 open the bottom sheet
+      setIsStockListOpen(true); // 🔥 open the bottom sheet
       setLoadingCategory(true);
 
       const data = await apiPost("proxy.php", { scrId });
@@ -221,7 +252,7 @@ export default function StockPicker() {
     setStockError("");
     setResults([]);
     setSelectedStocks([]);
-    setIsStockListOpen(true);    // also use sheet for symbol lookup
+    setIsStockListOpen(true); // also use sheet for symbol lookup
 
     try {
       const data = await apiPost("symbol-lookup.php", {
@@ -259,6 +290,10 @@ export default function StockPicker() {
     );
 
   const handleContinueStocks = () => {
+    // ❗ Do not let user continue if cash is out of range
+    if (isCashOutsideLimits) {
+      return;
+    }
     if (selectedStocks.length === 0) {
       alert("Please select at least one stock to continue.");
       return;
@@ -273,6 +308,12 @@ export default function StockPicker() {
 
   const handleCloseStockList = () => {
     setIsStockListOpen(false);
+  };
+
+  // ✅ Symbol chart route
+  const handleSymbolClick = (symbol) => {
+    if (!symbol) return;
+    navigate(`/symbol-chart/${encodeURIComponent(symbol)}`);
   };
 
   // --- Render ---
@@ -297,7 +338,10 @@ export default function StockPicker() {
 
   return (
     <div className="app-container categories-page">
-      <h2 className="page-title" style={{ marginBottom: "1rem", textAlign: "center" }}>
+      <h2
+        className="page-title"
+        style={{ marginBottom: "1rem", textAlign: "center" }}
+      >
         Convert Points to Invest
       </h2>
 
@@ -343,7 +387,10 @@ export default function StockPicker() {
       </div>
 
       {/* Points slider */}
-      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
+      <div
+        className="card"
+        style={{ marginBottom: "1.25rem", textAlign: "center" }}
+      >
         <p style={{ fontWeight: "600" }}>Points to Convert</p>
         <input
           id="pointsToConvert"
@@ -358,7 +405,11 @@ export default function StockPicker() {
         />
 
         <div className="range-wrapper" style={{ marginBottom: "1rem" }}>
-          <button type="button" className="range-btn" onClick={() => handlePointsChange(0)}>
+          <button
+            type="button"
+            className="range-btn"
+            onClick={() => handlePointsChange(0)}
+          >
             ➖
           </button>
           <input
@@ -379,12 +430,17 @@ export default function StockPicker() {
           </button>
         </div>
 
-        <p className="wallet-intro" style={{ marginBottom: "0.25rem", fontWeight: "600" }}>
+        <p
+          className="wallet-intro"
+          style={{ marginBottom: "0.25rem", fontWeight: "600" }}
+        >
           Cash-Value used for this Order
         </p>
 
         {/* 💰 Editable Cash Input */}
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <div
+          style={{ display: "flex", justifyContent: "center", alignItems: "center" }}
+        >
           <span style={{ fontSize: "1.25rem", marginRight: "6px" }}>$</span>
           <input
             id="cashToConvert"
@@ -421,6 +477,16 @@ export default function StockPicker() {
             }}
           />
         </div>
+
+        {/* Broker range validation */}
+        {cashLimitError && (
+          <p
+            className="points-error"
+            style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}
+          >
+            {cashLimitError}
+          </p>
+        )}
       </div>
 
       {/* Symbol search */}
@@ -452,9 +518,15 @@ export default function StockPicker() {
             />
           </div>
         </div>
-        {searching && <p className="caption" style={{ marginTop: 8 }}>Searching…</p>}
+        {searching && (
+          <p className="caption" style={{ marginTop: 8 }}>
+            Searching…
+          </p>
+        )}
         {stockError && !isStockListOpen && (
-          <p className="points-error" style={{ marginTop: 8 }}>{stockError}</p>
+          <p className="points-error" style={{ marginTop: 8 }}>
+            {stockError}
+          </p>
         )}
       </div>
 
@@ -462,6 +534,21 @@ export default function StockPicker() {
       <h2 className="categories-title" style={{ textAlign: "center" }}>
         Select a Category
       </h2>
+      {hasLimits && (
+        <p
+          className="caption"
+          style={{
+            textAlign: "center",
+            marginTop: "-0.25rem",
+            marginBottom: "0.75rem",
+            fontSize: "0.85rem",
+            color: isCashOutsideLimits ? "#b91c1c" : "#6b7280",
+          }}
+        >
+          Broker order range: ${minOrderAmount?.toFixed(2)} – $
+          {maxOrderAmount?.toFixed(2)}
+        </p>
+      )}
       <div
         ref={sliderRef}
         className="categories-slider"
@@ -480,18 +567,23 @@ export default function StockPicker() {
             type="button"
             onClick={() => handleCategoryClick(cat, scrId)}
             className="category-btn"
+            disabled={isCashOutsideLimits}
             style={{
               minWidth: "160px",
               height: "100px",
               marginRight: "10px",
               borderRadius: "8px",
-              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
+              backgroundImage: `url(${
+                categoryImages[cat] || "/icons/default.jpg"
+              })`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               position: "relative",
               overflow: "hidden",
               color: "white",
               fontWeight: "600",
+              opacity: isCashOutsideLimits ? 0.4 : 1,
+              cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
             }}
           >
             <span
@@ -513,154 +605,175 @@ export default function StockPicker() {
       </div>
 
       {/* 🔥 Bottom-sheet Stock list overlay - rendered via portal to dedicated container */}
-      {isStockListOpen && createPortal(
-        <div 
-          className="stocklist-overlay" 
-          onClick={handleCloseStockList}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 'var(--footer-height)',
-            width: '100vw',
-            height: 'calc(100vh - var(--footer-height))',
-            background: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 999999,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'flex-end',
-            pointerEvents: 'auto',
-          }}
-        >
+      {isStockListOpen &&
+        createPortal(
           <div
-            className="stocklist-sheet"
-            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+            className="stocklist-overlay"
+            onClick={handleCloseStockList}
             style={{
-              position: 'relative',
-              width: '100%',
-              maxWidth: 'var(--app-max-width)',
-              background: '#fff',
-              borderTopLeftRadius: '20px',
-              borderTopRightRadius: '20px',
-              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.25)',
-              maxHeight: 'calc(85vh - var(--footer-height))',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              animation: 'stocklist-slide-up 0.3s ease-out',
-              margin: '0 auto',
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: "var(--footer-height)",
+              width: "100vw",
+              height: "calc(100vh - var(--footer-height))",
+              background: "rgba(0, 0, 0, 0.5)",
               zIndex: 999999,
-              pointerEvents: 'auto',
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "flex-end",
+              pointerEvents: "auto",
             }}
           >
-            <div className="stocklist-sheet-header">
-              <div className="stocklist-sheet-handle" />
-              <div className="stocklist-sheet-title-row">
-                <h2 className="stocklist-heading">
-                  {category ? `${category} Stocks` : "Stocks"}
-                </h2>
+            <div
+              className="stocklist-sheet"
+              onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+              style={{
+                position: "relative",
+                width: "100%",
+                maxWidth: "var(--app-max-width)",
+                background: "#fff",
+                borderTopLeftRadius: "20px",
+                borderTopRightRadius: "20px",
+                boxShadow: "0 -10px 30px rgba(0, 0, 0, 0.25)",
+                maxHeight: "calc(85vh - var(--footer-height))",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                animation: "stocklist-slide-up 0.3s ease-out",
+                margin: "0 auto",
+                zIndex: 999999,
+                pointerEvents: "auto",
+              }}
+            >
+              <div className="stocklist-sheet-header">
+                <div className="stocklist-sheet-handle" />
+                <div className="stocklist-sheet-title-row">
+                  <h2 className="stocklist-heading">
+                    {category ? `${category} Stocks` : "Stocks"}
+                  </h2>
+                  <button
+                    type="button"
+                    className="stocklist-close-btn"
+                    onClick={handleCloseStockList}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {loadingCategory && (
+                  <p className="stocklist-loading">Loading stocks…</p>
+                )}
+                {stockError && !loadingCategory && (
+                  <p className="stocklist-error">{stockError}</p>
+                )}
+              </div>
+
+              <div className="stocklist-sheet-content">
+                {!loadingCategory && !stockError && results.length === 0 && (
+                  <p className="stocklist-empty">No stocks found.</p>
+                )}
+
+                {results.length > 0 && (
+                  <div className="stocklist-table-wrapper">
+                    <table className="stocklist-table">
+                      <thead>
+                        <tr>
+                          <th>Select</th>
+                          <th>Symbol</th>
+                          <th>Name</th>
+                          <th>
+                            Price
+                            <br />
+                            Change %
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results.map((stock) => (
+                          <tr key={stock.symbol} className="stock-row">
+                            <td className="text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedStocks.includes(
+                                  stock.symbol
+                                )}
+                                onChange={() => toggleSelect(stock.symbol)}
+                              />
+                            </td>
+                            {/* ✅ Symbol cell links to /symbol-chart/:symbol */}
+                            <td
+                              className="symbol"
+                              style={{
+                                color: "#2563eb",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                                textDecoration: "underline",
+                              }}
+                              onClick={() => handleSymbolClick(stock.symbol)}
+                              title={`View ${stock.symbol} chart`}
+                            >
+                              {stock.symbol}
+                            </td>
+                            <td className="text-left">
+                              {stock.name || "-"}
+                            </td>
+                            <td className="price-change">
+                              <div className="price">
+                                {stock.price
+                                  ? `$${stock.price.toFixed(2)}`
+                                  : "N/A"}
+                              </div>
+                              <div
+                                className={
+                                  stock.change > 0
+                                    ? "change-positive"
+                                    : stock.change < 0
+                                    ? "change-negative"
+                                    : "change-neutral"
+                                }
+                              >
+                                {typeof stock.change === "number"
+                                  ? stock.change.toFixed(2)
+                                  : Number(stock.change || 0).toFixed(2)}
+                                %
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Sheet footer actions */}
+              <div className="stocklist-sheet-footer">
                 <button
                   type="button"
-                  className="stocklist-close-btn"
-                  onClick={handleCloseStockList}
+                  onClick={handleContinueStocks}
+                  className="btn-primary"
+                  style={{ width: "100%", marginBottom: 8 }}
+                  disabled={isCashOutsideLimits}
                 >
-                  ✕
+                  Continue with Selected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsStockListOpen(false);
+                    navigate("/wallet");
+                  }}
+                  className="btn-secondary"
+                  style={{ width: "100%" }}
+                >
+                  Back to Wallet
                 </button>
               </div>
-              {loadingCategory && (
-                <p className="stocklist-loading">Loading stocks…</p>
-              )}
-              {stockError && !loadingCategory && (
-                <p className="stocklist-error">{stockError}</p>
-              )}
             </div>
-
-            <div className="stocklist-sheet-content">
-              {!loadingCategory && !stockError && results.length === 0 && (
-                <p className="stocklist-empty">No stocks found.</p>
-              )}
-
-              {results.length > 0 && (
-                <div className="stocklist-table-wrapper">
-                  <table className="stocklist-table">
-                    <thead>
-                      <tr>
-                        <th>Select</th>
-                        <th>Symbol</th>
-                        <th>Name</th>
-                        <th>
-                          Price
-                          <br />
-                          Change %
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.map((stock) => (
-                        <tr key={stock.symbol} className="stock-row">
-                          <td className="text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedStocks.includes(stock.symbol)}
-                              onChange={() => toggleSelect(stock.symbol)}
-                            />
-                          </td>
-                          <td className="symbol">{stock.symbol}</td>
-                          <td className="text-left">{stock.name || "-"}</td>
-                          <td className="price-change">
-                            <div className="price">
-                              {stock.price ? `$${stock.price.toFixed(2)}` : "N/A"}
-                            </div>
-                            <div
-                              className={
-                                stock.change > 0
-                                  ? "change-positive"
-                                  : stock.change < 0
-                                  ? "change-negative"
-                                  : "change-neutral"
-                              }
-                            >
-                              {typeof stock.change === "number"
-                                ? stock.change.toFixed(2)
-                                : Number(stock.change || 0).toFixed(2)}
-                              %
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Sheet footer actions */}
-            <div className="stocklist-sheet-footer">
-              <button
-                type="button"
-                onClick={handleContinueStocks}
-                className="btn-primary"
-                style={{ width: "100%", marginBottom: 8 }}
-              >
-                Continue with Selected
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsStockListOpen(false);
-                  navigate("/wallet");
-                }}
-                className="btn-secondary"
-                style={{ width: "100%" }}
-              >
-                Back to Wallet
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.getElementById('stocklist-portal-root') || document.body
-      )}
+          </div>,
+          document.getElementById("stocklist-portal-root") || document.body
+        )}
     </div>
   );
 }
