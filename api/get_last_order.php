@@ -67,9 +67,9 @@ try {
             o.points_used,
             o.broker,
             o.order_type,
-            w.merchant_name
+            m.merchant_name
         FROM orders o
-        LEFT JOIN wallet w ON o.member_id = w.member_id
+        LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
         WHERE o.member_id = :member_id 
           AND o.basket_id = :basket_id
         ORDER BY o.order_id ASC
