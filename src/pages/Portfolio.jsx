@@ -115,6 +115,13 @@ export default function Portfolio() {
     });
   };
 
+  // ---- NEW: click handler to launch SymbolChart ----
+  const handleSymbolClick = (symbol) => {
+    if (!symbol) return;
+    // Route assumes: <Route path="/symbol/:symbol" element={<SymbolChart />} />
+    navigate(`/symbol-chart/${encodeURIComponent(symbol)}`);
+  };
+
   return (
     <div className="portfolio-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
@@ -199,7 +206,12 @@ export default function Portfolio() {
               </thead>
               <tbody>
                 {orders.map((o, idx) => (
-                  <tr key={idx}>
+                  <tr
+                    key={idx}
+                    onClick={() => handleSymbolClick(o.symbol)}
+                    style={{ cursor: "pointer" }}
+                    title={`View ${o.symbol} chart`}
+                  >
                     <td>{o.symbol}</td>
                     <td>{o.stock_name}</td>
                     <td style={{ textAlign: "right" }}>

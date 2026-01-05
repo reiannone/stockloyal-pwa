@@ -107,7 +107,7 @@ export default function Header() {
         </div>
 
         {/* RIGHT: Donut progress indicator - pushed to the right with marginLeft auto */}
-        <div style={{ marginLeft: "auto", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ marginLeft: "auto", marginRight: 8, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {isInProgressFlow && currentStep && (
             <div
               style={{

@@ -38,6 +38,7 @@ import DemoLaunch from "./pages/DemoLaunch.jsx";
 import SocialFeed from "./pages/SocialFeed.jsx";
 import PostDetail from "./pages/PostDetail.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
+import SymbolChart from "./pages/SymbolChart.jsx";
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
 
 // ⭐ NEW: global share sheet
@@ -332,6 +333,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <SocialFeed />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/symbol-chart/:symbol"
+                element={
+                  <PageWrapper>
+                    <SymbolChart />
                   </PageWrapper>
                 }
               />

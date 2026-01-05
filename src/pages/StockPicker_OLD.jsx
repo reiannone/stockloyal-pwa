@@ -70,17 +70,17 @@ export default function StockPicker() {
 
   // Create portal container on mount
   useEffect(() => {
-    let portalRoot = document.getElementById("stocklist-portal-root");
+    let portalRoot = document.getElementById('stocklist-portal-root');
     if (!portalRoot) {
-      portalRoot = document.createElement("div");
-      portalRoot.id = "stocklist-portal-root";
-      portalRoot.style.position = "fixed";
-      portalRoot.style.top = "0";
-      portalRoot.style.left = "0";
-      portalRoot.style.right = "0";
-      portalRoot.style.bottom = "0";
-      portalRoot.style.zIndex = "999999";
-      portalRoot.style.pointerEvents = "none";
+      portalRoot = document.createElement('div');
+      portalRoot.id = 'stocklist-portal-root';
+      portalRoot.style.position = 'fixed';
+      portalRoot.style.top = '0';
+      portalRoot.style.left = '0';
+      portalRoot.style.right = '0';
+      portalRoot.style.bottom = '0';
+      portalRoot.style.zIndex = '999999';
+      portalRoot.style.pointerEvents = 'none';
       document.body.appendChild(portalRoot);
     }
     return () => {
@@ -178,7 +178,7 @@ export default function StockPicker() {
       setStockError("");
       setResults([]);
       setSelectedStocks([]);
-      setIsStockListOpen(true); // 🔥 open the bottom sheet
+      setIsStockListOpen(true);      // 🔥 open the bottom sheet
       setLoadingCategory(true);
 
       const data = await apiPost("proxy.php", { scrId });
@@ -221,7 +221,7 @@ export default function StockPicker() {
     setStockError("");
     setResults([]);
     setSelectedStocks([]);
-    setIsStockListOpen(true); // also use sheet for symbol lookup
+    setIsStockListOpen(true);    // also use sheet for symbol lookup
 
     try {
       const data = await apiPost("symbol-lookup.php", {
@@ -275,12 +275,6 @@ export default function StockPicker() {
     setIsStockListOpen(false);
   };
 
-  // ✅ NEW: click handler to launch SymbolChart route
-  const handleSymbolClick = (symbol) => {
-    if (!symbol) return;
-    navigate(`/symbol-chart/${encodeURIComponent(symbol)}`);
-  };
-
   // --- Render ---
   if (error)
     return (
@@ -303,10 +297,7 @@ export default function StockPicker() {
 
   return (
     <div className="app-container categories-page">
-      <h2
-        className="page-title"
-        style={{ marginBottom: "1rem", textAlign: "center" }}
-      >
+      <h2 className="page-title" style={{ marginBottom: "1rem", textAlign: "center" }}>
         Convert Points to Invest
       </h2>
 
@@ -352,10 +343,7 @@ export default function StockPicker() {
       </div>
 
       {/* Points slider */}
-      <div
-        className="card"
-        style={{ marginBottom: "1.25rem", textAlign: "center" }}
-      >
+      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
         <p style={{ fontWeight: "600" }}>Points to Convert</p>
         <input
           id="pointsToConvert"
@@ -370,11 +358,7 @@ export default function StockPicker() {
         />
 
         <div className="range-wrapper" style={{ marginBottom: "1rem" }}>
-          <button
-            type="button"
-            className="range-btn"
-            onClick={() => handlePointsChange(0)}
-          >
+          <button type="button" className="range-btn" onClick={() => handlePointsChange(0)}>
             ➖
           </button>
           <input
@@ -395,17 +379,12 @@ export default function StockPicker() {
           </button>
         </div>
 
-        <p
-          className="wallet-intro"
-          style={{ marginBottom: "0.25rem", fontWeight: "600" }}
-        >
+        <p className="wallet-intro" style={{ marginBottom: "0.25rem", fontWeight: "600" }}>
           Cash-Value used for this Order
         </p>
 
         {/* 💰 Editable Cash Input */}
-        <div
-          style={{ display: "flex", justifyContent: "center", alignItems: "center" }}
-        >
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
           <span style={{ fontSize: "1.25rem", marginRight: "6px" }}>$</span>
           <input
             id="cashToConvert"
@@ -473,15 +452,9 @@ export default function StockPicker() {
             />
           </div>
         </div>
-        {searching && (
-          <p className="caption" style={{ marginTop: 8 }}>
-            Searching…
-          </p>
-        )}
+        {searching && <p className="caption" style={{ marginTop: 8 }}>Searching…</p>}
         {stockError && !isStockListOpen && (
-          <p className="points-error" style={{ marginTop: 8 }}>
-            {stockError}
-          </p>
+          <p className="points-error" style={{ marginTop: 8 }}>{stockError}</p>
         )}
       </div>
 
@@ -512,9 +485,7 @@ export default function StockPicker() {
               height: "100px",
               marginRight: "10px",
               borderRadius: "8px",
-              backgroundImage: `url(${
-                categoryImages[cat] || "/icons/default.jpg"
-              })`,
+              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               position: "relative",
@@ -542,174 +513,154 @@ export default function StockPicker() {
       </div>
 
       {/* 🔥 Bottom-sheet Stock list overlay - rendered via portal to dedicated container */}
-      {isStockListOpen &&
-        createPortal(
+      {isStockListOpen && createPortal(
+        <div 
+          className="stocklist-overlay" 
+          onClick={handleCloseStockList}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 'var(--footer-height)',
+            width: '100vw',
+            height: 'calc(100vh - var(--footer-height))',
+            background: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 999999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'flex-end',
+            pointerEvents: 'auto',
+          }}
+        >
           <div
-            className="stocklist-overlay"
-            onClick={handleCloseStockList}
+            className="stocklist-sheet"
+            onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
             style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: "var(--footer-height)",
-              width: "100vw",
-              height: "calc(100vh - var(--footer-height))",
-              background: "rgba(0, 0, 0, 0.5)",
+              position: 'relative',
+              width: '100%',
+              maxWidth: 'var(--app-max-width)',
+              background: '#fff',
+              borderTopLeftRadius: '20px',
+              borderTopRightRadius: '20px',
+              boxShadow: '0 -10px 30px rgba(0, 0, 0, 0.25)',
+              maxHeight: 'calc(85vh - var(--footer-height))',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'stocklist-slide-up 0.3s ease-out',
+              margin: '0 auto',
               zIndex: 999999,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "flex-end",
-              pointerEvents: "auto",
+              pointerEvents: 'auto',
             }}
           >
-            <div
-              className="stocklist-sheet"
-              onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
-              style={{
-                position: "relative",
-                width: "100%",
-                maxWidth: "var(--app-max-width)",
-                background: "#fff",
-                borderTopLeftRadius: "20px",
-                borderTopRightRadius: "20px",
-                boxShadow: "0 -10px 30px rgba(0, 0, 0, 0.25)",
-                maxHeight: "calc(85vh - var(--footer-height))",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                animation: "stocklist-slide-up 0.3s ease-out",
-                margin: "0 auto",
-                zIndex: 999999,
-                pointerEvents: "auto",
-              }}
-            >
-              <div className="stocklist-sheet-header">
-                <div className="stocklist-sheet-handle" />
-                <div className="stocklist-sheet-title-row">
-                  <h2 className="stocklist-heading">
-                    {category ? `${category} Stocks` : "Stocks"}
-                  </h2>
-                  <button
-                    type="button"
-                    className="stocklist-close-btn"
-                    onClick={handleCloseStockList}
-                  >
-                    ✕
-                  </button>
-                </div>
-                {loadingCategory && (
-                  <p className="stocklist-loading">Loading stocks…</p>
-                )}
-                {stockError && !loadingCategory && (
-                  <p className="stocklist-error">{stockError}</p>
-                )}
-              </div>
-
-              <div className="stocklist-sheet-content">
-                {!loadingCategory && !stockError && results.length === 0 && (
-                  <p className="stocklist-empty">No stocks found.</p>
-                )}
-
-                {results.length > 0 && (
-                  <div className="stocklist-table-wrapper">
-                    <table className="stocklist-table">
-                      <thead>
-                        <tr>
-                          <th>Select</th>
-                          <th>Symbol</th>
-                          <th>Name</th>
-                          <th>
-                            Price
-                            <br />
-                            Change %
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {results.map((stock) => (
-                          <tr key={stock.symbol} className="stock-row">
-                            <td className="text-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedStocks.includes(
-                                  stock.symbol
-                                )}
-                                onChange={() => toggleSelect(stock.symbol)}
-                              />
-                            </td>
-                            {/* ✅ Symbol cell links to /symbol-chart/:symbol */}
-                            <td
-                              className="symbol"
-                              style={{
-                                color: "#2563eb",
-                                cursor: "pointer",
-                                fontWeight: 600,
-                                textDecoration: "underline",
-                              }}
-                              onClick={() => handleSymbolClick(stock.symbol)}
-                              title={`View ${stock.symbol} chart`}
-                            >
-                              {stock.symbol}
-                            </td>
-                            <td className="text-left">
-                              {stock.name || "-"}
-                            </td>
-                            <td className="price-change">
-                              <div className="price">
-                                {stock.price
-                                  ? `$${stock.price.toFixed(2)}`
-                                  : "N/A"}
-                              </div>
-                              <div
-                                className={
-                                  stock.change > 0
-                                    ? "change-positive"
-                                    : stock.change < 0
-                                    ? "change-negative"
-                                    : "change-neutral"
-                                }
-                              >
-                                {typeof stock.change === "number"
-                                  ? stock.change.toFixed(2)
-                                  : Number(stock.change || 0).toFixed(2)}
-                                %
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Sheet footer actions */}
-              <div className="stocklist-sheet-footer">
+            <div className="stocklist-sheet-header">
+              <div className="stocklist-sheet-handle" />
+              <div className="stocklist-sheet-title-row">
+                <h2 className="stocklist-heading">
+                  {category ? `${category} Stocks` : "Stocks"}
+                </h2>
                 <button
                   type="button"
-                  onClick={handleContinueStocks}
-                  className="btn-primary"
-                  style={{ width: "100%", marginBottom: 8 }}
+                  className="stocklist-close-btn"
+                  onClick={handleCloseStockList}
                 >
-                  Continue with Selected
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsStockListOpen(false);
-                    navigate("/wallet");
-                  }}
-                  className="btn-secondary"
-                  style={{ width: "100%" }}
-                >
-                  Back to Wallet
+                  ✕
                 </button>
               </div>
+              {loadingCategory && (
+                <p className="stocklist-loading">Loading stocks…</p>
+              )}
+              {stockError && !loadingCategory && (
+                <p className="stocklist-error">{stockError}</p>
+              )}
             </div>
-          </div>,
-          document.getElementById("stocklist-portal-root") || document.body
-        )}
+
+            <div className="stocklist-sheet-content">
+              {!loadingCategory && !stockError && results.length === 0 && (
+                <p className="stocklist-empty">No stocks found.</p>
+              )}
+
+              {results.length > 0 && (
+                <div className="stocklist-table-wrapper">
+                  <table className="stocklist-table">
+                    <thead>
+                      <tr>
+                        <th>Select</th>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th>
+                          Price
+                          <br />
+                          Change %
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.map((stock) => (
+                        <tr key={stock.symbol} className="stock-row">
+                          <td className="text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedStocks.includes(stock.symbol)}
+                              onChange={() => toggleSelect(stock.symbol)}
+                            />
+                          </td>
+                          <td className="symbol">{stock.symbol}</td>
+                          <td className="text-left">{stock.name || "-"}</td>
+                          <td className="price-change">
+                            <div className="price">
+                              {stock.price ? `$${stock.price.toFixed(2)}` : "N/A"}
+                            </div>
+                            <div
+                              className={
+                                stock.change > 0
+                                  ? "change-positive"
+                                  : stock.change < 0
+                                  ? "change-negative"
+                                  : "change-neutral"
+                              }
+                            >
+                              {typeof stock.change === "number"
+                                ? stock.change.toFixed(2)
+                                : Number(stock.change || 0).toFixed(2)}
+                              %
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Sheet footer actions */}
+            <div className="stocklist-sheet-footer">
+              <button
+                type="button"
+                onClick={handleContinueStocks}
+                className="btn-primary"
+                style={{ width: "100%", marginBottom: 8 }}
+              >
+                Continue with Selected
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStockListOpen(false);
+                  navigate("/wallet");
+                }}
+                className="btn-secondary"
+                style={{ width: "100%" }}
+              >
+                Back to Wallet
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.getElementById('stocklist-portal-root') || document.body
+      )}
     </div>
   );
 }
