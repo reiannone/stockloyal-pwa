@@ -1596,7 +1596,7 @@ button.nav-item {
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
-  max-height: calc(85vh - var(--footer-height)); /* Account for footer */
+  max-height: calc(80vh - var(--footer-height)); /* Account for footer */
   overflow: hidden;
   display: flex;
   flex-direction: column;
