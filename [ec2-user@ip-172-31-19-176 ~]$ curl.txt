@@ -16,3 +16,80 @@ scp -i $PEM -r api\ ec2-user@3.143.207.226:/var/www/html/stockloyal-pwa/
 
 # Upload static assets (icons/logos)
 scp -i $PEM -r public\* ec2-user@3.143.207.226:/var/www/html/stockloyal-pwa/public/
+
+
+SELECT * FROM orders LIMIT 100000;
+
+
+# Connect to RDS
+mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com \
+      -u admin \
+      -p'StockLoyal2025!' \
+      stockloyal
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" C:\xampp\htdocs\recent-api-updates.zip ec2-user@3.150.49.91:/tmp/
+
+
+******************************************
+UPLOAD SINGLE .PHP FILE
+******************************************
+
+C:\xampp\htdocs\stockloyal-pwa\api\place_order.php
+
+# From PowerShell on your Windows machine
+cd C:\xampp\htdocs\stockloyal-pwa\api
+
+# Upload the file (replace path to your SSH key)
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" place_order.php ec2-user@3.150.49.91:/tmp/
+
+# SSH into server
+ssh -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" ec2-user@3.150.49.91
+
+# Backup existing file
+sudo cp /var/www/html/api/place_order.php /var/www/html/api/place_order.php.backup
+
+# Move the new file
+sudo mv /tmp/place_order.php /var/www/html/api/
+
+# Fix permissions
+sudo chown apache:apache /var/www/html/api/place_order.php
+sudo chmod 644 /var/www/html/api/place_order.php
+
+# Test
+curl -X POST http://localhost/api/place_order.php \
+  -H "Content-Type: application/json" \
+  -d '{"member_id":"test","symbol":"AAPL","shares":1,"broker":"test"}'
+
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" update_points.php ubuntu@3.150.49.91:/tmp/
+
+
+mysql -h YOUR_RDS_ENDPOINT -P 3306 -u YOUR_USERNAME -p YOUR_DATABASE_NAME < create_social_tables.sql
+
+
+
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" `
+  "C:\xampp\htdocs\stockloyal-pwa\api\social_get_post.php" `
+  ec2-user@3.150.49.91:~/stockloyal-temp-api/social_get_post.php
+
+
+git remote add origin https://github.com/reiannone/stockloyal-pwa.git
+git branch -M main
+git push -u origin main
+
+# 1. Path to your PEM key
+$KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
+
+# 2. Local source file
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\social_feed.php"
+
+# 3. Your EC2 host (replace with your real public DNS or IP)
+$HOST = "ec2-user@3.150.49.91"
+
+# 4. Remote temp destination (in your home dir)
+$DEST = "/home/ec2-user/social_feed.php"
+
+# 5. Run scp
+scp -i $KEY "$SRC" "$HOST:$DEST"
+
+

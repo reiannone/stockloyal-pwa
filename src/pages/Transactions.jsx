@@ -165,19 +165,7 @@ export default function Transactions() {
                       <span style={{ fontWeight: "600", color: "#1e3a8a", fontSize: "0.9rem" }}>
                         {order.order_type || "-"}
                       </span>
-                      <span
-                        style={{
-                          fontSize: "0.85rem",
-                          color:
-                            order.status === "executed"
-                              ? "#16a34a"
-                              : order.status === "failed"
-                              ? "#dc2626"
-                              : order.status === "pending"
-                              ? "#ca8a04"
-                              : "#6b7280",
-                        }}
-                      >
+                      <span style={getStatusPillStyle(order.status)}>
                         {order.status || "-"}
                       </span>
                     </div>
@@ -208,25 +196,116 @@ export default function Transactions() {
             </div>
 
             <div className="stocklist-sheet-content">
-              <div style={{ display: "grid", gap: 10 }}>
-                <Row label="Symbol" value={selectedTx.symbol || "-"} />
-                <Row label="Shares" value={selectedTx.shares ?? "-"} />
-                <Row
-                  label="Amount"
-                  value={selectedTx.amount ? formatDollars(selectedTx.amount) : "-"}
-                />
-                <Row label="Order Type" value={selectedTx.order_type || "-"} />
-                <Row label="Status" value={selectedTx.status || "-"} />
-                <Row
-                  label="Placed (Local)"
-                  value={selectedTx.placed_at ? toLocalZonedString(selectedTx.placed_at) : "-"}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* ORDER SECTION */}
+                <Section title="Order">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <DetailField label="Order ID">{selectedTx.order_id ?? "-"}</DetailField>
+                    <DetailField label="Basket ID">{selectedTx.basket_id ?? "-"}</DetailField>
+                    <DetailField label="Member ID">{selectedTx.member_id ?? "-"}</DetailField>
+                    <DetailField label="Merchant ID">{selectedTx.merchant_id ?? "-"}</DetailField>
 
-                {/* Optional fields if your API includes them */}
-                {"order_id" in selectedTx && <Row label="Order ID" value={selectedTx.order_id || "-"} />}
-                {"basket_id" in selectedTx && <Row label="Basket ID" value={selectedTx.basket_id || "-"} />}
-                {"broker" in selectedTx && <Row label="Broker" value={selectedTx.broker || "-"} />}
-                {"merchant_id" in selectedTx && <Row label="Merchant" value={selectedTx.merchant_id || "-"} />}
+                    <DetailField label="Symbol">{selectedTx.symbol ?? "-"}</DetailField>
+                    <DetailField label="Order Type">
+                      {(selectedTx.order_type || "-").toUpperCase()}
+                    </DetailField>
+
+                    <DetailField label="Status">
+                      <span style={getStatusPillStyle(selectedTx.status)}>
+                        {selectedTx.status || "-"}
+                      </span>
+                    </DetailField>
+
+                    <DetailField label="Broker">{selectedTx.broker ?? "-"}</DetailField>
+                  </div>
+
+                  <DetailField label="Placed (Local)">
+                    {selectedTx.placed_at ? toLocalZonedString(selectedTx.placed_at) : "-"}
+                  </DetailField>
+                </Section>
+
+                {/* AMOUNTS SECTION */}
+                <Section title="Order Amounts">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <DetailField label="Shares">{selectedTx.shares ?? "-"}</DetailField>
+                    <DetailField label="Order Amount">
+                      {selectedTx.amount ? formatDollars(selectedTx.amount) : "-"}
+                    </DetailField>
+                    <DetailField label="Points Used">
+                      {selectedTx.points_used ?? "-"}
+                    </DetailField>
+                  </div>
+                </Section>
+
+                {/* EXECUTION SECTION */}
+                <Section title="Execution">
+                  <DetailField label="Executed At">
+                    {selectedTx.executed_at ? toLocalZonedString(selectedTx.executed_at) : "-"}
+                  </DetailField>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <DetailField label="Exec. Price">
+                      {selectedTx.executed_price ?? "-"}
+                    </DetailField>
+                    <DetailField label="Exec. Shares">
+                      {selectedTx.executed_shares ?? "-"}
+                    </DetailField>
+                    <DetailField label="Exec. Amount">
+                      {selectedTx.executed_amount
+                        ? formatDollars(selectedTx.executed_amount)
+                        : "-"}
+                    </DetailField>
+                  </div>
+                </Section>
+
+                {/* PAYMENT SECTION */}
+                <Section title="Payment / Settlement">
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <DetailField label="Paid?">
+                      <span style={getPaidPillStyle(selectedTx.paid_flag)}>
+                        {selectedTx.paid_flag ? "Yes" : "No"}
+                      </span>
+                    </DetailField>
+                    <DetailField label="Paid Batch ID">
+                      {selectedTx.paid_batch_id ?? "-"}
+                    </DetailField>
+                  </div>
+
+                  <DetailField label="Paid At">
+                    {selectedTx.paid_at ? toLocalZonedString(selectedTx.paid_at) : "-"}
+                  </DetailField>
+                </Section>
+
+                {/* META SECTION */}
+                <Section title="Meta">
+                  <DetailField label="Member Timezone">
+                    {selectedTx.member_timezone ?? memberTimezone ?? detectedTz}
+                  </DetailField>
+                </Section>
               </div>
             </div>
 
@@ -276,11 +355,106 @@ export default function Transactions() {
   );
 }
 
-function Row({ label, value }) {
+/**
+ * Small, stacked label/value field for the detail overlay
+ */
+function DetailField({ label, children }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-      <div style={{ color: "#6b7280" }}>{label}</div>
-      <div style={{ fontWeight: 700, textAlign: "right" }}>{String(value)}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span
+        style={{
+          fontSize: "0.75rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          color: "#6b7280",
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "#111827" }}>{children}</span>
     </div>
   );
+}
+
+/**
+ * Section wrapper to group related fields
+ */
+function Section({ title, children }) {
+  return (
+    <section
+      style={{
+        padding: 12,
+        borderRadius: 12,
+        border: "1px solid #e5e7eb",
+        background: "#f9fafb",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          fontSize: "0.75rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: "#6b7280",
+        }}
+      >
+        {title}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * Status pill styling for table + overlay
+ */
+function getStatusPillStyle(statusRaw) {
+  const status = (statusRaw || "").toString().toLowerCase();
+
+  let bg = "#e5e7eb";
+  let color = "#374151";
+
+  if (status === "executed" || status === "confirmed" || status === "placed") {
+    bg = "#dcfce7";
+    color = "#166534";
+  } else if (status === "failed" || status === "cancelled") {
+    bg = "#fee2e2";
+    color = "#991b1b";
+  } else if (status === "pending") {
+    bg = "#fef9c3";
+    color = "#854d0e";
+  }
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    backgroundColor: bg,
+    color,
+    textTransform: "capitalize",
+  };
+}
+
+/**
+ * Paid flag pill styling
+ */
+function getPaidPillStyle(paidFlag) {
+  const isPaid = !!paidFlag;
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "2px 8px",
+    borderRadius: 999,
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    backgroundColor: isPaid ? "#dcfce7" : "#fee2e2",
+    color: isPaid ? "#166534" : "#991b1b",
+  };
 }

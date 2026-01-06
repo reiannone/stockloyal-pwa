@@ -5,7 +5,7 @@ FRONTEND: AWS Amplify and GitHub from PowerShell:
 # If you haven't initialized git yet
 git init
 git add .
-git commit -m "Update social feed pages to filter on member selection"
+git commit -m "Added symbol chart page and links"
 
 # Create a new repository on GitHub, then:
 git remote add origin https://github.com/reiannone/stockloyal-pwa.git
@@ -35,9 +35,9 @@ scp -i $KEY "$SRC" "${EC2}:${DEST}"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/social_feed.php /var/www/html/api/social_feed.php
-sudo chown apache:apache /var/www/html/api/social_feed.php
-sudo chmod 644 /var/www/html/api/social_feed.php
+sudo mv /home/ec2-user/get_last_order.php /var/www/html/api/get_last_order.php
+sudo chown apache:apache /var/www/html/api/get_last_order.php
+sudo chmod 644 /var/www/html/api/get_last_order.php
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -61,12 +61,12 @@ BACKEND Step 2: After MULTIPLE uploads, SSH into EC2: (AWS EC2 Connection)
 ssh -i C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem ec2-user@3.150.49.91
 
 # Check if files exist
-ls -la /var/www/html/api/get-brokers.php
-ls -la /var/www/html/api/save-broker.php
+ls -la /var/www/html/api/get-payments.php
+ls -la /var/www/html/api/export-payments-file.php
 ls -la /var/www/html/api/delete-broker.php
 
 # Test the endpoint
-curl https://api.stockloyal.com/api/get-brokers.php
+curl https://api.stockloyal.com/api/get-payments.php
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
