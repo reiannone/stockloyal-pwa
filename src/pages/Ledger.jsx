@@ -1,20 +1,20 @@
-// src/pages/Transactions.jsx
+// src/pages/Ledger.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
-export default function Transactions() {
+export default function Ledger() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
 
-  const [orders, setOrders] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ✅ StockPicker-style slider state (NO portal)
-  const [isTxOpen, setIsTxOpen] = useState(false);
-  const [selectedTx, setSelectedTx] = useState(null);
+  // Slider state for selected ledger entry
+  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -34,16 +34,22 @@ export default function Transactions() {
 
     (async () => {
       try {
-        // Fetch orders + wallet (for timezone) in parallel
-        const [ordersRes, walletRes] = await Promise.all([
-          apiPost("get_order_history.php", { member_id: memberId }),
+        // Fetch ledger + wallet (for timezone) in parallel
+        const [ledgerRes, walletRes] = await Promise.all([
+          apiPost("get-ledger.php", { member_id: memberId }),
           apiPost("get-wallet.php", { member_id: memberId }),
         ]);
 
-        if (!ordersRes?.success) {
-          setError(ordersRes?.error || "Failed to load Order transactions.");
+        if (!ledgerRes?.success) {
+          setError(ledgerRes?.error || "Failed to load ledger.");
         } else {
-          setOrders(ordersRes.orders || []);
+          // Use rows (actual key from API), with fallbacks
+          setEntries(
+            ledgerRes.ledger ||
+              ledgerRes.entries ||
+              ledgerRes.rows || // <- main source
+              []
+          );
         }
 
         const tz =
@@ -55,8 +61,8 @@ export default function Transactions() {
 
         setMemberTimezone(tz);
       } catch (err) {
-        console.error("Order transactions fetch error:", err);
-        setError("Network error while fetching Order transactions.");
+        console.error("Ledger fetch error:", err);
+        setError("Network error while fetching ledger.");
       } finally {
         setLoading(false);
       }
@@ -68,6 +74,12 @@ export default function Transactions() {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
+    });
+
+  const formatPoints = (val) =>
+    (parseFloat(val) || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     });
 
   // Convert UTC/MySQL-ish timestamps to member's local time string
@@ -98,20 +110,20 @@ export default function Transactions() {
     }
   };
 
-  const openTx = (order) => {
-    setSelectedTx(order);
-    setIsTxOpen(true);
+  const openEntry = (entry) => {
+    setSelectedEntry(entry);
+    setIsLedgerOpen(true);
   };
 
-  const closeTx = () => {
-    setIsTxOpen(false);
-    setTimeout(() => setSelectedTx(null), 180);
+  const closeEntry = () => {
+    setIsLedgerOpen(false);
+    setTimeout(() => setSelectedEntry(null), 180);
   };
 
   return (
     <div className="transactions-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        Order Transaction History
+        Account Ledger
       </h2>
 
       <p className="subtext" style={{ textAlign: "center", marginTop: -6, marginBottom: 12 }}>
@@ -119,12 +131,12 @@ export default function Transactions() {
       </p>
 
       {loading ? (
-        <p>Loading your Order transactions...</p>
+        <p>Loading your ledger...</p>
       ) : error ? (
         <p className="error-text">{error}</p>
-      ) : orders.length === 0 ? (
+      ) : entries.length === 0 ? (
         <p className="portfolio-subtext" style={{ textAlign: "center" }}>
-          No Order transactions found.
+          No ledger entries found.
         </p>
       ) : (
         <div className="basket-table-wrapper" style={{ overflowX: "auto" }}>
@@ -132,48 +144,55 @@ export default function Transactions() {
             className="basket-table"
             style={{
               width: "100%",
-              minWidth: "760px",
+              minWidth: "860px",
               borderCollapse: "collapse",
             }}
           >
             <thead>
               <tr>
-                <th>Symbol</th>
-                <th>Shares</th>
-                <th style={{ textAlign: "right" }}>Amount</th>
-                <th style={{ width: "140px" }}>Order / Status</th>
-                <th>Placed (Local)</th>
+                <th>Created (Local)</th>
+                <th>Type</th>
+                <th>Direction</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th style={{ textAlign: "right" }}>Points</th>
+                <th style={{ textAlign: "right" }}>Cash</th>
+                <th>Broker</th>
+                <th>Order ID</th>
               </tr>
             </thead>
 
             <tbody>
-              {orders.map((order, idx) => (
+              {entries.map((entry, idx) => (
                 <tr
                   key={idx}
-                  onClick={() => openTx(order)}
+                  onClick={() => openEntry(entry)}
                   style={{ cursor: "pointer" }}
                   title="Click to view details"
                 >
-                  <td>{order.symbol}</td>
-                  <td>{order.shares}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {order.amount ? formatDollars(order.amount) : "-"}
-                  </td>
-
-                  <td style={{ textAlign: "center", lineHeight: "1.3" }}>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                      <span style={{ fontWeight: "600", color: "#1e3a8a", fontSize: "0.9rem" }}>
-                        {order.order_type || "-"}
-                      </span>
-                      <span style={getStatusPillStyle(order.status)}>
-                        {order.status || "-"}
-                      </span>
-                    </div>
-                  </td>
-
                   <td style={{ fontSize: "0.9rem" }}>
-                    {order.placed_at ? toLocalZonedString(order.placed_at) : "-"}
+                    {entry.created_at ? toLocalZonedString(entry.created_at) : "-"}
                   </td>
+                  <td style={{ textTransform: "capitalize" }}>
+                    {formatTxType(entry.tx_type)}
+                  </td>
+                  <td style={{ textTransform: "capitalize" }}>
+                    {entry.direction || "-"}
+                  </td>
+                  <td>{entry.channel || "-"}</td>
+                  <td>
+                    <span style={getLedgerStatusPillStyle(entry.status)}>
+                      {entry.status || "-"}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {entry.amount_points != null ? formatPoints(entry.amount_points) : "-"}
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {entry.amount_cash != null ? formatDollars(entry.amount_cash) : "-"}
+                  </td>
+                  <td>{entry.broker || "-"}</td>
+                  <td>{entry.order_id ?? "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -181,15 +200,15 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* ✅ StockPicker-style slider (rendered INSIDE app; no portal) */}
-      {isTxOpen && selectedTx && (
-        <div className="stocklist-overlay" onClick={closeTx}>
+      {/* ✅ Ledger detail slider */}
+      {isLedgerOpen && selectedEntry && (
+        <div className="stocklist-overlay" onClick={closeEntry}>
           <div className="stocklist-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="stocklist-sheet-header">
               <div className="stocklist-sheet-handle" />
               <div className="stocklist-sheet-title-row">
-                <h2 className="stocklist-heading">Order Transaction Details</h2>
-                <button type="button" className="stocklist-close-btn" onClick={closeTx}>
+                <h2 className="stocklist-heading">Ledger Entry Details</h2>
+                <button type="button" className="stocklist-close-btn" onClick={closeEntry}>
                   ✕
                 </button>
               </div>
@@ -197,8 +216,8 @@ export default function Transactions() {
 
             <div className="stocklist-sheet-content">
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {/* ORDER SECTION */}
-                <Section title="Order">
+                {/* ENTRY SECTION */}
+                <Section title="Entry">
                   <div
                     style={{
                       display: "grid",
@@ -206,32 +225,45 @@ export default function Transactions() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Order ID">{selectedTx.order_id ?? "-"}</DetailField>
-                    <DetailField label="Basket ID">{selectedTx.basket_id ?? "-"}</DetailField>
-                    <DetailField label="Member ID">{selectedTx.member_id ?? "-"}</DetailField>
-                    <DetailField label="Merchant ID">{selectedTx.merchant_id ?? "-"}</DetailField>
-
-                    <DetailField label="Symbol">{selectedTx.symbol ?? "-"}</DetailField>
-                    <DetailField label="Order Type">
-                      {(selectedTx.order_type || "-").toUpperCase()}
+                    <DetailField label="Ledger ID">
+                      {selectedEntry.tx_id ?? "-"}
+                    </DetailField>
+                    <DetailField label="Member ID">
+                      {selectedEntry.member_id ?? "-"}
+                    </DetailField>
+                    <DetailField label="Merchant ID">
+                      {selectedEntry.merchant_id ?? "-"}
+                    </DetailField>
+                    <DetailField label="Order ID">
+                      {selectedEntry.order_id ?? "-"}
                     </DetailField>
 
+                    <DetailField label="Type">
+                      {formatTxType(selectedEntry.tx_type)}
+                    </DetailField>
+                    <DetailField label="Direction">
+                      {selectedEntry.direction ?? "-"}
+                    </DetailField>
+
+                    <DetailField label="Channel">
+                      {selectedEntry.channel ?? "-"}
+                    </DetailField>
                     <DetailField label="Status">
-                      <span style={getStatusPillStyle(selectedTx.status)}>
-                        {selectedTx.status || "-"}
+                      <span style={getLedgerStatusPillStyle(selectedEntry.status)}>
+                        {selectedEntry.status || "-"}
                       </span>
                     </DetailField>
-
-                    <DetailField label="Broker">{selectedTx.broker ?? "-"}</DetailField>
                   </div>
 
-                  <DetailField label="Placed (Local)">
-                    {selectedTx.placed_at ? toLocalZonedString(selectedTx.placed_at) : "-"}
+                  <DetailField label="Created (Local)">
+                    {selectedEntry.created_at
+                      ? toLocalZonedString(selectedEntry.created_at)
+                      : "-"}
                   </DetailField>
                 </Section>
 
                 {/* AMOUNTS SECTION */}
-                <Section title="Order Amounts">
+                <Section title="Amounts">
                   <div
                     style={{
                       display: "grid",
@@ -239,45 +271,21 @@ export default function Transactions() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Shares">{selectedTx.shares ?? "-"}</DetailField>
-                    <DetailField label="Order Amount">
-                      {selectedTx.amount ? formatDollars(selectedTx.amount) : "-"}
+                    <DetailField label="Points">
+                      {selectedEntry.amount_points != null
+                        ? formatPoints(selectedEntry.amount_points)
+                        : "-"}
                     </DetailField>
-                    <DetailField label="Points Used">
-                      {selectedTx.points_used ?? "-"}
-                    </DetailField>
-                  </div>
-                </Section>
-
-                {/* EXECUTION SECTION */}
-                <Section title="Execution">
-                  <DetailField label="Executed At">
-                    {selectedTx.executed_at ? toLocalZonedString(selectedTx.executed_at) : "-"}
-                  </DetailField>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <DetailField label="Exec. Price">
-                      {selectedTx.executed_price ?? "-"}
-                    </DetailField>
-                    <DetailField label="Exec. Shares">
-                      {selectedTx.executed_shares ?? "-"}
-                    </DetailField>
-                    <DetailField label="Exec. Amount">
-                      {selectedTx.executed_amount
-                        ? formatDollars(selectedTx.executed_amount)
+                    <DetailField label="Cash">
+                      {selectedEntry.amount_cash != null
+                        ? formatDollars(selectedEntry.amount_cash)
                         : "-"}
                     </DetailField>
                   </div>
                 </Section>
 
-                {/* PAYMENT SECTION */}
-                <Section title="Payment / Settlement">
+                {/* ROUTING / REFS SECTION */}
+                <Section title="Routing / References">
                   <div
                     style={{
                       display: "grid",
@@ -285,25 +293,26 @@ export default function Transactions() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Paid?">
-                      <span style={getPaidPillStyle(selectedTx.paid_flag)}>
-                        {selectedTx.paid_flag ? "Yes" : "No"}
-                      </span>
+                    <DetailField label="Client Tx ID">
+                      {selectedEntry.client_tx_id ?? "-"}
                     </DetailField>
-                    <DetailField label="Paid Batch ID">
-                      {selectedTx.paid_batch_id ?? "-"}
+                    <DetailField label="External Ref">
+                      {selectedEntry.external_ref ?? "-"}
                     </DetailField>
                   </div>
 
-                  <DetailField label="Paid At">
-                    {selectedTx.paid_at ? toLocalZonedString(selectedTx.paid_at) : "-"}
+                  <DetailField label="Broker">
+                    {selectedEntry.broker ?? "-"}
+                  </DetailField>
+                  <DetailField label="Note">
+                    {selectedEntry.note ?? "-"}
                   </DetailField>
                 </Section>
 
                 {/* META SECTION */}
                 <Section title="Meta">
                   <DetailField label="Member Timezone">
-                    {selectedTx.member_timezone ?? memberTimezone ?? detectedTz}
+                    {selectedEntry.member_timezone ?? memberTimezone ?? detectedTz}
                   </DetailField>
                 </Section>
               </div>
@@ -314,7 +323,7 @@ export default function Transactions() {
                 type="button"
                 className="btn-secondary"
                 style={{ width: "100%" }}
-                onClick={closeTx}
+                onClick={closeEntry}
               >
                 Close
               </button>
@@ -337,10 +346,10 @@ export default function Transactions() {
         <button
           type="button"
           className="btn-secondary"
-          onClick={() => navigate("/portfolio")}
+          onClick={() => navigate("/transactions")}
           style={{ width: "90%", maxWidth: "320px" }}
         >
-          View StockLoyal Portfolio
+          View Order Transactions
         </button>
         <button
           type="button"
@@ -371,7 +380,9 @@ function DetailField({ label, children }) {
       >
         {label}
       </span>
-      <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "#111827" }}>{children}</span>
+      <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "#111827" }}>
+        {children}
+      </span>
     </div>
   );
 }
@@ -408,23 +419,27 @@ function Section({ title, children }) {
 }
 
 /**
- * Status pill styling for table + overlay
+ * Status pill styling for ledger status
+ * ('pending','confirmed','failed','reversed')
  */
-function getStatusPillStyle(statusRaw) {
+function getLedgerStatusPillStyle(statusRaw) {
   const status = (statusRaw || "").toString().toLowerCase();
 
   let bg = "#e5e7eb";
   let color = "#374151";
 
-  if (status === "executed" || status === "confirmed" || status === "placed") {
+  if (status === "confirmed") {
     bg = "#dcfce7";
     color = "#166534";
-  } else if (status === "failed" || status === "cancelled") {
+  } else if (status === "failed") {
     bg = "#fee2e2";
     color = "#991b1b";
   } else if (status === "pending") {
     bg = "#fef9c3";
     color = "#854d0e";
+  } else if (status === "reversed") {
+    bg = "#e0f2fe";
+    color = "#075985";
   }
 
   return {
@@ -442,19 +457,31 @@ function getStatusPillStyle(statusRaw) {
 }
 
 /**
- * Paid flag pill styling
+ * Human-friendly label for tx_type enum
+ * ('points_received','redeem_points','adjust_points','cash_in','cash_out','cash_fee')
  */
-function getPaidPillStyle(paidFlag) {
-  const isPaid = !!paidFlag;
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "2px 8px",
-    borderRadius: 999,
-    fontSize: "0.75rem",
-    fontWeight: 600,
-    backgroundColor: isPaid ? "#dcfce7" : "#fee2e2",
-    color: isPaid ? "#166534" : "#991b1b",
-  };
+function formatTxType(txTypeRaw) {
+  if (!txTypeRaw) return "-";
+  const txType = txTypeRaw.toString();
+
+  switch (txType) {
+    case "points_received":
+      return "Points Received";
+    case "redeem_points":
+      return "Redeem Points";
+    case "adjust_points":
+      return "Adjust Points";
+    case "cash_in":
+      return "Cash In";
+    case "cash_out":
+      return "Cash Out";
+    case "cash_fee":
+      return "Cash Fee";
+    default:
+      // Fallback: replace underscores & capitalize first letter
+      return txType
+        .split("_")
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(" ");
+  }
 }

@@ -26,6 +26,7 @@ import StockPicker from "./pages/StockPicker.jsx";
 import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
+import Ledger from "./pages/Ledger.jsx";
 import Admin from "./pages/Admin.jsx";
 import AdminBroker from "./pages/AdminBroker.jsx";
 import PaymentsProcessing from "./pages/PaymentsProcessing.jsx";
@@ -251,6 +252,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <Transactions />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/ledger"
+                element={
+                  <PageWrapper>
+                    <Ledger />
                   </PageWrapper>
                 }
               />

@@ -252,7 +252,7 @@ export default function Portfolio() {
           className="btn-secondary"
           onClick={() => navigate("/transactions")}
         >
-          View Transactions
+          View Order History
         </button>
 
         <button
