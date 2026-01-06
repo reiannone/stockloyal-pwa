@@ -334,14 +334,36 @@ export default function Transactions() {
           marginTop: "20px",
         }}
       >
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => navigate("/portfolio")}
-          style={{ width: "90%", maxWidth: "320px" }}
+        {/* Row with the two secondary buttons: Portfolio (left) + Ledger (right) */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            justifyContent: "center",
+            gap: "10px",
+            width: "90%",
+            maxWidth: "480px",
+          }}
         >
-          View StockLoyal Portfolio
-        </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => navigate("/portfolio")}
+            style={{ flex: 1 }}
+          >
+            View StockLoyal Portfolio
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => navigate("/ledger")}
+            style={{ flex: 1 }}
+          >
+            View Transaction Ledger
+          </button>
+        </div>
+
+        {/* Primary button stays centered below */}
         <button
           type="button"
           className="btn-primary"
