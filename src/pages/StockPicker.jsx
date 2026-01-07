@@ -72,6 +72,65 @@ export default function StockPicker() {
   // ✅ Bottom-sheet open/close state
   const [isStockListOpen, setIsStockListOpen] = useState(false);
 
+  // 🎡 Audio + haptic feedback for wheel ticks
+  const audioCtxRef = useRef(null);
+  const lastTickTimeRef = useRef(0);
+
+  const triggerWheelFeedback = () => {
+    if (typeof window === "undefined") return;
+
+    // Light haptic bump (where supported)
+    try {
+      if ("vibrate" in navigator) {
+        navigator.vibrate(8); // super short
+      }
+    } catch {
+      // ignore
+    }
+
+    // Short click sound using Web Audio
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioCtx();
+      }
+      const ctx = audioCtxRef.current;
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      // Slightly clicky tone
+      osc.type = "square";
+      osc.frequency.value = 1400;
+
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.06);
+    } catch {
+      // ignore audio errors
+    }
+  };
+
+  // Rate-limited tick while dragging
+  const maybeTick = () => {
+    const now = (typeof performance !== "undefined" && performance.now())
+      ? performance.now()
+      : Date.now();
+    // every ~80ms max
+    if (now - lastTickTimeRef.current > 80) {
+      lastTickTimeRef.current = now;
+      triggerWheelFeedback();
+    }
+  };
+
   // Create portal container on mount
   useEffect(() => {
     let portalRoot = document.getElementById("stocklist-portal-root");
@@ -101,26 +160,42 @@ export default function StockPicker() {
     isDragging.current = true;
     startX.current = e.pageX - sliderRef.current.offsetLeft;
     scrollLeft.current = sliderRef.current.scrollLeft;
+    lastTickTimeRef.current = 0; // reset tick cadence
   };
-  const handleMouseLeave = () => (isDragging.current = false);
-  const handleMouseUp = () => (isDragging.current = false);
+
+  const handleMouseLeave = () => {
+    isDragging.current = false;
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+  };
+
   const handleMouseMove = (e) => {
     if (!isDragging.current) return;
     e.preventDefault();
     const x = e.pageX - sliderRef.current.offsetLeft;
     sliderRef.current.scrollLeft = scrollLeft.current - (x - startX.current);
+    maybeTick();
   };
+
   const handleTouchStart = (e) => {
     isDragging.current = true;
     startX.current = e.touches[0].pageX - sliderRef.current.offsetLeft;
     scrollLeft.current = sliderRef.current.scrollLeft;
+    lastTickTimeRef.current = 0; // reset on new swipe
   };
+
   const handleTouchMove = (e) => {
     if (!isDragging.current) return;
     const x = e.touches[0].pageX - sliderRef.current.offsetLeft;
     sliderRef.current.scrollLeft = scrollLeft.current - (x - startX.current);
+    maybeTick();
   };
-  const handleTouchEnd = () => (isDragging.current = false);
+
+  const handleTouchEnd = () => {
+    isDragging.current = false;
+  };
 
   // --- Load wallet (and broker limits) ---
   useEffect(() => {

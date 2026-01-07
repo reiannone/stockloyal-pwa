@@ -1,8 +1,11 @@
 // src/pages/Order.jsx
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useBasket } from "../context/BasketContext";
 import { apiPost } from "../api.js";
+
+// ⭐ NEW: import audio as module so bundler manages path
+import pingSound from "../assets/sounds/mixkit-confirmation-tone-2867.wav";
 
 console.log("[Order] start localStorage item broker:", localStorage.getItem("broker"));
 
@@ -17,18 +20,31 @@ export default function Order() {
   const { clearBasket } = useBasket();
   const broker = localStorage.getItem("broker");
   const memberId = localStorage.getItem("memberId");
-  const merchantId = localStorage.getItem("merchantId"); // ✅ Get merchant_id
+  const merchantId = localStorage.getItem("merchantId");
 
-  console.log("[Order] localStorage item broker:", localStorage.getItem("broker"));
-  console.log("[Order] localStorage item merchantId:", merchantId);
-
-  // ✅ Basket data passed from Basket.jsx
+  // basket state
   const enrichedBasket = location.state?.basket || [];
   const totalAmount = Number(location.state?.amount || 0);
   const pointsUsed = Number(location.state?.pointsUsed || 0);
 
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState("");
+
+  // 🔊 audio created from imported asset (works in Vite/CRA)
+  const pingRef = useRef(new Audio(pingSound));
+
+  const playPing = () => {
+    try {
+      if (!pingRef.current) return;
+      pingRef.current.currentTime = 0;
+      pingRef.current.volume = 1.0;
+      pingRef.current.play().catch((err) => {
+        console.warn("Ping play blocked or failed:", err);
+      });
+    } catch (e) {
+      console.warn("Ping audio error:", e);
+    }
+  };
 
   const handlePlaceOrder = async () => {
     setError("");
@@ -46,36 +62,25 @@ export default function Order() {
     setPlacing(true);
 
     try {
-      console.log("[Order] starting place order flow", {
-        memberId,
-        totalAmount,
-        pointsUsed,
-        enrichedBasketCount: enrichedBasket.length,
-      });
-
-      // ✅ Generate basket_id once per checkout
       const basketId = generateBasketId();
       localStorage.setItem("basketId", basketId);
 
-      // Split amount across all basket items (simple even split)
       const perOrderAmount =
         enrichedBasket.length > 0 ? totalAmount / enrichedBasket.length : 0;
 
-      // ✅ Prepare an *even* points allocation that sums exactly to pointsUsed
+      // even split points
       const n = enrichedBasket.length;
       const pointsAlloc = [];
       if (n > 0) {
         if (Number.isInteger(pointsUsed)) {
-          // Integer points: distribute remainder by +1 to the first R orders
           const base = Math.floor(pointsUsed / n);
           let remainder = pointsUsed - base * n;
           for (let i = 0; i < n; i++) {
             pointsAlloc.push(base + (i < remainder ? 1 : 0));
           }
         } else {
-          // Decimal points: split to 2 decimals and distribute any leftover cents
           const raw = pointsUsed / n;
-          const base = Math.floor(raw * 100) / 100; // 2-dp base
+          const base = Math.floor(raw * 100) / 100;
           let remCents = Math.round(pointsUsed * 100 - base * 100 * n);
           for (let i = 0; i < n; i++) {
             const add = remCents > 0 ? 0.01 : 0;
@@ -84,21 +89,14 @@ export default function Order() {
           }
         }
       }
-      console.log("[Order] points allocation per order:", pointsAlloc, "total:", pointsAlloc.reduce((a, b) => a + b, 0));
 
-      // Attempt to fetch authoritative wallet from server
+      // attempt wallet fetch
       let currentWallet = null;
       try {
         const walletRes = await apiPost("get-wallet.php", { member_id: memberId });
-        if (walletRes?.success && walletRes.wallet) {
-          currentWallet = walletRes.wallet;
-          console.log("[Order] fetched wallet from server:", currentWallet);
-        }
-      } catch (gErr) {
-        console.warn("[Order] get-wallet.php failed, falling back to localStorage", gErr);
-      }
+        if (walletRes?.success && walletRes.wallet) currentWallet = walletRes.wallet;
+      } catch (_) {}
 
-      // Fallback values
       const currPoints =
         Number(currentWallet?.points) ||
         parseInt(localStorage.getItem("points") || "0", 10);
@@ -113,67 +111,58 @@ export default function Order() {
       const newCash = Math.max(0, Number((currCash - totalAmount).toFixed(2)));
       const newPortfolio = Number((currPortfolio + totalAmount).toFixed(2));
 
-      // 1) Place broker orders sequentially with basket_id + per-order amount + per-order points_used
+      // place each order
       for (let i = 0; i < enrichedBasket.length; i++) {
         const stock = enrichedBasket[i];
 
         const payload = {
           member_id: memberId,
-          merchant_id: merchantId, // ✅ Include merchant_id
-          basket_id: basketId, // ✅ tie all orders to this basket
+          merchant_id: merchantId,
+          basket_id: basketId,
           symbol: stock.symbol,
           shares: stock.shares || 0,
-          points_used: pointsAlloc[i] || 0, // ✅ evenly split per order
-          amount: perOrderAmount, // ✅ evenly split amount (simple split)
+          points_used: pointsAlloc[i] || 0,
+          amount: perOrderAmount,
           order_type: "market",
           broker: broker || "Not linked",
         };
 
-        console.log("[Order] place_order.php payload:", payload);
         const result = await apiPost("place_order.php", payload);
-
-        if (!result || !result.success) {
-          console.error("[Order] place_order.php failure for", stock.symbol, result);
+        if (!result?.success) {
           throw new Error(result?.error || `Failed to place order for ${stock.symbol}`);
         }
       }
 
-      // 2) Persist wallet updates
+      // update wallet
       try {
-        const updatePayload = {
+        await apiPost("update_balances.php", {
           member_id: memberId,
           points: newPoints,
           cash_balance: newCash,
           portfolio_value: newPortfolio,
-        };
-
-        console.log("[Order] calling update_balances.php", updatePayload);
-        await apiPost("update_balances.php", updatePayload);
+        });
 
         localStorage.setItem("points", String(newPoints));
         localStorage.setItem("cashBalance", newCash.toFixed(2));
         localStorage.setItem("portfolio_value", newPortfolio.toFixed(2));
-      } catch (walletErr) {
-        console.error("[Order] wallet update failed:", walletErr);
-      }
+      } catch (_) {}
 
-      // 3) Schedule broker confirmation stub after 20s
+      // broker confirm stub
       setTimeout(async () => {
         try {
-          console.log("[Order] Triggering broker_confirm.php after 20s...");
           await apiPost("broker_confirm.php", { member_id: memberId });
-        } catch (err) {
-          console.error("[Order] broker_confirm.php failed:", err);
-        }
+        } catch (_) {}
       }, 1000);
 
-      // 4) Clear basket and navigate with basketId
+      // 🔊 success ping here
+      playPing();
+
+      // nav + clear basket
       clearBasket();
       navigate("/order-confirmation", {
         state: { refreshWallet: true, placed: true, amount: totalAmount, basketId },
       });
     } catch (err) {
-      console.error("❌ Error placing order:", err);
       alert("Error placing order: " + (err.message || String(err)));
     } finally {
       setPlacing(false);
@@ -191,7 +180,9 @@ export default function Order() {
         <p className="basket-empty">Your basket is empty.</p>
       ) : (
         <div className="basket-table-wrapper">
-          <p className="basket-intro">Total Investment: ${Number(totalAmount).toFixed(2)}</p>
+          <p className="basket-intro">
+            Total Investment: ${Number(totalAmount).toFixed(2)}
+          </p>
           <p className="basket-intro">Points Used: {pointsUsed}</p>
 
           <table className="basket-table">
@@ -227,20 +218,20 @@ export default function Order() {
           {placing ? "Placing orders…" : `Place Market Order with ${broker || "Broker"}`}
         </button>
 
-        <button type="button" onClick={() => navigate(-1)} className="btn-secondary" disabled={placing}>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="btn-secondary"
+          disabled={placing}
+        >
           Back to Basket
         </button>
       </div>
 
-      {/* ✅ Disclosure */}
       <p className="form-disclosure">
-        This order is submitted to your broker as a <strong>market order</strong> and is
-        subject to the broker's ability to execute the order at market price and add
-        securities to your portfolio at the brokerage. Orders not filled in the current
-        market day will be held over to the next trading day. The actual confirmation for
-        this order will be provided by your broker directly to you. We will add these
-        settled trades to your StockLoyal portfolio. To execute <strong>sell orders</strong>,
-        please contact your broker directly through their application or service desk.
+        This order is submitted to your broker as a <strong>market order</strong> and is subject to
+        the broker's ability to execute it at market price. Orders not filled today will roll to the
+        next trading day. For sell orders, please contact your broker directly.
       </p>
 
       {error && <p className="form-error" style={{ marginTop: 12 }}>{error}</p>}
