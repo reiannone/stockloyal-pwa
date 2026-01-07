@@ -103,7 +103,7 @@ try {
         ]);
     }
 
-    // 3) Build two CSV files on disk
+    // 3) Build CSV file on disk (merchant+broker batch)
     $safeBroker   = preg_replace('/[^A-Za-z0-9]+/', '', $broker) ?: 'broker';
     $safeMerchant = preg_replace('/[^A-Za-z0-9]+/', '', $merchantId) ?: 'merchant';
     $batchId      = 'ACH_' . $safeMerchant . '_' . $safeBroker . '_' . date('Ymd_His');
@@ -118,18 +118,17 @@ try {
         }
     }
 
-    // ========== DETAIL CSV (all orders) ==========
-    $detailCsvPath = $exportDir . '/payments_detail_' . $batchId . '.csv';
-    $fpDetail = fopen($detailCsvPath, 'w');
-    if ($fpDetail === false) {
+    $csvPath = $exportDir . '/payments_' . $batchId . '.csv';
+    $fp = fopen($csvPath, 'w');
+    if ($fp === false) {
         json_exit([
             'success' => false,
-            'error'   => 'Could not open detail CSV file for writing',
+            'error'   => 'Could not open CSV file for writing',
         ], 500);
     }
 
-    // Detail CSV header
-    fputcsv($fpDetail, [
+    // CSV header
+    fputcsv($fp, [
         'batch_id',
         'merchant_id',
         'broker',
@@ -143,15 +142,12 @@ try {
         'executed_at',
     ]);
 
-    $totalPaymentAmount = 0;
     foreach ($orders as $row) {
         $amountCash = $row['executed_amount'] !== null
             ? (float)$row['executed_amount']
             : (float)$row['amount'];
-        
-        $totalPaymentAmount += $amountCash;
 
-        fputcsv($fpDetail, [
+        fputcsv($fp, [
             $batchId,
             $row['merchant_id'],
             $row['broker'],
@@ -166,68 +162,7 @@ try {
         ]);
     }
 
-    fclose($fpDetail);
-
-    // ========== ACH CSV (single payment record) ==========
-    // Fetch broker ACH details from broker_master
-    $achStmt = $conn->prepare("
-        SELECT
-            broker_id,
-            broker_name,
-            ach_bank_name,
-            ach_routing_num,
-            ach_account_num,
-            ach_account_type
-        FROM broker_master
-        WHERE broker_name = :broker
-        LIMIT 1
-    ");
-    $achStmt->execute([':broker' => $broker]);
-    $brokerInfo = $achStmt->fetch(PDO::FETCH_ASSOC);
-
-    $achCsvPath = $exportDir . '/payments_ach_' . $batchId . '.csv';
-    $fpAch = fopen($achCsvPath, 'w');
-    if ($fpAch === false) {
-        json_exit([
-            'success' => false,
-            'error'   => 'Could not open ACH CSV file for writing',
-        ], 500);
-    }
-
-    // ACH CSV header
-    fputcsv($fpAch, [
-        'batch_id',
-        'merchant_id',
-        'broker_id',
-        'broker_name',
-        'payment_amount',
-        'bank_name',
-        'routing_number',
-        'account_number',
-        'account_type',
-        'order_count',
-    ]);
-
-    // Single ACH payment record
-    fputcsv($fpAch, [
-        $batchId,
-        $merchantId,
-        $brokerInfo ? $brokerInfo['broker_id'] : '',
-        $broker,
-        number_format($totalPaymentAmount, 2, '.', ''),
-        $brokerInfo ? $brokerInfo['ach_bank_name'] : '',
-        $brokerInfo ? $brokerInfo['ach_routing_num'] : '',
-        $brokerInfo ? $brokerInfo['ach_account_num'] : '',
-        $brokerInfo ? $brokerInfo['ach_account_type'] : '',
-        count($orders),
-    ]);
-
-    fclose($fpAch);
-
-    // Generate download URLs
-    $apiBase = rtrim($_ENV['API_BASE'] ?? 'https://api.stockloyal.com/api', '/');
-    $detailUrl = $apiBase . '/exports/' . basename($detailCsvPath);
-    $achUrl = $apiBase . '/exports/' . basename($achCsvPath);
+    fclose($fp);
 
     // 4) Mark orders as paid + insert ledger entries in a transaction
     try {
@@ -278,10 +213,26 @@ try {
             )
         ");
 
-        // First, update all orders with the batch_id
         foreach ($orders as $row) {
-            $orderId = (int)$row['order_id'];
-            
+            $orderId   = (int)$row['order_id'];
+            $memberId  = (string)$row['member_id'];
+            $mId       = (string)$row['merchant_id'];
+            $rowBroker = (string)$row['broker'];
+
+            $amountCash = $row['executed_amount'] !== null
+                ? (float)$row['executed_amount']
+                : (float)$row['amount'];
+
+            $amountPoints = $row['points_used'] !== null
+                ? (float)$row['points_used']
+                : null;
+
+            $memberTz = (string)$row['member_timezone'];
+
+            // client_tx_id must be unique – combine batch + order_id
+            $clientTxId = sprintf('pay_%s_%d', $batchId, $orderId);
+
+            // ---- UPDATE orders row (with error check) ----
             $ok = $updateOrderStmt->execute([
                 ':batch_id' => $batchId,
                 ':order_id' => $orderId,
@@ -291,70 +242,28 @@ try {
                 error_log('export-payment-file: orders UPDATE failed: ' . implode(' | ', $errInfo));
                 throw new RuntimeException('Failed to update order_id=' . $orderId);
             }
-        }
 
-        // Aggregate orders by member_id
-        $memberAggregates = [];
-        foreach ($orders as $row) {
-            $memberId = (string)$row['member_id'];
-            
-            if (!isset($memberAggregates[$memberId])) {
-                $memberAggregates[$memberId] = [
-                    'member_id' => $memberId,
-                    'merchant_id' => (string)$row['merchant_id'],
-                    'broker' => (string)$row['broker'],
-                    'member_timezone' => (string)$row['member_timezone'],
-                    'total_amount_cash' => 0,
-                    'order_ids' => [],
-                ];
-            }
-            
-            $amountCash = $row['executed_amount'] !== null
-                ? (float)$row['executed_amount']
-                : (float)$row['amount'];
-            
-            $memberAggregates[$memberId]['total_amount_cash'] += $amountCash;
-            $memberAggregates[$memberId]['order_ids'][] = (int)$row['order_id'];
-        }
-
-        // INSERT one transactions_ledger entry per member
-        foreach ($memberAggregates as $memberId => $agg) {
-            // client_tx_id must be unique – use batch + member_id + microtime for uniqueness
-            // This prevents duplicates if the export is re-run for the same broker
-            $clientTxId = sprintf('pay_%s_%s_%s', $batchId, $memberId, uniqid());
-            
-            // Use the first order_id as reference
-            $firstOrderId = $agg['order_ids'][0] ?? null;
-            
-            // Create note listing all order IDs
-            $orderIdsList = implode(',', $agg['order_ids']);
-            $note = sprintf(
-                'ACH payment batch %s for %d order(s): %s',
-                $batchId,
-                count($agg['order_ids']),
-                $orderIdsList
-            );
-
+            // ---- INSERT ledger row (with error check) ----
             $ok = $insertLedgerStmt->execute([
-                ':member_id'       => $agg['member_id'],
-                ':merchant_id'     => $agg['merchant_id'],
-                ':broker'          => $agg['broker'],
-                ':order_id'        => $firstOrderId,
+                ':member_id'       => $memberId,
+                ':merchant_id'     => $mId,
+                ':broker'          => $rowBroker,
+                ':order_id'        => $orderId,
                 ':client_tx_id'    => $clientTxId,
                 ':external_ref'    => $batchId,
                 ':tx_type'         => 'cash_out',
                 ':direction'       => 'outbound',
                 ':channel'         => 'ACH',
                 ':status'          => 'confirmed',
-                ':amount_points'   => null,
-                ':amount_cash'     => $agg['total_amount_cash'],
-                ':note'            => $note,
-                ':member_timezone' => $agg['member_timezone'],
+                ':amount_points'   => $amountPoints,
+                ':amount_cash'     => $amountCash,
+                ':note'            => 'ACH payment file ' . $batchId,
+                ':member_timezone' => $memberTz,
             ]);
             if (!$ok) {
                 $errInfo = $insertLedgerStmt->errorInfo();
                 error_log('export-payment-file: ledger INSERT failed: ' . implode(' | ', $errInfo));
-                throw new RuntimeException('Failed to insert ledger for member_id=' . $memberId);
+                throw new RuntimeException('Failed to insert ledger for order_id=' . $orderId);
             }
         }
 
@@ -364,9 +273,8 @@ try {
             $conn->rollBack();
         }
 
-        // Optional: remove CSV files if DB update fails
-        // @unlink($detailCsvPath);
-        // @unlink($achCsvPath);
+        // Optional: remove CSV if DB update fails
+        // @unlink($csvPath);
 
         error_log('export-payment-file: DB update/ledger failed: ' . $te->getMessage());
         json_exit([
@@ -376,24 +284,14 @@ try {
         ], 500);
     }
 
-    // 5) Success response with new format
+    // 5) Success response
     json_exit([
-        'success' => true,
-        'detail_csv' => [
-            'filename' => basename($detailCsvPath),
-            'relative_path' => 'exports/' . basename($detailCsvPath),
-            'url' => $detailUrl,
-        ],
-        'ach_csv' => [
-            'filename' => basename($achCsvPath),
-            'relative_path' => 'exports/' . basename($achCsvPath),
-            'url' => $achUrl,
-        ],
-        'batch_id' => $batchId,
-        'merchant_id' => $merchantId,
-        'broker' => $broker,
-        'order_count' => count($orders),
-        'total_amount' => $totalPaymentAmount,
+        'success'    => true,
+        'csv_file'   => basename($csvPath),
+        'batch_id'   => $batchId,
+        'merchant_id'=> $merchantId,
+        'broker'     => $broker,
+        'count'      => count($orders),
     ]);
 } catch (Throwable $e) {
     error_log('export-payment-file fatal: ' . $e->getMessage());

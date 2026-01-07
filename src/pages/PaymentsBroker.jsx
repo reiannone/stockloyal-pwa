@@ -195,6 +195,19 @@ export default function PaymentsBroker() {
   }, [brokerOrders]);
 
   const brokerAchDetails = useMemo(() => {
+    // Calculate actual order count from brokerOrders (not backend's misnamed field)
+    const actualOrderCount = brokerOrders.length;
+    
+    // Calculate unique members count
+    const uniqueMembers = new Set(
+      brokerOrders.map(o => o.member_id).filter(Boolean)
+    ).size;
+    
+    // Calculate unique baskets count
+    const uniqueBaskets = new Set(
+      brokerOrders.map(o => o.basket_id).filter(Boolean)
+    ).size;
+    
     if (!brokerSummary) {
       return {
         brokerName: broker || "",
@@ -204,7 +217,9 @@ export default function PaymentsBroker() {
         routingNumber: "",
         accountNumber: "",
         accountType: "",
-        orderCount: brokerOrders.length,
+        orderCount: actualOrderCount,
+        uniqueMembers: uniqueMembers,
+        uniqueBaskets: uniqueBaskets,
       };
     }
 
@@ -221,7 +236,9 @@ export default function PaymentsBroker() {
       routingNumber: brokerSummary.ach_routing_num || "",
       accountNumber: brokerSummary.ach_account_num || "",
       accountType: brokerSummary.ach_account_type || "",
-      orderCount: brokerSummary.order_count || brokerOrders.length,
+      orderCount: actualOrderCount, // Use calculated count, not backend's order_count field
+      uniqueMembers: uniqueMembers,
+      uniqueBaskets: uniqueBaskets,
     };
   }, [brokerSummary, brokerOrders, broker]);
 
@@ -451,7 +468,15 @@ export default function PaymentsBroker() {
             </div>
             <div className="form-row">
               <label className="form-label">Total Orders</label>
-              <div className="form-input">{brokerAchDetails.orderCount || brokerOrders.length}</div>
+              <div className="form-input">{brokerAchDetails.orderCount}</div>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Unique Members</label>
+              <div className="form-input">{brokerAchDetails.uniqueMembers}</div>
+            </div>
+            <div className="form-row">
+              <label className="form-label">Total Baskets</label>
+              <div className="form-input">{brokerAchDetails.uniqueBaskets}</div>
             </div>
           </div>
         ) : (
