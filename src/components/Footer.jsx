@@ -29,7 +29,6 @@ export default function Footer() {
     { to: "/select-broker",  label: "Select Broker",  icon: <Briefcase className="nav-icon" /> },
     { to: "/about",          label: "About",          icon: <Info className="nav-icon" /> },
     { to: "/basket",         label: "Basket",         icon: <ShoppingBasket className="nav-icon" /> },
-    { to: "/member-onboard", label: "Member Onboard", icon: <User className="nav-icon" /> },
     { to: "/social",         label: "Community Feed", icon: <Share2 className="nav-icon" /> },
   ];
 

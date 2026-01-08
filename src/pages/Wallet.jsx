@@ -560,10 +560,6 @@ export default function Wallet() {
         Refresh
       </button>
 
-      <p className="caption" style={{ marginTop: 12 }}>
-        StockLoyal Member ID: {wallet.member_id}
-      </p>
-
       {/* ✅ Social share bottom sheet */}
       <SharePointsSheet
         open={isShareOpen}

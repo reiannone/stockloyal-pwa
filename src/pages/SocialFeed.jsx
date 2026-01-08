@@ -321,17 +321,32 @@ export default function SocialFeed() {
                 }}
               >
                 {post.tickers.map((t) => (
-                  <span
+                  <button
                     key={t}
+                    type="button"
+                    onClick={() => navigate(`/symbol-chart/${t}`)}
                     style={{
                       fontSize: "0.75rem",
                       padding: "2px 6px",
                       borderRadius: 999,
                       border: "1px solid #e5e7eb",
+                      background: "#fff",
+                      cursor: "pointer",
+                      color: "#2563eb",
+                      fontWeight: 500,
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.background = "#eff6ff";
+                      e.target.style.borderColor = "#2563eb";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = "#fff";
+                      e.target.style.borderColor = "#e5e7eb";
                     }}
                   >
                     {t}
-                  </span>
+                  </button>
                 ))}
               </div>
             )}
@@ -438,43 +453,80 @@ export default function SocialFeed() {
                 </div>
 
                 {/* 🔁 WIDER / TALLER textarea + SMALL Post button */}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    alignItems: "flex-end",
-                  }}
-                >
-                  <textarea
-                    className="member-form-input"
-                    placeholder="Add a comment…"
-                    value={commentInput[post.id] || ""}
-                    onChange={(e) =>
-                      setCommentInput((prev) => ({
-                        ...prev,
-                        [post.id]: e.target.value,
-                      }))
-                    }
-                    rows={3}
+                <div>
+                  {/* Quick emoji/symbol buttons */}
+                  <div
                     style={{
-                      flex: 1,
-                      fontSize: "0.8rem",
-                      minHeight: "3.5rem",
-                      resize: "vertical",
+                      display: "flex",
+                      gap: 4,
+                      marginBottom: 4,
+                      flexWrap: "wrap",
                     }}
-                  />
-                  <button
-                    type="button"
-                    className="refresh-btn"
-                    style={{
-                      fontSize: "0.75rem",
-                      padding: "4px 8px",
-                      whiteSpace: "nowrap",
-                    }}
-                    onClick={() => handleAddComment(post.id)}
                   >
-                    Post
-                  </button>
+                    {["🚀", "📈", "📉", "💰", "🎯", "👍", "💪", "🔥", "✅", "❌"].map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() =>
+                          setCommentInput((prev) => ({
+                            ...prev,
+                            [post.id]: (prev[post.id] || "") + emoji + " ",
+                          }))
+                        }
+                        style={{
+                          fontSize: "1rem",
+                          background: "#f9fafb",
+                          border: "1px solid #e5e7eb",
+                          borderRadius: 4,
+                          padding: "2px 6px",
+                          cursor: "pointer",
+                          lineHeight: 1,
+                        }}
+                        title={`Add ${emoji}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "flex-end",
+                    }}
+                  >
+                    <textarea
+                      className="member-form-input"
+                      placeholder="Add a comment…"
+                      value={commentInput[post.id] || ""}
+                      onChange={(e) =>
+                        setCommentInput((prev) => ({
+                          ...prev,
+                          [post.id]: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      style={{
+                        flex: 1,
+                        fontSize: "0.8rem",
+                        minHeight: "3.5rem",
+                        resize: "vertical",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="refresh-btn"
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "4px 8px",
+                        whiteSpace: "nowrap",
+                      }}
+                      onClick={() => handleAddComment(post.id)}
+                    >
+                      💬 Post
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

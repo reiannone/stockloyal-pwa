@@ -13,7 +13,6 @@ import Login from "./pages/Login.jsx";
 import MemberOnboard from "./pages/MemberOnboard.jsx";
 import Terms from "./pages/Terms.jsx";
 import Goodbye from "./pages/Goodbye.jsx";
-import Onboard from "./pages/Onboard.jsx";
 import About from "./pages/About.jsx";
 import Wallet from "./pages/Wallet.jsx";
 import Convert from "./pages/Convert.jsx";
@@ -44,6 +43,9 @@ import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition w
 
 // ⭐ NEW: global share sheet
 import SharePointsSheet from "./components/SharePointsSheet.jsx";
+
+// ⭐ NEW: PWA install prompt
+import InstallPrompt from "./components/InstallPrompt.jsx";
 
 function App() {
   const location = useLocation();
@@ -377,6 +379,9 @@ function App() {
           primaryTicker={shareProps.primaryTicker}
           tickers={shareProps.tickers}
         />
+
+        {/* ⭐ PWA install prompt - auto-appears for users who haven't installed */}
+        <InstallPrompt />
       </>
     </ErrorBoundary>
   );

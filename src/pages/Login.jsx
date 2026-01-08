@@ -1,4 +1,4 @@
-// src/pages/Login.jsx
+// src/pages/Login.jsx (Option A: dispatch member-updated after setting memberId)
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
@@ -6,7 +6,6 @@ import { apiPost } from "../api.js";
 function Login() {
   const navigate = useNavigate();
 
-  // "checking" while we detect if this is a new vs existing member
   const [mode, setMode] = useState("checking"); // "checking" | "login" | "create"
 
   const [memberId, setMemberId] = useState("");
@@ -20,18 +19,14 @@ function Login() {
   const [points, setPoints] = useState(0);
   const [conversionRate, setConversionRate] = useState(0.01);
 
-  // ✅ Hydrate from localStorage and determine mode (new vs existing by member_email on wallet)
   useEffect(() => {
     const lsMode = localStorage.getItem("mode"); // legacy / fallback
     const lsMemberId = localStorage.getItem("memberId");
     const lsEmail = localStorage.getItem("memberEmail");
     const lsMerchantId = localStorage.getItem("merchantId");
     const lsPoints = parseInt(localStorage.getItem("points") || "0", 10);
-    const lsConversionRate = parseFloat(
-      localStorage.getItem("conversion_rate") || "0"
-    );
+    const lsConversionRate = parseFloat(localStorage.getItem("conversion_rate") || "0");
 
-    // 🔹 For this flow, member_email is the primary identity
     const initialEmail = lsEmail || "";
     const initialId = lsMemberId || initialEmail;
 
@@ -41,18 +36,15 @@ function Login() {
     if (lsPoints > 0) setPoints(lsPoints);
     setConversionRate(lsConversionRate > 0 ? lsConversionRate : 0.01);
 
-    // If we *don't* have merchantId or member_email, just fall back to manual mode toggle
     if (!lsMerchantId || !initialEmail) {
       setMode(lsMode === "create" ? "create" : "login");
       return;
     }
 
-    // Otherwise, auto-detect if this is a new vs existing member
     (async () => {
       try {
         const data = await apiPost("check_wallet_member.php", {
           merchant_id: lsMerchantId,
-          // 🔴 API expects member_id, not member_email
           member_id: initialId || initialEmail,
         });
 
@@ -60,16 +52,13 @@ function Login() {
 
         if (data && data.success) {
           if (data.exists) {
-            // wallet row found → existing member → login mode
             setMode("login");
             localStorage.setItem("mode", "login");
           } else {
-            // no wallet row → first-time member → create mode
             setMode("create");
             localStorage.setItem("mode", "create");
           }
         } else {
-          // If API fails, default to previous or login
           setMode(lsMode === "create" ? "create" : "login");
         }
       } catch (err) {
@@ -79,7 +68,6 @@ function Login() {
     })();
   }, []);
 
-  // ✅ Helper to apply points AFTER authentication
   const applyPointsIfAny = async (memberIdToUse) => {
     if (!points || points <= 0) return;
 
@@ -100,11 +88,9 @@ function Login() {
       });
     } catch (err) {
       console.error("[Login] update_points.php error:", err);
-      // Do not block login on wallet update errors
     }
   };
 
-  // ✅ Handle form submit (login or create)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -121,20 +107,18 @@ function Login() {
       return;
     }
 
-    // ✅ Password confirmation validation for create
     if (mode === "create" && password !== confirmPassword) {
       setError("Passwords do not match. Please re-enter.");
       return;
     }
 
     if (mode === "create") {
-      // 🔹 CREATE ACCOUNT FLOW
       try {
         const data = await apiPost("create_member.php", {
           merchant_id: merchantId || null,
           member_id: effectiveMemberId,
           member_email: email || effectiveMemberId,
-          password, // backend hashes it
+          password,
         });
 
         console.log("[Login] create_member.php response:", data);
@@ -145,15 +129,13 @@ function Login() {
           localStorage.setItem("memberEmail", email || effectiveMemberId);
           if (merchantId) localStorage.setItem("merchantId", merchantId);
 
-          // After successful account creation, treat as "logged in" and apply points
+          // ✅ Option A: notify same-tab listeners (Header)
+          window.dispatchEvent(new Event("member-updated"));
+
           await applyPointsIfAny(effectiveMemberId);
 
-          // Continue to onboarding
           navigate("/member-onboard", {
-            state: {
-              memberId: effectiveMemberId,
-              memberEmail: email || effectiveMemberId,
-            },
+            state: { memberId: effectiveMemberId, memberEmail: email || effectiveMemberId },
           });
         } else {
           setError(data?.error || data?.message || "Account creation failed.");
@@ -163,7 +145,6 @@ function Login() {
         setError("Network error. Please try again.");
       }
     } else {
-      // 🔹 LOGIN FLOW
       try {
         const data = await apiPost("login.php", {
           merchant_id: merchantId || null,
@@ -173,52 +154,36 @@ function Login() {
 
         console.log("[Login] login.php response:", data);
 
-        // Case A: backend returns 200 with { success: false, error/message: "Invalid password" }
         if (!data?.success) {
-          const rawMsg =
-            data?.message ||
-            data?.error ||
-            "Login failed. Please check your credentials.";
+          const rawMsg = data?.message || data?.error || "Login failed. Please check your credentials.";
           const msg = rawMsg.toLowerCase();
 
-          if (msg.includes("invalid password")) {
-            setError("Invalid password. Please try again.");
-          } else if (msg.includes("not found") || msg.includes("no account")) {
-            setError("No account found. Please create an account.");
-          } else {
-            setError("Login failed. Please check your credentials.");
-          }
+          if (msg.includes("invalid password")) setError("Invalid password. Please try again.");
+          else if (msg.includes("not found") || msg.includes("no account")) setError("No account found. Please create an account.");
+          else setError("Login failed. Please check your credentials.");
           return;
         }
 
-        // 🔹 Successful login
+        // Successful login
         localStorage.setItem("memberId", effectiveMemberId);
-        localStorage.setItem(
-          "memberEmail",
-          data.member_email || email || effectiveMemberId
-        );
+        localStorage.setItem("memberEmail", data.member_email || email || effectiveMemberId);
         if (merchantId) localStorage.setItem("merchantId", merchantId);
 
-        // Only after successful login do we apply inbound points
+        // ✅ Option A: notify same-tab listeners (Header)
+        window.dispatchEvent(new Event("member-updated"));
+
         await applyPointsIfAny(effectiveMemberId);
 
         navigate("/wallet");
       } catch (err) {
-        // Case B: backend returned non-2xx (401/404/etc) and apiPost threw
         console.error("Login error:", err);
 
         const raw = String(err?.message || "").toLowerCase();
 
-        if (raw.includes("invalid password")) {
-          // e.g. "Error: HTTP 401 Unauthorized – {...\"error\":\"Invalid password\"}"
-          setError("Invalid password. Please try again.");
-        } else if (raw.includes("401")) {
-          setError("Invalid password. Please try again.");
-        } else if (raw.includes("404")) {
-          setError("No account found. Please create an account.");
-        } else {
-          setError("Network or server error. Please try again.");
-        }
+        if (raw.includes("invalid password")) setError("Invalid password. Please try again.");
+        else if (raw.includes("401")) setError("Invalid password. Please try again.");
+        else if (raw.includes("404")) setError("No account found. Please create an account.");
+        else setError("Network or server error. Please try again.");
       }
     }
   };
@@ -236,11 +201,7 @@ function Login() {
   return (
     <div className="page-container">
       <h2 className="page-title">
-        {isChecking
-          ? "Checking your account..."
-          : mode === "login"
-          ? "Login to StockLoyal"
-          : "Create StockLoyal Account"}
+        {isChecking ? "Checking your account..." : mode === "login" ? "Login to StockLoyal" : "Create StockLoyal Account"}
       </h2>
 
       {!isChecking && mode === "create" && points > 0 && (
@@ -298,9 +259,7 @@ function Login() {
                 autoComplete={mode === "create" ? "new-password" : "current-password"}
               />
               <img
-                src={`${import.meta.env.BASE_URL}icons/${
-                  showPw ? "hide.png" : "show.png"
-                }`}
+                src={`${import.meta.env.BASE_URL}icons/${showPw ? "hide.png" : "show.png"}`}
                 alt={showPw ? "Hide password" : "Show password"}
                 className="pw-toggle-icon"
                 onClick={() => setShowPw(!showPw)}
@@ -308,7 +267,6 @@ function Login() {
             </div>
           </div>
 
-          {/* Confirm Password field (create mode only) */}
           {!isChecking && mode === "create" && (
             <div className="member-form-row">
               <label htmlFor="confirmPassword" className="member-form-label">
@@ -331,13 +289,7 @@ function Login() {
             {mode === "login" ? "Login" : "Create Account"}
           </button>
 
-          {/* Allow manual toggle as backup, but disable during checking */}
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleToggleMode}
-            disabled={isChecking}
-          >
+          <button type="button" className="btn-secondary" onClick={handleToggleMode} disabled={isChecking}>
             {mode === "login" ? "Need an account?" : "Already have an account?"}
           </button>
         </form>

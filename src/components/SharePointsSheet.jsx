@@ -47,7 +47,10 @@ export default function SharePointsSheet({
   // 📝 Build initial message using last order data
   // ----------------------------
   const symbolsList = tickers && tickers.length > 0 ? tickers.join(", ") : primaryTicker || "stocks";
+  
   const tickerMessage = tickers && tickers.length > 1 ? `${tickers.length} different securities` : `one security`;
+  
+  // Remove ticker symbols from message text - they'll be shown as badges below
   const defaultMessage = `I converted ${displayPointsUsed} loyalty points from ${displayMerchant} into ${displayCash} of ${tickerMessage}, using ${displayBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
 
   // ----------------------------
@@ -131,9 +134,37 @@ export default function SharePointsSheet({
             padding: "10px 12px",
             resize: "vertical",
             background: "#f9fafb",
-            marginBottom: 12,
+            marginBottom: 8,
           }}
         />
+
+        {/* Ticker badges (like SocialFeed) */}
+        {(tickers.length > 0 || primaryTicker) && (
+          <div
+            style={{
+              marginBottom: 12,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+            }}
+          >
+            {(tickers.length > 0 ? tickers : [primaryTicker]).map((t) => (
+              <span
+                key={t}
+                style={{
+                  fontSize: "0.8rem",
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #e5e7eb",
+                  background: "#ffffff",
+                  fontWeight: 600,
+                }}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Share / Close buttons */}
         <div style={{ display: "flex", gap: 10 }}>
