@@ -1,0 +1,48 @@
+MySQL [stockloyal]> describe orders;
++-----------------+--------------------------------------------------------------------------------+------+-----+-------------------+-------------------+
+| Field           | Type                                                                           | Null | Key | Default           | Extra             |
++-----------------+--------------------------------------------------------------------------------+------+-----+-------------------+-------------------+
+| order_id        | int                                                                            | NO   | PRI | NULL              | auto_increment    |
+| member_id       | varchar(50)                                                                    | NO   | MUL | NULL              |                   |
+| merchant_id     | varchar(50)                                                                    | YES  |     | NULL              |                   |
+| basket_id       | varchar(50)                                                                    | NO   |     | NULL              |                   |
+| symbol          | varchar(20)                                                                    | NO   |     | NULL              |                   |
+| shares          | decimal(18,4)                                                                  | NO   |     | NULL              |                   |
+| amount          | decimal(15,2)                                                                  | NO   |     | NULL              |                   |
+| points_used     | decimal(15,2)                                                                  | YES  |     | 0.00              |                   |
+| status          | enum('pending','Pending','placed','confirmed','executed','failed','cancelled') | YES  |     | pending           |                   |
+| placed_at       | timestamp                                                                      | NO   |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
+| member_timezone | varchar(64)                                                                    | NO   | MUL | NULL              |                   |
+| broker          | varchar(100)                                                                   | YES  |     | NULL              |                   |
+| order_type      | enum('buy','sell','sweep','market','gtc','Market')                             | YES  |     | market            |                   |
+| executed_at     | timestamp                                                                      | YES  |     | NULL              |                   |
+| executed_price  | decimal(18,4)                                                                  | YES  |     | NULL              |                   |
+| executed_shares | decimal(18,4)                                                                  | YES  |     | NULL              |                   |
+| executed_amount | decimal(15,2)                                                                  | YES  |     | NULL              |                   |
+| paid_flag       | tinyint(1)                                                                     | NO   |     | 0                 |                   |
+| paid_batch_id   | varchar(100)                                                                   | YES  |     | NULL              |                   |
+| paid_at         | timestamp                                                                      | YES  |     | NULL              |                   |
++-----------------+--------------------------------------------------------------------------------+------+-----+-------------------+-------------------+
+20 rows in set (0.011 sec)
+
+MySQL [stockloyal]> describe transactions_ledger;
++-----------------+-----------------------------------------------------------------------------------------+------+-----+-------------------+-------------------+
+| Field           | Type                                                                                    | Null | Key | Default           | Extra             |
++-----------------+-----------------------------------------------------------------------------------------+------+-----+-------------------+-------------------+
+| tx_id           | bigint unsigned                                                                         | NO   | PRI | NULL              | auto_increment    |
+| created_at      | timestamp                                                                               | NO   |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED |
+| member_id       | varchar(50)                                                                             | NO   | MUL | NULL              |                   |
+| merchant_id     | varchar(30)                                                                             | YES  |     | NULL              |                   |
+| broker          | varchar(100)                                                                            | YES  |     | NULL              |                   |
+| order_id        | int                                                                                     | YES  | MUL | NULL              |                   |
+| client_tx_id    | varchar(100)                                                                            | YES  | UNI | NULL              |                   |
+| external_ref    | varchar(100)                                                                            | YES  | MUL | NULL              |                   |
+| tx_type         | enum('points_received','redeem_points','adjust_points','cash_in','cash_out','cash_fee') | NO   |     | NULL              |                   |
+| direction       | enum('inbound','outbound')                                                              | NO   |     | NULL              |                   |
+| channel         | enum('Plaid','ACH','Broker API','Merchant API','Card','Wire','Internal','Other')        | NO   |     | Other             |                   |
+| status          | enum('pending','confirmed','failed','reversed')                                         | NO   |     | pending           |                   |
+| amount_points   | decimal(18,4)                                                                           | YES  |     | NULL              |                   |
+| amount_cash     | decimal(15,2)                                                                           | YES  |     | NULL              |                   |
+| note            | varchar(255)                                                                            | YES  |     | NULL              |                   |
+| member_timezone | varchar(64)                                                                             | NO   | MUL | NULL              |                   |
++-----------------+-----------------------------------------------------------------------------------------+------+-----+-------------------+-------------------+

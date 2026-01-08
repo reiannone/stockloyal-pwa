@@ -5,7 +5,7 @@ FRONTEND: AWS Amplify and GitHub from PowerShell:
 # If you haven't initialized git yet
 git init
 git add .
-git commit -m "Added symbol chart page and links"
+git commit -m "Modified payment processing and export of CSV files"
 
 # Create a new repository on GitHub, then:
 git remote add origin https://github.com/reiannone/stockloyal-pwa.git
@@ -20,13 +20,13 @@ BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
 # 2. Local file to upload
-$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\social_feed.php"
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\export-payments-file.php"
 
 # 3. EC2 Host (rename variable so we avoid conflict with $Host)
 $EC2 = "ec2-user@3.150.49.91"
 
 # 4. Destination on remote server
-$DEST = "/home/ec2-user/social_feed.php"
+$DEST = "/home/ec2-user/export-payments-file.php"
 
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
@@ -35,9 +35,9 @@ scp -i $KEY "$SRC" "${EC2}:${DEST}"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/get_last_order.php /var/www/html/api/get_last_order.php
-sudo chown apache:apache /var/www/html/api/get_last_order.php
-sudo chmod 644 /var/www/html/api/get_last_order.php
+sudo mv /home/ec2-user/export-payments-file.php /var/www/html/api/export-payments-file.php
+sudo chown apache:apache /var/www/html/api/export-payments-file.php
+sudo chmod 644 /var/www/html/api/export-payments-file.php
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
