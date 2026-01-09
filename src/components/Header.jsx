@@ -69,9 +69,6 @@ export default function Header() {
     { to: "/election", label: "4. Investment Election" },
     { to: "/wallet", label: "5. Wallet" },
     { to: "/stock-picker", label: "6. Stock Picker" },
-    { to: "/basket", label: "7a. Basket" },
-    { to: "/order", label: "7b. Pending Order" },
-    { to: "/order-confirmation", label: "7c. Order Confirmation" },
     { to: "/portfolio", label: "StockLoyal Portfolio" },
     { to: "/transactions", label: "Order History" },
     { to: "/ledger", label: "Transaction Ledger" },
@@ -79,7 +76,6 @@ export default function Header() {
     { to: "/social", label: "Community Feed" },
     { to: "/terms", label: "Terms & Conditions" },
     { to: "/about", label: "About & FAQs" },
-    { to: "/goodbye", label: "Exit App" },
   ];
 
   // Progress steps in order

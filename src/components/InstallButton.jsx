@@ -122,10 +122,10 @@ const InstallButton = () => {
       <button
         onClick={handleInstallClick}
         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-black rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
-        title="Install StockLoyal"
+        title="Bookmark StockLoyal"
       >
         <Download className="w-4 h-4" strokeWidth={2.5} />
-        <span>Install App</span>
+        <span>Install Bookmark</span>
       </button>
 
       {showModal && (
@@ -139,7 +139,7 @@ const InstallButton = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Install StockLoyal</h3>
+              <h3 className="text-xl font-bold text-gray-900">Bookmark StockLoyal</h3>
               <button
                 onClick={() => setShowModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -156,11 +156,6 @@ const InstallButton = () => {
                 <img src={stockloyalIcon} alt="StockLoyal"
                   className="flex-shrink-0 w-10 h-10 mx-auto mb-3 rounded-xl shadow-md"
                 />
-                <p className="text-sm text-gray-700 text-center">
-                  {isIOS
-                    ? "Add StockLoyal to your home screen for easy access"
-                    : "If Install isn't available yet, try again after a refresh, or use your browser’s install option."}
-                </p>
               </div>
 
               {isIOS ? (
