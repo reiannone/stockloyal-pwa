@@ -5,8 +5,9 @@ import { Menu } from "lucide-react";
 import logo from "/logos/stockloyal.png";
 import SlideOutPanel from "./SlideOutPanel";
 import { useBasket } from "../context/BasketContext";
-import InstallButton from "./InstallButton";
+import InstallAppModal from "./InstallAppModal";
 import UserAvatar from "./UserAvatar";
+import { apiPost } from "../api.js";
 
 // NOTE: This is based on your uploaded Header.jsx debug version :contentReference[oaicite:0]{index=0}
 // Change: renders memberId as a small chip next to the avatar on the header bar,
@@ -16,19 +17,41 @@ export default function Header() {
   const location = useLocation();
   const { basket } = useBasket();
   const [showMenu, setShowMenu] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const [userAvatar, setUserAvatar] = useState(null);
   const [memberId, setMemberId] = useState(null);
 
-  // Load user avatar + memberId from localStorage, and wire update listeners
+  // Load user avatar + memberId from database and localStorage, and wire update listeners
   useEffect(() => {
-    const savedAvatar = localStorage.getItem("userAvatar");
     const savedMemberId = localStorage.getItem("memberId");
 
     console.log("🔍 Header Debug - memberId from localStorage:", savedMemberId);
     console.log("🔍 Header Debug - all localStorage keys:", Object.keys(localStorage));
 
-    setUserAvatar(savedAvatar);
     setMemberId(savedMemberId);
+
+    // ✅ Load avatar from DATABASE, not localStorage
+    if (savedMemberId) {
+      (async () => {
+        try {
+          const data = await apiPost("get-wallet.php", { member_id: savedMemberId });
+          if (data.success && data.wallet && data.wallet.member_avatar) {
+            setUserAvatar(data.wallet.member_avatar);
+            // Sync to localStorage for offline viewing
+            localStorage.setItem("userAvatar", data.wallet.member_avatar);
+          } else {
+            // No avatar in database, clear localStorage
+            setUserAvatar(null);
+            localStorage.removeItem("userAvatar");
+          }
+        } catch (err) {
+          console.error("Header: Error loading avatar from database:", err);
+          // Fallback to localStorage only on network error
+          const fallbackAvatar = localStorage.getItem("userAvatar");
+          if (fallbackAvatar) setUserAvatar(fallbackAvatar);
+        }
+      })();
+    }
 
     // OTHER-tab updates only
     const handleStorageChange = (e) => {
@@ -41,9 +64,18 @@ export default function Header() {
     window.addEventListener("storage", handleStorageChange);
 
     // Same-tab custom events
-    const handleAvatarUpdate = () => {
-      const a = localStorage.getItem("userAvatar");
-      setUserAvatar(a);
+    const handleAvatarUpdate = async () => {
+      // Reload from database when avatar updated
+      if (savedMemberId) {
+        try {
+          const data = await apiPost("get-wallet.php", { member_id: savedMemberId });
+          if (data.success && data.wallet && data.wallet.member_avatar) {
+            setUserAvatar(data.wallet.member_avatar);
+          }
+        } catch (err) {
+          console.error("Header: Error reloading avatar:", err);
+        }
+      }
     };
     window.addEventListener("avatar-updated", handleAvatarUpdate);
 
@@ -91,20 +123,6 @@ export default function Header() {
     { path: "/order", label: "Order" },
   ];
 
-  const currentStepIndex = progressSteps.findIndex(
-    (step) => location.pathname === step.path
-  );
-  const isInProgressFlow = currentStepIndex !== -1;
-
-  const totalSteps = progressSteps.length;
-  const currentStep = isInProgressFlow ? progressSteps[currentStepIndex] : null;
-
-  // Donut progress values
-  const progressFraction = isInProgressFlow ? (currentStepIndex + 1) / totalSteps : 0;
-  const radius = 14;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - progressFraction);
-
   console.log("🎨 Header Render - memberId state:", memberId);
 
   return (
@@ -118,51 +136,8 @@ export default function Header() {
           alignItems: "center",
         }}
       >
-        {/* LEFT: Avatar + memberId chip + Menu button */}
+        {/* LEFT: Menu button */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-          {/* User Avatar - clickable to open menu */}
-          <button
-            type="button"
-            aria-label="User profile"
-            onClick={() => setShowMenu(true)}
-            style={{
-              border: "none",
-              background: "transparent",
-              padding: 0,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <UserAvatar src={userAvatar} size="md" alt="User Profile" />
-          </button>
-
-          {/* ✅ Member ID chip (visible on header next to avatar) */}
-          <button
-            type="button"
-            aria-label="Open menu (member id)"
-            onClick={() => setShowMenu(true)}
-            style={{
-              border: "1px solid #e5e7eb",
-              background: "#f3f4f6",
-              color: "#111827",
-              borderRadius: 9999,
-              padding: "4px 8px",
-              fontSize: 11,
-              fontFamily: "monospace",
-              fontWeight: 700,
-              cursor: "pointer",
-              maxWidth: 165,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              lineHeight: 1,
-            }}
-            title={memberId || ""}
-          >
-            {memberId ? `ID: ${memberId}` : "ID: —"}
-          </button>
-
           {/* Menu Icon */}
           <button
             type="button"
@@ -199,64 +174,50 @@ export default function Header() {
           <img src={logo} alt="StockLoyal" style={{ height: 30, width: "auto" }} />
         </div>
 
-        {/* RIGHT: Donut progress indicator */}
-        <div
-          style={{
-            marginLeft: "auto",
-            marginRight: 8,
-            width: 40,
-            height: 40,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          {isInProgressFlow && currentStep && (
-            <div style={{ position: "relative", width: 40, height: 40 }}>
-              <svg
-                width="40"
-                height="40"
-                viewBox="0 0 44 44"
-                style={{ transform: "rotate(-90deg)" }}
-              >
-                <circle cx="22" cy="22" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="5" />
-                <circle
-                  cx="22"
-                  cy="22"
-                  r={radius}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                />
-              </svg>
+        {/* RIGHT: Member ID chip + Avatar */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "auto" }}>
+          {/* ✅ Member ID chip */}
+          <button
+            type="button"
+            aria-label="Open menu (member id)"
+            onClick={() => setShowMenu(true)}
+            style={{
+              border: "1px solid #e5e7eb",
+              background: "#f3f4f6",
+              color: "#111827",
+              borderRadius: 9999,
+              padding: "4px 8px",
+              fontSize: 11,
+              fontFamily: "monospace",
+              fontWeight: 700,
+              cursor: "pointer",
+              maxWidth: 165,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              lineHeight: 1,
+            }}
+            title={memberId || ""}
+          >
+            {memberId ? `ID: ${memberId}` : "ID: —"}
+          </button>
 
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  pointerEvents: "none",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: "0.55rem",
-                    textAlign: "center",
-                    fontWeight: 700,
-                    color: "#111827",
-                  }}
-                >
-                  {currentStep.label}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* User Avatar - clickable to open menu */}
+          <button
+            type="button"
+            aria-label="User profile"
+            onClick={() => setShowMenu(true)}
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <UserAvatar src={userAvatar} size="md" alt="User Profile" />
+          </button>
         </div>
       </header>
 
@@ -360,9 +321,24 @@ export default function Header() {
 
         {/* Install App button at the bottom of menu */}
         <div style={{ padding: "12px", borderTop: "2px solid #e5e7eb", marginTop: "8px" }}>
-          <InstallButton />
+          <button
+            type="button"
+            onClick={() => {
+              setShowMenu(false);
+              setShowInstallModal(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
+          >
+            Install App
+          </button>
         </div>
       </SlideOutPanel>
+
+      {/* Install App Modal */}
+      <InstallAppModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+      />
     </div>
   );
 }

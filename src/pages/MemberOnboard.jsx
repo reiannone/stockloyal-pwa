@@ -166,11 +166,15 @@ function MemberOnboard() {
             return merged;
           });
 
+          // ✅ Load avatar ONLY from database
           if (data.wallet.member_avatar) {
             setAvatar(data.wallet.member_avatar);
+            // Sync to localStorage for consistency
+            localStorage.setItem("userAvatar", data.wallet.member_avatar);
           } else {
-            const savedAvatar = localStorage.getItem("userAvatar");
-            if (savedAvatar) setAvatar(savedAvatar);
+            // No avatar in database - clear any stale localStorage
+            setAvatar(null);
+            localStorage.removeItem("userAvatar");
           }
         } else {
           setError(data.error || "Failed to load wallet.");
@@ -227,7 +231,16 @@ function MemberOnboard() {
           window.dispatchEvent(new Event("member-updated"));
         }
 
-        navigate("/select-broker");
+        // ✅ Check if broker is populated in localStorage
+        const broker = localStorage.getItem("broker");
+        
+        if (broker && broker.trim() !== "") {
+          // Broker exists → go to wallet
+          navigate("/wallet");
+        } else {
+          // No broker → go to select-broker
+          navigate("/select-broker");
+        }
       } else {
         setError(data.error || "Failed to update wallet.");
       }
