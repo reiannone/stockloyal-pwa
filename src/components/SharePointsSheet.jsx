@@ -19,8 +19,10 @@ export default function SharePointsSheet({
   // ----------------------------
   // 🔥 Use props FIRST (from last order API), fallback to localStorage
   // ----------------------------
-  const displayMerchant = merchantName || localStorage.getItem("merchantName") || "my merchant";
-  const displayBroker = broker || localStorage.getItem("broker") || "my broker";
+  const displayMerchant =
+    merchantName || localStorage.getItem("merchantName") || "my merchant";
+  const displayBroker =
+    broker || localStorage.getItem("broker") || "my broker";
 
   // 🔥 Use props from last order API (NOT localStorage)
   const displayPointsUsed = pointsUsed || 0;
@@ -28,8 +30,16 @@ export default function SharePointsSheet({
 
   console.log("[SharePointsSheet] Using points from props:", displayPointsUsed);
   console.log("[SharePointsSheet] Using cash from props:", displayInvestedAmount);
-  console.log("[SharePointsSheet] merchant:", displayMerchant, "broker:", displayBroker);
+  console.log(
+    "[SharePointsSheet] merchant:",
+    displayMerchant,
+    "broker:",
+    displayBroker
+  );
   console.log("[SharePointsSheet] symbols:", tickers);
+
+  // ✅ Snapshot avatar at time of posting (stored per post in DB)
+  const memberAvatar = localStorage.getItem("userAvatar") || null;
 
   // ----------------------------
   // 💰 Format cash
@@ -46,10 +56,11 @@ export default function SharePointsSheet({
   // ----------------------------
   // 📝 Build initial message using last order data
   // ----------------------------
-  const symbolsList = tickers && tickers.length > 0 ? tickers.join(", ") : primaryTicker || "stocks";
-  
-  const tickerMessage = tickers && tickers.length > 1 ? `${tickers.length} different securities` : `one security`;
-  
+  const tickerMessage =
+    tickers && tickers.length > 1
+      ? `${tickers.length} different securities`
+      : `one security`;
+
   // Remove ticker symbols from message text - they'll be shown as badges below
   const defaultMessage = `I converted ${displayPointsUsed} loyalty points from ${displayMerchant} into ${displayCash} of ${tickerMessage}, using ${displayBroker} with StockLoyal! 🚀 #StockLoyal #LoyaltyPoints`;
 
@@ -176,6 +187,7 @@ export default function SharePointsSheet({
               try {
                 const payload = {
                   member_id: memberId,
+                  member_avatar: memberAvatar, // ✅ NEW (snapshot stored per post)
                   text: text.trim(),
                   points_used: displayPointsUsed,
                   cash_value: displayInvestedAmount,

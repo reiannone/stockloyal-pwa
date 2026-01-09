@@ -1,4 +1,6 @@
-// src/components/Header.jsx (Option A + SHOW memberId on header next to avatar)
+// src/components/Header.jsx (Option A - minimal changes: tighter menu spacing + scroll + install label/color)
+// Based on your uploaded Header.jsx :contentReference[oaicite:0]{index=0}
+
 import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu } from "lucide-react";
@@ -8,10 +10,6 @@ import { useBasket } from "../context/BasketContext";
 import InstallAppModal from "./InstallAppModal";
 import UserAvatar from "./UserAvatar";
 import { apiPost } from "../api.js";
-
-// NOTE: This is based on your uploaded Header.jsx debug version :contentReference[oaicite:0]{index=0}
-// Change: renders memberId as a small chip next to the avatar on the header bar,
-// and listens for "member-updated" (Option A) so same-tab changes re-render.
 
 export default function Header() {
   const location = useLocation();
@@ -110,20 +108,12 @@ export default function Header() {
     { to: "/about", label: "About & FAQs" },
   ];
 
-  // Progress steps in order
-  const progressSteps = [
-    { path: "/login", label: "Login" },
-    { path: "/member-onboard", label: "Onboarding" },
-    { path: "/select-broker", label: "Broker" },
-    { path: "/terms", label: "Terms" },
-    { path: "/election", label: "Election" },
-    { path: "/wallet", label: "Wallet" },
-    { path: "/stock-picker", label: "Convert" },
-    { path: "/basket", label: "Basket" },
-    { path: "/order", label: "Order" },
-  ];
-
   console.log("🎨 Header Render - memberId state:", memberId);
+
+  // ✅ Menu sizing constants (keeps install button visible on small phones)
+  const MENU_PROFILE_EST_PX = 110; // compact profile header
+  const MENU_INSTALL_EST_PX = 64;  // install button container
+  const MENU_PADDING_EST_PX = 24;  // panel padding/scrollbar slack
 
   return (
     <div>
@@ -138,7 +128,6 @@ export default function Header() {
       >
         {/* LEFT: Menu button */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-          {/* Menu Icon */}
           <button
             type="button"
             aria-label="Open menu"
@@ -176,7 +165,6 @@ export default function Header() {
 
         {/* RIGHT: Member ID chip + Avatar */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginLeft: "auto" }}>
-          {/* ✅ Member ID chip */}
           <button
             type="button"
             aria-label="Open menu (member id)"
@@ -202,7 +190,6 @@ export default function Header() {
             {memberId ? `ID: ${memberId}` : "ID: —"}
           </button>
 
-          {/* User Avatar - clickable to open menu */}
           <button
             type="button"
             aria-label="User profile"
@@ -231,37 +218,38 @@ export default function Header() {
         zIndex={2200}
         anchorSelector="body"
       >
-        {/* User Profile Section at top of menu */}
+        {/* ✅ Compact profile header (reduced vertical space) */}
         <div
           style={{
-            padding: "16px",
-            borderBottom: "2px solid #e5e7eb",
+            padding: "10px 12px",
+            borderBottom: "1px solid #e5e7eb",
             display: "flex",
             alignItems: "center",
-            gap: "12px",
+            gap: "10px",
             backgroundColor: "#f9fafb",
           }}
         >
-          <UserAvatar src={userAvatar} size="lg" alt="Your Profile" />
+          <UserAvatar src={userAvatar} size="md" alt="Your Profile" />
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: "600", color: "#111827", fontSize: "16px" }}>
+            <div style={{ fontWeight: 700, color: "#111827", fontSize: "14px", lineHeight: 1.1 }}>
               {localStorage.getItem("userName") || "User"}
             </div>
 
-            {/* DEBUG: Always show memberId - VERY VISIBLE */}
+            {/* DEBUG: memberId (kept, but tightened) */}
             <div
               style={{
-                fontSize: "12px",
+                fontSize: "11px",
                 color: "#ffffff",
                 fontFamily: "monospace",
                 marginTop: "4px",
                 marginBottom: "4px",
                 backgroundColor: "#3b82f6",
-                padding: "6px 8px",
+                padding: "4px 6px",
                 borderRadius: "4px",
-                fontWeight: "600",
+                fontWeight: "700",
                 textAlign: "center",
-                border: "2px solid #1e40af",
+                border: "1px solid #1e40af",
+                lineHeight: 1.1,
               }}
             >
               {memberId ? `MEMBER ID: ${memberId}` : "⚠️ NO MEMBER ID ⚠️"}
@@ -270,66 +258,84 @@ export default function Header() {
             <Link
               to="/member-onboard"
               onClick={() => setShowMenu(false)}
-              style={{ fontSize: "12px", color: "#2563eb", textDecoration: "none" }}
+              style={{ fontSize: "11px", color: "#2563eb", textDecoration: "none" }}
             >
               Edit Profile
             </Link>
           </div>
         </div>
 
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {allPages.map(({ to, label }, idx) => (
-            <li key={to} style={{ borderTop: idx === 0 ? "none" : "1px solid #e5e7eb" }}>
-              <Link
-                to={to}
-                onClick={() => setShowMenu(false)}
-                className={`flex items-center w-full text-gray-700 transition hover:bg-gray-100 ${
-                  location.pathname === to ? "bg-gray-50 font-medium text-blue-600" : ""
-                }`}
-                style={{
-                  padding: "8px 12px",
-                  textDecoration: "none",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
-                <span>{label}</span>
+        {/* ✅ Scrollable menu list so it fits on small phones */}
+        <div
+          style={{
+            maxHeight: `calc(100vh - ${MENU_PROFILE_EST_PX + MENU_INSTALL_EST_PX + MENU_PADDING_EST_PX}px)`,
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {allPages.map(({ to, label }, idx) => (
+              <li key={to} style={{ borderTop: idx === 0 ? "none" : "1px solid #e5e7eb" }}>
+                <Link
+                  to={to}
+                  onClick={() => setShowMenu(false)}
+                  className={`flex items-center w-full text-gray-700 transition hover:bg-gray-100 ${
+                    location.pathname === to ? "bg-gray-50 font-medium text-blue-600" : ""
+                  }`}
+                  style={{
+                    // ✅ tighter vertical spacing
+                    padding: "6px 12px",
+                    textDecoration: "none",
+                    display: "flex",
+                    alignItems: "center",
+                    fontSize: "0.85rem",
+                    lineHeight: 1.1,
+                  }}
+                >
+                  <span>{label}</span>
 
-                {to === "/basket" && basket.length > 0 && (
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      minWidth: 18,
-                      height: 18,
-                      borderRadius: 9999,
-                      background: "#111827",
-                      color: "white",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.7rem",
-                      padding: "0 4px",
-                    }}
-                  >
-                    {basket.length}
-                  </span>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  {/* NOTE: basket route not in allPages currently; leaving logic intact */}
+                  {to === "/basket" && basket.length > 0 && (
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        minWidth: 18,
+                        height: 18,
+                        borderRadius: 9999,
+                        background: "#111827",
+                        color: "white",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.7rem",
+                        padding: "0 4px",
+                      }}
+                    >
+                      {basket.length}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-        {/* Install App button at the bottom of menu */}
-        <div style={{ padding: "12px", borderTop: "2px solid #e5e7eb", marginTop: "8px" }}>
+        {/* ✅ Install App button at the bottom of menu (black font + new label) */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid #e5e7eb", marginTop: "8px" }}>
           <button
             type="button"
             onClick={() => {
               setShowMenu(false);
               setShowInstallModal(true);
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-colors font-medium text-sm shadow-sm"
+            style={{
+              background: "#f3f4f6",
+              border: "1px solid #d1d5db",
+              color: "#000",
+            }}
           >
-            Install App
+            Install App Bookmark
           </button>
         </div>
       </SlideOutPanel>

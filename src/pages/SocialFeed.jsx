@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost, apiGet } from "../api.js";
+import UserAvatar from "../components/UserAvatar";
 
 // Format full date + time for posts/comments
 function formatTimestamp(iso) {
@@ -46,16 +47,14 @@ export default function SocialFeed() {
 
     try {
       const payload = {
-        filter_type: filterType,          // "all" | "liked" | "commented"
+        filter_type: filterType, // "all" | "liked" | "commented"
         member_id: memberId || undefined, // "me" for likes/comments filters
         offset: 0,
         limit: 20,
       };
 
       // optional author filter from ticker (?member_id=XYZ)
-      if (filterMemberId) {
-        payload.author_member_id = filterMemberId;
-      }
+      if (filterMemberId) payload.author_member_id = filterMemberId;
 
       const data = await apiPost("social_feed.php", payload);
 
@@ -150,9 +149,7 @@ export default function SocialFeed() {
       await loadComments(postId);
       setPosts((prev) =>
         prev.map((p) =>
-          p.id === postId
-            ? { ...p, comment_count: p.comment_count + 1 }
-            : p
+          p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p
         )
       );
     } catch (e) {
@@ -160,7 +157,7 @@ export default function SocialFeed() {
     }
   };
 
-  // 🧠 Optional *extra* client-side guard for AUTHOR filter only (likes/comments handled server-side)
+  // 🧠 Optional client-side guard for AUTHOR filter only (likes/comments handled server-side)
   const filteredPosts = useMemo(() => {
     if (!filterMemberId) return posts;
     const fid = filterMemberId.toString().trim().toLowerCase();
@@ -263,30 +260,35 @@ export default function SocialFeed() {
 
       <div style={{ marginBottom: 120 }}>
         {filteredPosts.map((post) => (
-          <div
-            key={post.id}
-            className="card"
-            style={{ marginBottom: "0.75rem" }}
-          >
+          <div key={post.id} className="card" style={{ marginBottom: "0.75rem" }}>
+            {/* Header row with avatar + name + timestamp */}
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                marginBottom: 4,
+                alignItems: "center",
+                marginBottom: 6,
               }}
             >
-              <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-                {post.member_handle || post.member_id || "Member"}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <UserAvatar
+                  src={post.member_avatar || null}
+                  size="sm"
+                  alt={post.member_handle || post.member_id || "Member"}
+                />
+                <div style={{ fontSize: "0.85rem", fontWeight: 700 }}>
+                  {post.member_handle || post.member_id || "Member"}
+                </div>
               </div>
+
               <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
                 {formatTimestamp(post.created_at)}
               </div>
             </div>
 
             <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>
-              <strong>{post.points_used.toLocaleString()} pts</strong> → $
-              {post.cash_value.toFixed(2)} 
-              {" worth in securities"}
+              <strong>{Number(post.points_used || 0).toLocaleString()} pts</strong> → $
+              {Number(post.cash_value || 0).toFixed(2)} {" worth in securities"}
             </div>
 
             {post.strategy_tag && (
@@ -392,7 +394,6 @@ export default function SocialFeed() {
                 </button>
               </div>
 
-              {/* Single post + thread view */}
               <button
                 type="button"
                 onClick={() => navigate(`/social/post/${post.id}`)}
@@ -414,13 +415,7 @@ export default function SocialFeed() {
             {/* Comments (inline preview) */}
             {expandedCommentsPostId === post.id && (
               <div style={{ marginTop: 8 }}>
-                <div
-                  style={{
-                    maxHeight: 180,
-                    overflowY: "auto",
-                    marginBottom: 6,
-                  }}
-                >
+                <div style={{ maxHeight: 180, overflowY: "auto", marginBottom: 6 }}>
                   {(comments[post.id] || []).map((c) => (
                     <div
                       key={c.id}
@@ -452,9 +447,7 @@ export default function SocialFeed() {
                   ))}
                 </div>
 
-                {/* 🔁 WIDER / TALLER textarea + SMALL Post button */}
                 <div>
-                  {/* Quick emoji/symbol buttons */}
                   <div
                     style={{
                       display: "flex",
@@ -463,39 +456,35 @@ export default function SocialFeed() {
                       flexWrap: "wrap",
                     }}
                   >
-                    {["🚀", "📈", "📉", "💰", "🎯", "👍", "💪", "🔥", "✅", "❌"].map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() =>
-                          setCommentInput((prev) => ({
-                            ...prev,
-                            [post.id]: (prev[post.id] || "") + emoji + " ",
-                          }))
-                        }
-                        style={{
-                          fontSize: "1rem",
-                          background: "#f9fafb",
-                          border: "1px solid #e5e7eb",
-                          borderRadius: 4,
-                          padding: "2px 6px",
-                          cursor: "pointer",
-                          lineHeight: 1,
-                        }}
-                        title={`Add ${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
+                    {["🚀", "📈", "📉", "💰", "🎯", "👍", "💪", "🔥", "✅", "❌"].map(
+                      (emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() =>
+                            setCommentInput((prev) => ({
+                              ...prev,
+                              [post.id]: (prev[post.id] || "") + emoji + " ",
+                            }))
+                          }
+                          style={{
+                            fontSize: "1rem",
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 4,
+                            padding: "2px 6px",
+                            cursor: "pointer",
+                            lineHeight: 1,
+                          }}
+                          title={`Add ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      )
+                    )}
                   </div>
-                  
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 6,
-                      alignItems: "flex-end",
-                    }}
-                  >
+
+                  <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
                     <textarea
                       className="member-form-input"
                       placeholder="Add a comment…"

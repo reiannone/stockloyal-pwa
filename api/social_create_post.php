@@ -23,6 +23,7 @@ if (!is_array($input)) {
 }
 
 $memberId      = trim($input['member_id'] ?? '');
+$memberAvatar  = $input['member_avatar'] ?? null; // ✅ NEW
 $pointsUsed    = (int)($input['points_used'] ?? 0);
 $cashValue     = (float)($input['cash_value'] ?? 0.0);
 $strategyTag   = trim($input['strategy_tag'] ?? '');
@@ -36,14 +37,24 @@ if ($memberId === '') {
     exit;
 }
 
+// Normalize avatar to NULL when empty
+if (is_string($memberAvatar)) {
+    $memberAvatar = trim($memberAvatar);
+    if ($memberAvatar === '') $memberAvatar = null;
+} else {
+    // If not a string (e.g., null/undefined/object), force null
+    $memberAvatar = null;
+}
+
 try {
     $sql = "INSERT INTO social_posts
-        (member_id, points_used, cash_value, strategy_tag, text, primary_ticker, tickers_json)
-        VALUES (:member_id, :points_used, :cash_value, :strategy_tag, :text, :primary_ticker, :tickers_json)";
+        (member_id, member_avatar, points_used, cash_value, strategy_tag, text, primary_ticker, tickers_json)
+        VALUES (:member_id, :member_avatar, :points_used, :cash_value, :strategy_tag, :text, :primary_ticker, :tickers_json)";
 
     $stmt = $conn->prepare($sql);
     $stmt->execute([
         ':member_id'      => $memberId,
+        ':member_avatar'  => $memberAvatar, // ✅ NEW
         ':points_used'    => max(0, $pointsUsed),
         ':cash_value'     => max(0, $cashValue),
         ':strategy_tag'   => $strategyTag !== '' ? $strategyTag : null,

@@ -37,8 +37,7 @@ try {
         exit;
     }
 
-    // 🟢 SAFE: don't assume the exact column list, just select the row
-    // social_feed.php is already using social_posts, so we reuse that table
+    // Select row
     $sql = "
         SELECT *
         FROM social_posts
@@ -59,12 +58,16 @@ try {
         exit;
     }
 
-    // If tickers is a JSON string, decode it
-    if (isset($row['tickers']) && is_string($row['tickers'])) {
-        $decoded = json_decode($row['tickers'], true);
+    // ✅ Decode tickers_json -> tickers[]
+    if (isset($row['tickers_json']) && is_string($row['tickers_json']) && $row['tickers_json'] !== '') {
+        $decoded = json_decode($row['tickers_json'], true);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
             $row['tickers'] = $decoded;
+        } else {
+            $row['tickers'] = [];
         }
+    } else {
+        $row['tickers'] = [];
     }
 
     echo json_encode([
