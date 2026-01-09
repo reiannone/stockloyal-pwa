@@ -187,7 +187,7 @@ export default function Header() {
             }}
             title={memberId || ""}
           >
-            {memberId ? `ID: ${memberId}` : "ID: —"}
+            {memberId ? `${memberId}` : ""}
           </button>
 
           <button
@@ -198,7 +198,7 @@ export default function Header() {
               border: "none",
               background: "transparent",
               padding: 0,
-              paddingRight: 6, 
+              paddingRight: 8, 
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
