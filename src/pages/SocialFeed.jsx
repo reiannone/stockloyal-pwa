@@ -1,5 +1,5 @@
 // src/pages/SocialFeed.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost, apiGet } from "../api.js";
 import UserAvatar from "../components/UserAvatar";
@@ -26,8 +26,16 @@ function formatTimestamp(iso) {
 export default function SocialFeed() {
   const [posts, setPosts] = useState([]);
   const [filterType, setFilterType] = useState("all"); // "all" | "liked" | "commented"
+
+  // initial load state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // infinite scroll state
+  const LIMIT = 20;
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
   const [expandedCommentsPostId, setExpandedCommentsPostId] = useState(null);
   const [comments, setComments] = useState({});
   const [commentInput, setCommentInput] = useState({});
@@ -41,43 +49,106 @@ export default function SocialFeed() {
   const params = new URLSearchParams(location.search);
   const filterMemberId = params.get("member_id") || "";
 
-  const loadFeed = async () => {
-    setLoading(true);
-    setError("");
+  // Prevent duplicate fetch triggers
+  const inflightRef = useRef(false);
 
-    try {
+  const buildPayload = useCallback(
+    (offset) => {
       const payload = {
         filter_type: filterType, // "all" | "liked" | "commented"
         member_id: memberId || undefined, // "me" for likes/comments filters
-        offset: 0,
-        limit: 20,
+        offset,
+        limit: LIMIT,
       };
 
       // optional author filter from ticker (?member_id=XYZ)
       if (filterMemberId) payload.author_member_id = filterMemberId;
 
-      const data = await apiPost("social_feed.php", payload);
+      return payload;
+    },
+    [filterType, memberId, filterMemberId]
+  );
+
+  const loadFirstPage = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setHasMore(true);
+    setExpandedCommentsPostId(null);
+
+    try {
+      const data = await apiPost("social_feed.php", buildPayload(0));
 
       if (!data.success) {
         setError(data.error || "Failed to load feed.");
         setPosts([]);
+        setHasMore(false);
         return;
       }
 
-      setPosts(data.posts || []);
+      const first = data.posts || [];
+      setPosts(first);
+
+      // If returned fewer than LIMIT, there may be no more
+      setHasMore(first.length >= LIMIT);
     } catch (e) {
       console.error("[SocialFeed] error:", e);
       setError("Network error while loading feed.");
       setPosts([]);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
-  };
+  }, [buildPayload]);
 
+  const loadMore = useCallback(async () => {
+    if (loading) return;
+    if (loadingMore) return;
+    if (!hasMore) return;
+    if (inflightRef.current) return;
+
+    inflightRef.current = true;
+    setLoadingMore(true);
+
+    try {
+      const offset = posts.length;
+      const data = await apiPost("social_feed.php", buildPayload(offset));
+
+      if (!data.success) {
+        // don’t wipe existing content — just stop
+        setHasMore(false);
+        return;
+      }
+
+      const next = data.posts || [];
+      if (next.length === 0) {
+        setHasMore(false);
+        return;
+      }
+
+      // Avoid duplicates if server returns overlapping pages
+      setPosts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const merged = [...prev];
+        for (const p of next) {
+          if (!seen.has(p.id)) merged.push(p);
+        }
+        return merged;
+      });
+
+      setHasMore(next.length >= LIMIT);
+    } catch (e) {
+      console.error("[SocialFeed] loadMore error:", e);
+      setHasMore(false);
+    } finally {
+      inflightRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [loading, loadingMore, hasMore, posts.length, buildPayload]);
+
+  // Initial load + reload when filterType / author filter / memberId changes
   useEffect(() => {
-    loadFeed();
-    // rerun when interaction filter, author filter, or memberId changes
-  }, [filterType, filterMemberId, memberId]);
+    loadFirstPage();
+  }, [loadFirstPage]);
 
   const toggleLike = async (postId) => {
     if (!memberId) {
@@ -171,6 +242,27 @@ export default function SocialFeed() {
     // Remove ?member_id from URL but stay on /social
     navigate("/social", { replace: true });
   };
+
+  // Infinite scroll sentinel
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first && first.isIntersecting) {
+          loadMore();
+        }
+      },
+      { root: null, rootMargin: "200px", threshold: 0.01 }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [loadMore]);
 
   return (
     <div className="page-container">
@@ -374,8 +466,9 @@ export default function SocialFeed() {
                     padding: 0,
                     cursor: "pointer",
                   }}
+                  aria-label="Like post"
                 >
-                  ❤️ {post.like_count}
+                  👍 {post.like_count}
                 </button>
 
                 <button
@@ -389,6 +482,7 @@ export default function SocialFeed() {
                     padding: 0,
                     cursor: "pointer",
                   }}
+                  aria-label="View comments"
                 >
                   💬 {post.comment_count}
                 </button>
@@ -521,6 +615,23 @@ export default function SocialFeed() {
             )}
           </div>
         ))}
+
+        {/* Infinite scroll sentinel + status */}
+        {!loading && !error && (
+          <div ref={sentinelRef} style={{ padding: "10px 0", textAlign: "center" }}>
+            {loadingMore && <div style={{ fontSize: "0.85rem" }}>Loading more…</div>}
+            {!loadingMore && hasMore && (
+              <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                Keep scrolling to load more
+              </div>
+            )}
+            {!loadingMore && !hasMore && posts.length > 0 && (
+              <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                You&apos;re all caught up ✅
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

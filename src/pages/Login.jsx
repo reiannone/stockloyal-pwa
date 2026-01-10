@@ -1,15 +1,23 @@
-// src/pages/Login.jsx (Option A: dispatch member-updated after setting memberId)
-import React, { useState, useEffect } from "react";
+// src/pages/Login.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
-function Login() {
+const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
+const normUsername = (s) => String(s || "").trim().toLowerCase();
+
+export default function Login() {
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState("checking"); // "checking" | "login" | "create"
+  const [mode, setMode] = useState("checking"); // checking | login | create
 
-  const [memberId, setMemberId] = useState("");
+  // Login identifier (username OR email)
+  const [identifier, setIdentifier] = useState("");
+
+  // Create fields
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -19,66 +27,54 @@ function Login() {
   const [points, setPoints] = useState(0);
   const [conversionRate, setConversionRate] = useState(0.01);
 
+  const detectedConv = useMemo(() => {
+    const v = parseFloat(localStorage.getItem("conversion_rate") || "0");
+    return v > 0 ? v : 0.01;
+  }, []);
+
   useEffect(() => {
-    const lsMode = localStorage.getItem("mode"); // legacy / fallback
-    const lsMemberId = localStorage.getItem("memberId");
-    const lsEmail = localStorage.getItem("memberEmail");
-    const lsMerchantId = localStorage.getItem("merchantId");
+    const lsMerchantId = localStorage.getItem("merchantId") || "";
+    const lsMemberId = localStorage.getItem("memberId") || "";
+    const lsEmail = localStorage.getItem("memberEmail") || "";
     const lsPoints = parseInt(localStorage.getItem("points") || "0", 10);
-    const lsConversionRate = parseFloat(localStorage.getItem("conversion_rate") || "0");
 
-    const initialEmail = lsEmail || "";
-    const initialId = lsMemberId || initialEmail;
+    setMerchantId(lsMerchantId);
+    setPoints(Number.isFinite(lsPoints) ? lsPoints : 0);
+    setConversionRate(detectedConv);
 
-    setEmail(initialEmail);
-    setMemberId(initialId);
-    if (lsMerchantId) setMerchantId(lsMerchantId);
-    if (lsPoints > 0) setPoints(lsPoints);
-    setConversionRate(lsConversionRate > 0 ? lsConversionRate : 0.01);
-
-    if (!lsMerchantId || !initialEmail) {
-      setMode(lsMode === "create" ? "create" : "login");
-      return;
-    }
+    const initial = lsMemberId || lsEmail || "";
+    setIdentifier(initial);
 
     (async () => {
       try {
-        const data = await apiPost("check_wallet_member.php", {
-          merchant_id: lsMerchantId,
-          member_id: initialId || initialEmail,
+        if (!initial) {
+          setMode("login");
+          return;
+        }
+
+        const lookup = await apiPost("member_lookup.php", {
+          merchant_id: lsMerchantId || "",
+          identifier: initial,
         });
 
-        console.log("[Login] check_wallet_member response:", data);
-
-        if (data && data.success) {
-          if (data.exists) {
-            setMode("login");
-            localStorage.setItem("mode", "login");
-          } else {
-            setMode("create");
-            localStorage.setItem("mode", "create");
-          }
+        if (lookup?.success && lookup.exists && lookup.has_password) {
+          setMode("login"); // ✅ already a member
         } else {
-          setMode(lsMode === "create" ? "create" : "login");
+          setMode("create");
+          // if lookup returned canonical fields, prefill them
+          if (lookup?.member_id) setUsername(String(lookup.member_id));
+          if (lookup?.member_email) setEmail(String(lookup.member_email));
         }
-      } catch (err) {
-        console.error("[Login] check_wallet_member error:", err);
-        setMode(lsMode === "create" ? "create" : "login");
+      } catch (e) {
+        setMode("login");
       }
     })();
-  }, []);
+  }, [detectedConv]);
 
   const applyPointsIfAny = async (memberIdToUse) => {
     if (!points || points <= 0) return;
-
     const conv = conversionRate > 0 ? conversionRate : 0.01;
     const cashBalance = Number((points * conv).toFixed(2));
-
-    console.log("[Login] Applying points via update_points.php", {
-      member_id: memberIdToUse,
-      points,
-      cash_balance: cashBalance,
-    });
 
     try {
       await apiPost("update_points.php", {
@@ -91,109 +87,110 @@ function Login() {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const toggleMode = () => {
+    setError("");
+    setPassword("");
+    setConfirmPassword("");
+    setMode((m) => (m === "login" ? "create" : "login"));
+  };
+
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
 
-    const effectiveMemberId = memberId || email;
-
-    if (!effectiveMemberId || !password) {
-      setError("Please fill in all required fields.");
+    const raw = String(identifier || "").trim();
+    if (!raw || !password) {
+      setError("Please enter your username (or email) and password.");
       return;
     }
 
-    if (mode === "create" && !email) {
-      setError("Please provide an email address to create your account.");
-      return;
-    }
+    // If it looks like email, normalize to lowercase email; else normalize username to lowercase
+    const normalizedIdentifier = isEmail(raw) ? raw.toLowerCase() : normUsername(raw);
 
-    if (mode === "create" && password !== confirmPassword) {
-      setError("Passwords do not match. Please re-enter.");
-      return;
-    }
+    try {
+      const data = await apiPost("login.php", {
+        merchant_id: merchantId || "",
+        identifier: normalizedIdentifier,
+        password,
+      });
 
-    if (mode === "create") {
-      try {
-        const data = await apiPost("create_member.php", {
-          merchant_id: merchantId || null,
-          member_id: effectiveMemberId,
-          member_email: email || effectiveMemberId,
-          password,
-        });
-
-        console.log("[Login] create_member.php response:", data);
-
-        if (data && data.success) {
-          // Persist identity
-          localStorage.setItem("memberId", effectiveMemberId);
-          localStorage.setItem("memberEmail", email || effectiveMemberId);
-          if (merchantId) localStorage.setItem("merchantId", merchantId);
-
-          // ✅ Option A: notify same-tab listeners (Header)
-          window.dispatchEvent(new Event("member-updated"));
-
-          await applyPointsIfAny(effectiveMemberId);
-
-          navigate("/member-onboard", {
-            state: { memberId: effectiveMemberId, memberEmail: email || effectiveMemberId },
-          });
-        } else {
-          setError(data?.error || data?.message || "Account creation failed.");
-        }
-      } catch (err) {
-        console.error("Create member error:", err);
-        setError("Network error. Please try again.");
+      if (!data?.success) {
+        setError(data?.error || "Login failed. Please check your credentials.");
+        return;
       }
-    } else {
-      try {
-        const data = await apiPost("login.php", {
-          merchant_id: merchantId || null,
-          member_id: effectiveMemberId,
-          password,
-        });
 
-        console.log("[Login] login.php response:", data);
+      // Store only identity (never store password)
+      localStorage.setItem("memberId", data.member_id);
+      localStorage.setItem("memberEmail", data.member_email || "");
+      if (merchantId) localStorage.setItem("merchantId", merchantId);
 
-        if (!data?.success) {
-          const rawMsg = data?.message || data?.error || "Login failed. Please check your credentials.";
-          const msg = rawMsg.toLowerCase();
+      window.dispatchEvent(new Event("member-updated"));
 
-          if (msg.includes("invalid password")) setError("Invalid password. Please try again.");
-          else if (msg.includes("not found") || msg.includes("no account")) setError("No account found. Please create an account.");
-          else setError("Login failed. Please check your credentials.");
-          return;
-        }
-
-        // Successful login
-        localStorage.setItem("memberId", effectiveMemberId);
-        localStorage.setItem("memberEmail", data.member_email || email || effectiveMemberId);
-        if (merchantId) localStorage.setItem("merchantId", merchantId);
-
-        // ✅ Option A: notify same-tab listeners (Header)
-        window.dispatchEvent(new Event("member-updated"));
-
-        await applyPointsIfAny(effectiveMemberId);
-
-        navigate("/wallet");
-      } catch (err) {
-        console.error("Login error:", err);
-
-        const raw = String(err?.message || "").toLowerCase();
-
-        if (raw.includes("invalid password")) setError("Invalid password. Please try again.");
-        else if (raw.includes("401")) setError("Invalid password. Please try again.");
-        else if (raw.includes("404")) setError("No account found. Please create an account.");
-        else setError("Network or server error. Please try again.");
-      }
+      await applyPointsIfAny(data.member_id);
+      navigate("/wallet");
+    } catch (err) {
+      setError("Network or server error. Please try again.");
     }
   };
 
-  const handleToggleMode = () => {
-    if (mode === "checking") return;
-    const next = mode === "login" ? "create" : "login";
-    setMode(next);
-    localStorage.setItem("mode", next);
+  const handleCreate = async (e) => {
+    e.preventDefault();
     setError("");
+
+    const uRaw = String(username || "").trim();
+    const eRaw = String(email || "").trim();
+
+    if (!uRaw || !eRaw || !password) {
+      setError("Please enter a username, email, and password.");
+      return;
+    }
+
+    // Username must NOT be email
+    if (isEmail(uRaw)) {
+      setError("Username cannot be an email address. Please choose a username (e.g., robert).");
+      return;
+    }
+
+    if (!isEmail(eRaw)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    const u = normUsername(uRaw);
+    const em = eRaw.toLowerCase();
+
+    try {
+      const data = await apiPost("create_member.php", {
+        merchant_id: merchantId || null,
+        member_id: u,
+        member_email: em,
+        password,
+      });
+
+      if (!data?.success) {
+        setError(data?.error || "Account creation failed.");
+        return;
+      }
+
+      localStorage.setItem("memberId", data.member_id);
+      localStorage.setItem("memberEmail", data.member_email || "");
+      if (merchantId) localStorage.setItem("merchantId", merchantId);
+
+      window.dispatchEvent(new Event("member-updated"));
+
+      await applyPointsIfAny(data.member_id);
+
+      navigate("/member-onboard", {
+        state: { memberId: data.member_id, memberEmail: data.member_email },
+      });
+    } catch (err) {
+      setError("Network or server error. Please try again.");
+    }
   };
 
   const isChecking = mode === "checking";
@@ -206,57 +203,36 @@ function Login() {
 
       {!isChecking && mode === "create" && points > 0 && (
         <p className="welcome-points">
-          Welcome! You’ve earned <strong>{points}</strong> points from{" "}
-          <strong>{merchantId || "your merchant"}</strong> — worth $
+          Welcome! You’ve earned <strong>{points}</strong> points — worth $
           {(points * conversionRate).toFixed(2)}. Create your account to claim them.
         </p>
       )}
 
       {isChecking ? (
         <p>One moment while we check your account status…</p>
-      ) : (
-        <form className="form member-form-grid" onSubmit={handleSubmit}>
+      ) : mode === "login" ? (
+        <form className="form member-form-grid" onSubmit={handleLogin}>
           <div className="member-form-row">
-            <label htmlFor="memberId" className="member-form-label">
-              {mode === "create" ? "Email / Member ID:" : "Member ID or Email:"}
-            </label>
+            <label className="member-form-label">Username or Email:</label>
             <input
-              id="memberId"
               type="text"
               className="member-form-input"
-              value={memberId}
-              onChange={(e) => setMemberId(e.target.value)}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               autoComplete="username"
+              placeholder="e.g., robert (or robert@email.com)"
             />
           </div>
 
-          {mode === "create" && (
-            <div className="member-form-row">
-              <label htmlFor="email" className="member-form-label">
-                Email:
-              </label>
-              <input
-                id="email"
-                type="email"
-                className="member-form-input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          )}
-
           <div className="member-form-row">
-            <label htmlFor="password" className="member-form-label">
-              Password:
-            </label>
+            <label className="member-form-label">Password:</label>
             <div className="password-wrapper-inline" style={{ flex: 1 }}>
               <input
-                id="password"
                 type={showPw ? "text" : "password"}
                 className="member-form-input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === "create" ? "new-password" : "current-password"}
+                autoComplete="current-password"
               />
               <img
                 src={`${import.meta.env.BASE_URL}icons/${showPw ? "hide.png" : "show.png"}`}
@@ -267,44 +243,79 @@ function Login() {
             </div>
           </div>
 
-          {!isChecking && mode === "create" && (
-            <div className="member-form-row">
-              <label htmlFor="confirmPassword" className="member-form-label">
-                Confirm Password:
-              </label>
+          {error && <p className="form-error">{error}</p>}
+
+          <button type="submit" className="btn-primary">Login</button>
+
+          <button type="button" className="btn-secondary" onClick={toggleMode}>
+            Need an account?
+          </button>
+        </form>
+      ) : (
+        <form className="form member-form-grid" onSubmit={handleCreate}>
+          <div className="member-form-row">
+            <label className="member-form-label">Username (not email):</label>
+            <input
+              type="text"
+              className="member-form-input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              placeholder="e.g., robert"
+            />
+          </div>
+
+          <div className="member-form-row">
+            <label className="member-form-label">Email:</label>
+            <input
+              type="email"
+              className="member-form-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              placeholder="e.g., robert@email.com"
+            />
+          </div>
+
+          <div className="member-form-row">
+            <label className="member-form-label">Password:</label>
+            <div className="password-wrapper-inline" style={{ flex: 1 }}>
               <input
-                id="confirmPassword"
                 type={showPw ? "text" : "password"}
                 className="member-form-input"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
               />
+              <img
+                src={`${import.meta.env.BASE_URL}icons/${showPw ? "hide.png" : "show.png"}`}
+                alt={showPw ? "Hide password" : "Show password"}
+                className="pw-toggle-icon"
+                onClick={() => setShowPw(!showPw)}
+              />
             </div>
-          )}
+          </div>
+
+          <div className="member-form-row">
+            <label className="member-form-label">Confirm Password:</label>
+            <input
+              type={showPw ? "text" : "password"}
+              className="member-form-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
 
           {error && <p className="form-error">{error}</p>}
 
-          <button type="submit" className="btn-primary">
-            {mode === "login" ? "Login" : "Create Account"}
-          </button>
+          <button type="submit" className="btn-primary">Create Account</button>
 
-          <button type="button" className="btn-secondary" onClick={handleToggleMode} disabled={isChecking}>
-            {mode === "login" ? "Need an account?" : "Already have an account?"}
+          <button type="button" className="btn-secondary" onClick={toggleMode}>
+            Already have an account?
           </button>
         </form>
       )}
-
-      <p className="form-disclosure">
-        <strong>Note:</strong> This login is for the <em>StockLoyal platform</em>{" "}
-        only. Your StockLoyal ID and password are used to access StockLoyal
-        features. When linking your brokerage account (e.g., Public.com,
-        Robinhood, Fidelity), you will enter those credentials separately and
-        securely. StockLoyal does <u>not</u> use your StockLoyal ID or password
-        to access your broker, and your broker login remains independent.
-      </p>
     </div>
   );
 }
-
-export default Login;

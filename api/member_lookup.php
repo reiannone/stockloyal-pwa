@@ -23,24 +23,18 @@ function is_email(string $s): bool {
 }
 
 try {
-    $input = json_decode(file_get_contents("php://input"), true);
-    if (!is_array($input)) $input = $_POST ?? [];
+    $input = json_decode(file_get_contents("php://input"), true) ?? [];
+    if (!is_array($input)) $input = [];
 
-    $merchantId  = trim((string)($input['merchant_id'] ?? ''));
-    // Back-compat: accept member_id but prefer identifier
-    $identifier  = trim((string)($input['identifier'] ?? ($input['member_id'] ?? '')));
-    $password    = (string)($input['password'] ?? '');
-
-    error_log("login.php: method=" . $_SERVER['REQUEST_METHOD'] . " merchant_id=" . $merchantId . " identifier=" . $identifier);
+    $merchantId = trim((string)($input['merchant_id'] ?? ''));
+    $identifier = trim((string)($input['identifier'] ?? ''));
 
     if ($identifier === '') {
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Username or Email is required"]);
-        exit;
-    }
-    if ($password === '') {
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Password is required"]);
+        echo json_encode([
+            "success" => true,
+            "exists" => false,
+            "has_password" => false
+        ]);
         exit;
     }
 
@@ -73,33 +67,31 @@ try {
         ]);
     }
 
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$user) {
-        http_response_code(404);
-        echo json_encode(["success" => false, "error" => "No account found for this username/email"]);
+    if (!$row) {
+        echo json_encode([
+            "success" => true,
+            "exists" => false,
+            "has_password" => false,
+            "is_email" => $isEmail
+        ]);
         exit;
     }
 
-    $hash = (string)($user['member_password_hash'] ?? '');
-    if ($hash === '' || !password_verify($password, $hash)) {
-        http_response_code(401);
-        echo json_encode(["success" => false, "error" => "Invalid password"]);
-        exit;
-    }
+    $hash = trim((string)($row['member_password_hash'] ?? ''));
+    $hasPassword = ($hash !== '');
 
-    // Update last_login
-    $update = $conn->prepare("UPDATE wallet SET last_login = NOW() WHERE member_id = :member_id");
-    $update->execute([":member_id" => $user['member_id']]);
-
-    http_response_code(200);
     echo json_encode([
         "success" => true,
-        "member_id" => $user['member_id'],
-        "member_email" => $user['member_email'] ?? null
+        "exists" => true,
+        "has_password" => $hasPassword,
+        "is_email" => $isEmail,
+        "member_id" => $row['member_id'],
+        "member_email" => $row['member_email']
     ]);
 } catch (Exception $e) {
-    error_log("login.php error: " . $e->getMessage());
+    error_log("member_lookup.php error: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         "success" => false,

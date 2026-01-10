@@ -3,22 +3,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/_loadenv.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { 
-    http_response_code(204); 
-    exit; 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
 }
-// api/create_member.php
-
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
-ini_set('log_errors', 1);
-ini_set('error_log', 'C:/xampp/php/logs/php_error_log');
 
 header("Content-Type: application/json");
-
-error_log("create_member.php: STARTED");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header("Access-Control-Allow-Methods: POST, OPTIONS");
@@ -26,131 +16,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'config.php'; // $conn is PDO
+require_once 'config.php'; // $conn (PDO)
 
-$input       = json_decode(file_get_contents("php://input"), true);
-if (!is_array($input)) {
-    $input = $_POST ?? [];
-}
-
-// Optional merchant_id (for logging / future use)
-$merchantId  = trim($input['merchant_id']   ?? '');
-$memberId    = trim($input['member_id']     ?? '');
-$memberEmail = trim($input['member_email']  ?? '');
-$password    = $input['password']           ?? '';
-
-error_log("create_member.php: Received JSON -> merchantId=$merchantId, memberId=$memberId, memberEmail=$memberEmail");
-
-if (!$memberId) {
-    http_response_code(400);
-    $msg = "Missing required field: member_id";
-    error_log("create_member.php: $msg");
-    echo json_encode(["success" => false, "error" => $msg]);
-    exit;
-}
-
-if (!$memberEmail) {
-    http_response_code(400);
-    $msg = "Missing required field: member_email";
-    error_log("create_member.php: $msg");
-    echo json_encode(["success" => false, "error" => $msg]);
-    exit;
-}
-
-if (!$password) {
-    http_response_code(400);
-    $msg = "Missing required field: password";
-    error_log("create_member.php: $msg");
-    echo json_encode(["success" => false, "error" => $msg]);
-    exit;
-}
-
-// ✅ Enforce basic password policy
-if (strlen($password) < 8) {
-    http_response_code(400);
-    $msg = "Password must be at least 8 characters long";
-    error_log("create_member.php: $msg");
-    echo json_encode(["success" => false, "error" => $msg]);
-    exit;
+function is_email(string $s): bool {
+    return filter_var($s, FILTER_VALIDATE_EMAIL) !== false;
 }
 
 try {
-    // 🔐 Hash password
-    $memberPasswordHash = password_hash($password, PASSWORD_DEFAULT);
+    $input = json_decode(file_get_contents("php://input"), true);
+    if (!is_array($input)) $input = $_POST ?? [];
+
+    $merchantId  = trim((string)($input['merchant_id'] ?? ''));
+    $memberIdRaw = trim((string)($input['member_id'] ?? ''));
+    $emailRaw    = trim((string)($input['member_email'] ?? ''));
+    $password    = (string)($input['password'] ?? '');
+
+    error_log("create_member.php: merchant_id=$merchantId member_id=$memberIdRaw member_email=$emailRaw");
+
+    if ($memberIdRaw === '') {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Missing required field: member_id"]);
+        exit;
+    }
+    if ($emailRaw === '') {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Missing required field: member_email"]);
+        exit;
+    }
+    if ($password === '') {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Missing required field: password"]);
+        exit;
+    }
+
+    // Rule: username must NOT be an email
+    if (is_email($memberIdRaw)) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Username cannot be an email address."]);
+        exit;
+    }
+
+    // email must be valid
+    if (!is_email($emailRaw)) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Please provide a valid email address."]);
+        exit;
+    }
+
+    // Basic password policy (keep yours)
+    if (strlen($password) < 8) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "error" => "Password must be at least 8 characters long"]);
+        exit;
+    }
+
+    // Canonical forms
+    $memberId = mb_strtolower($memberIdRaw);
+    $memberEmail = mb_strtolower($emailRaw);
+
+    $hash = password_hash($password, PASSWORD_DEFAULT);
 
     $conn->beginTransaction();
 
-    // ✅ Check if member_id already exists (wallet as the source of truth)
+    // Check username (case-insensitive)
     $checkIdStmt = $conn->prepare("
-        SELECT COUNT(*) 
-        FROM wallet 
-        WHERE member_id = :member_id
+        SELECT COUNT(*)
+        FROM wallet
+        WHERE LOWER(member_id) = :member_id
     ");
-    $checkIdStmt->execute([':member_id' => $memberId]);
-
-    if ($checkIdStmt->fetchColumn() > 0) {
+    $checkIdStmt->execute([":member_id" => $memberId]);
+    if ((int)$checkIdStmt->fetchColumn() > 0) {
         $conn->rollBack();
-        $msg = "Member ID already exists: $memberId";
-        error_log("create_member.php: $msg");
-        echo json_encode(["success" => false, "error" => $msg]);
+        http_response_code(409);
+        echo json_encode(["success" => false, "error" => "Username already exists: $memberId"]);
         exit;
     }
 
-    // ✅ Check if member_email already exists
+    // Check email (case-insensitive)
     $checkEmailStmt = $conn->prepare("
-        SELECT COUNT(*) 
-        FROM wallet 
-        WHERE member_email = :member_email
+        SELECT COUNT(*)
+        FROM wallet
+        WHERE LOWER(member_email) = :member_email
     ");
-    $checkEmailStmt->execute([':member_email' => $memberEmail]);
-
-    if ($checkEmailStmt->fetchColumn() > 0) {
+    $checkEmailStmt->execute([":member_email" => $memberEmail]);
+    if ((int)$checkEmailStmt->fetchColumn() > 0) {
         $conn->rollBack();
-        $msg = "Email already exists: $memberEmail";
-        error_log("create_member.php: $msg");
-        echo json_encode(["success" => false, "error" => $msg]);
+        http_response_code(409);
+        echo json_encode(["success" => false, "error" => "Email already exists: $memberEmail"]);
         exit;
     }
 
-    // ✅ Insert new "member" row in wallet
+    // Insert
     $stmt = $conn->prepare("
         INSERT INTO wallet (
-            member_id, 
-            member_email, 
-            member_password_hash, 
-            created_at, 
+            member_id,
+            member_email,
+            member_password_hash,
+            merchant_id,
+            created_at,
             updated_at
         ) VALUES (
-            :member_id, 
-            :member_email, 
-            :member_password_hash, 
-            NOW(), 
+            :member_id,
+            :member_email,
+            :member_password_hash,
+            :merchant_id,
+            NOW(),
             NOW()
         )
     ");
 
     $stmt->execute([
-        ':member_id'            => $memberId,
-        ':member_email'         => $memberEmail,
-        ':member_password_hash' => $memberPasswordHash
+        ":member_id" => $memberId,
+        ":member_email" => $memberEmail,
+        ":member_password_hash" => $hash,
+        ":merchant_id" => ($merchantId !== '' ? $merchantId : null),
     ]);
 
     $conn->commit();
 
-    error_log("create_member.php: Inserted new wallet row for member_id=$memberId");
-
     echo json_encode([
-        "success"      => true,
-        "member_id"    => $memberId,
+        "success" => true,
+        "member_id" => $memberId,
         "member_email" => $memberEmail
     ]);
-
 } catch (Exception $e) {
-    if ($conn && $conn->inTransaction()) {
+    if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {
         $conn->rollBack();
     }
-    $errMsg = "create_member.php error: " . $e->getMessage();
-    error_log($errMsg);
+    error_log("create_member.php error: " . $e->getMessage());
     http_response_code(500);
-    echo json_encode(["success" => false, "error" => $e->getMessage()]);
+    echo json_encode(["success" => false, "error" => "Server error: " . $e->getMessage()]);
 }
