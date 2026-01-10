@@ -1,7 +1,9 @@
+// src/pages/SelectBroker.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBroker } from "../context/BrokerContext";
-import { apiPost } from "../api.js"; // ✅ universal JSON API
+import { apiPost } from "../api.js";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 
 const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
 
@@ -55,9 +57,16 @@ export default function SelectBroker() {
   const [loading, setLoading] = useState(true);
   const [hasExistingPassword, setHasExistingPassword] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
+
+  // ✅ warning popup for redirect to broker site
+  const [redirectModal, setRedirectModal] = useState({
+    open: false,
+    brokerName: "",
+    url: "",
+  });
+
   const navigate = useNavigate();
   const { updateBroker } = useBroker();
-
   const memberId = localStorage.getItem("memberId");
 
   const canSubmit = useMemo(
@@ -79,7 +88,7 @@ export default function SelectBroker() {
       try {
         setLoading(true);
         const data = await apiPost("get-wallet.php", { member_id: memberId });
-        if (data.success && data.wallet) {
+        if (data?.success && data.wallet) {
           const currentBroker = data.wallet.broker || "";
           const creds = data.broker_credentials || {};
           if (currentBroker) {
@@ -88,7 +97,7 @@ export default function SelectBroker() {
             // If there's an existing password, mark it as existing but don't set the actual value
             if (creds.password) {
               setHasExistingPassword(true);
-              setPassword(""); // Keep actual password empty
+              setPassword("");
               setConfirmPassword("");
             }
           }
@@ -107,8 +116,6 @@ export default function SelectBroker() {
   };
 
   const handlePasswordFocus = () => {
-    // When user focuses on password field, if there's an existing password,
-    // clear the placeholder so they can re-enter
     if (hasExistingPassword && !passwordTouched) {
       setPasswordTouched(true);
       setPassword("");
@@ -148,12 +155,10 @@ export default function SelectBroker() {
         password,
       };
 
-      console.log("Submitting broker payload:", payload);
-
       const data = await apiPost("store-broker-credentials.php", payload);
 
-      if (!data.success) {
-        setError(data.error || "Failed to link broker");
+      if (!data?.success) {
+        setError(data?.error || "Failed to link broker");
         return;
       }
 
@@ -162,6 +167,10 @@ export default function SelectBroker() {
       }
 
       updateBroker(selected);
+      // optional: keep broker in localStorage for other pages
+      localStorage.setItem("broker", selected);
+      localStorage.setItem("broker_url", selectedBroker?.url || "");
+
       navigate("/terms");
     } catch (err) {
       console.error("SelectBroker error:", err);
@@ -174,11 +183,101 @@ export default function SelectBroker() {
   const selectedBroker = brokers.find((b) => b.id === selected);
 
   // Display placeholder asterisks if there's an existing password and user hasn't touched it
-  const passwordPlaceholder = hasExistingPassword && !passwordTouched ? "••••••••••" : "";
-  const confirmPasswordPlaceholder = hasExistingPassword && !passwordTouched ? "••••••••••" : "";
+  const passwordPlaceholder =
+    hasExistingPassword && !passwordTouched ? "••••••••••" : "";
+  const confirmPasswordPlaceholder =
+    hasExistingPassword && !passwordTouched ? "••••••••••" : "";
+
+  // ✅ Open Account behavior
+  const getDefaultBrokerForOpenAccount = () => {
+    // If none selected, default to Public.com (per requirement)
+    const fallback = brokers.find((b) => b.id === "Public.com") || brokers[0];
+    return selectedBroker || fallback;
+  };
+
+  const handleOpenBrokerAccount = () => {
+    const b = getDefaultBrokerForOpenAccount();
+    setRedirectModal({
+      open: true,
+      brokerName: b?.name || "Public.com",
+      url: b?.url || "https://public.com/",
+    });
+  };
+
+  const confirmRedirect = () => {
+    const url = redirectModal.url || "https://public.com/";
+    setRedirectModal({ open: false, brokerName: "", url: "" });
+    // redirect out of SPA
+    window.location.href = url;
+  };
 
   return (
     <div className="page-container">
+      {/* ✅ Redirect warning modal */}
+      {redirectModal.open && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 520,
+              width: "100%",
+              border: "2px solid #f59e0b",
+              background: "#fffaf0",
+            }}
+          >
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <AlertTriangle size={34} color="#f59e0b" style={{ marginTop: 2 }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>
+                  You’re being redirected
+                </div>
+                <div style={{ marginTop: 6, color: "#7c2d12", fontWeight: 600 }}>
+                  You are about to leave StockLoyal and go to{" "}
+                  <strong>{redirectModal.brokerName}</strong> to open a brokerage
+                  account.
+                </div>
+                <div className="caption" style={{ marginTop: 8 }}>
+                  Continue to proceed to the broker website.
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                marginTop: 14,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() =>
+                  setRedirectModal({ open: false, brokerName: "", url: "" })
+                }
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" type="button" onClick={confirmRedirect}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h2 className="page-title">Connect your broker</h2>
       <p className="page-deck">
         Select your broker and enter your existing login to link your investment
@@ -210,6 +309,25 @@ export default function SelectBroker() {
         })}
       </div>
 
+      {/* ✅ NEW: Open a Brokerage Account button */}
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={handleOpenBrokerAccount}
+          disabled={submitting || loading}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+          title="Open an account at your selected broker (defaults to Public.com)"
+        >
+          <ExternalLink size={18} />
+          Open a Brokerage Account
+        </button>
+      </div>
+
       {/* --- Security Notice --- */}
       <p className="form-disclosure mt-4">
         <strong>Security Notice:</strong> Your broker login credentials are used
@@ -224,9 +342,7 @@ export default function SelectBroker() {
       <form onSubmit={handleSubmit} className="form">
         <div>
           <label className="form-label">
-            {selectedBroker
-              ? `Username at ${selectedBroker.name}`
-              : "Username"}
+            {selectedBroker ? `Username at ${selectedBroker.name}` : "Username"}
           </label>
           <input
             type="text"
