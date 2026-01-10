@@ -32,6 +32,40 @@ export default function Login() {
     return v > 0 ? v : 0.01;
   }, []);
 
+  const persistSession = (payload = {}) => {
+    // Payload may come from login.php/create_member.php.
+    // We preserve existing LS values when payload doesn’t include them.
+    const existing = {
+      memberId: localStorage.getItem("memberId") || "",
+      memberEmail: localStorage.getItem("memberEmail") || "",
+      merchantId: localStorage.getItem("merchantId") || "",
+      merchantName: localStorage.getItem("merchantName") || "",
+      broker: localStorage.getItem("broker") || "",
+      memberTimezone: localStorage.getItem("memberTimezone") || "",
+    };
+
+    const next = {
+      memberId: payload.member_id ?? payload.memberId ?? existing.memberId,
+      memberEmail: payload.member_email ?? payload.memberEmail ?? existing.memberEmail,
+      merchantId: payload.merchant_id ?? payload.merchantId ?? existing.merchantId,
+      merchantName: payload.merchant_name ?? payload.merchantName ?? existing.merchantName,
+      broker: payload.broker ?? existing.broker,
+      memberTimezone: payload.member_timezone ?? payload.memberTimezone ?? existing.memberTimezone,
+    };
+
+    // Always set canonical keys (even if empty)
+    localStorage.setItem("memberId", next.memberId || "");
+    localStorage.setItem("memberEmail", next.memberEmail || "");
+    localStorage.setItem("merchantId", next.merchantId || "");
+    localStorage.setItem("merchantName", next.merchantName || "");
+    localStorage.setItem("broker", next.broker || "");
+    localStorage.setItem("memberTimezone", next.memberTimezone || "");
+    localStorage.setItem("lastLoginAt", new Date().toISOString());
+
+    // Let Header / other components refresh in same tab
+    window.dispatchEvent(new Event("member-updated"));
+  };
+
   useEffect(() => {
     const lsMerchantId = localStorage.getItem("merchantId") || "";
     const lsMemberId = localStorage.getItem("memberId") || "";
@@ -58,14 +92,13 @@ export default function Login() {
         });
 
         if (lookup?.success && lookup.exists && lookup.has_password) {
-          setMode("login"); // ✅ already a member
+          setMode("login"); // already a member
         } else {
           setMode("create");
-          // if lookup returned canonical fields, prefill them
           if (lookup?.member_id) setUsername(String(lookup.member_id));
           if (lookup?.member_email) setEmail(String(lookup.member_email));
         }
-      } catch (e) {
+      } catch {
         setMode("login");
       }
     })();
@@ -104,7 +137,6 @@ export default function Login() {
       return;
     }
 
-    // If it looks like email, normalize to lowercase email; else normalize username to lowercase
     const normalizedIdentifier = isEmail(raw) ? raw.toLowerCase() : normUsername(raw);
 
     try {
@@ -119,16 +151,15 @@ export default function Login() {
         return;
       }
 
-      // Store only identity (never store password)
-      localStorage.setItem("memberId", data.member_id);
-      localStorage.setItem("memberEmail", data.member_email || "");
-      if (merchantId) localStorage.setItem("merchantId", merchantId);
-
-      window.dispatchEvent(new Event("member-updated"));
+      // ✅ Persist full session bundle
+      persistSession({
+        ...data,
+        merchant_id: data.merchant_id ?? merchantId, // fallback to pre-known merchantId
+      });
 
       await applyPointsIfAny(data.member_id);
       navigate("/wallet");
-    } catch (err) {
+    } catch {
       setError("Network or server error. Please try again.");
     }
   };
@@ -145,7 +176,6 @@ export default function Login() {
       return;
     }
 
-    // Username must NOT be email
     if (isEmail(uRaw)) {
       setError("Username cannot be an email address. Please choose a username (e.g., robert).");
       return;
@@ -177,18 +207,18 @@ export default function Login() {
         return;
       }
 
-      localStorage.setItem("memberId", data.member_id);
-      localStorage.setItem("memberEmail", data.member_email || "");
-      if (merchantId) localStorage.setItem("merchantId", merchantId);
-
-      window.dispatchEvent(new Event("member-updated"));
+      // ✅ Persist session bundle after create as well
+      persistSession({
+        ...data,
+        merchant_id: data.merchant_id ?? merchantId,
+      });
 
       await applyPointsIfAny(data.member_id);
 
       navigate("/member-onboard", {
         state: { memberId: data.member_id, memberEmail: data.member_email },
       });
-    } catch (err) {
+    } catch {
       setError("Network or server error. Please try again.");
     }
   };
@@ -198,7 +228,11 @@ export default function Login() {
   return (
     <div className="page-container">
       <h2 className="page-title">
-        {isChecking ? "Checking your account..." : mode === "login" ? "Login to StockLoyal" : "Create StockLoyal Account"}
+        {isChecking
+          ? "Checking your account..."
+          : mode === "login"
+          ? "Login to StockLoyal"
+          : "Create StockLoyal Account"}
       </h2>
 
       {!isChecking && mode === "create" && points > 0 && (

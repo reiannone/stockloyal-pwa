@@ -31,8 +31,6 @@ try {
     $emailRaw    = trim((string)($input['member_email'] ?? ''));
     $password    = (string)($input['password'] ?? '');
 
-    error_log("create_member.php: merchant_id=$merchantId member_id=$memberIdRaw member_email=$emailRaw");
-
     if ($memberIdRaw === '') {
         http_response_code(400);
         echo json_encode(["success" => false, "error" => "Missing required field: member_id"]);
@@ -49,36 +47,29 @@ try {
         exit;
     }
 
-    // Rule: username must NOT be an email
     if (is_email($memberIdRaw)) {
         http_response_code(400);
         echo json_encode(["success" => false, "error" => "Username cannot be an email address."]);
         exit;
     }
-
-    // email must be valid
     if (!is_email($emailRaw)) {
         http_response_code(400);
         echo json_encode(["success" => false, "error" => "Please provide a valid email address."]);
         exit;
     }
-
-    // Basic password policy (keep yours)
     if (strlen($password) < 8) {
         http_response_code(400);
         echo json_encode(["success" => false, "error" => "Password must be at least 8 characters long"]);
         exit;
     }
 
-    // Canonical forms
     $memberId = mb_strtolower($memberIdRaw);
     $memberEmail = mb_strtolower($emailRaw);
-
     $hash = password_hash($password, PASSWORD_DEFAULT);
 
     $conn->beginTransaction();
 
-    // Check username (case-insensitive)
+    // Username uniqueness (case-insensitive)
     $checkIdStmt = $conn->prepare("
         SELECT COUNT(*)
         FROM wallet
@@ -92,7 +83,7 @@ try {
         exit;
     }
 
-    // Check email (case-insensitive)
+    // Email uniqueness (case-insensitive)
     $checkEmailStmt = $conn->prepare("
         SELECT COUNT(*)
         FROM wallet
@@ -106,7 +97,6 @@ try {
         exit;
     }
 
-    // Insert
     $stmt = $conn->prepare("
         INSERT INTO wallet (
             member_id,
@@ -124,7 +114,6 @@ try {
             NOW()
         )
     ");
-
     $stmt->execute([
         ":member_id" => $memberId,
         ":member_email" => $memberEmail,
@@ -134,10 +123,22 @@ try {
 
     $conn->commit();
 
+    // Optionally return merchant_name (if merchant_id exists)
+    $merchantName = null;
+    if ($merchantId !== '') {
+        $m = $conn->prepare("SELECT merchant_name FROM merchant WHERE merchant_id = :merchant_id LIMIT 1");
+        $m->execute([":merchant_id" => $merchantId]);
+        $merchantName = $m->fetchColumn() ?: null;
+    }
+
     echo json_encode([
         "success" => true,
         "member_id" => $memberId,
-        "member_email" => $memberEmail
+        "member_email" => $memberEmail,
+        "merchant_id" => ($merchantId !== '' ? $merchantId : null),
+        "merchant_name" => $merchantName,
+        "broker" => null,
+        "member_timezone" => null
     ]);
 } catch (Exception $e) {
     if (isset($conn) && $conn instanceof PDO && $conn->inTransaction()) {

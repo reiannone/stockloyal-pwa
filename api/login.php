@@ -26,12 +26,10 @@ try {
     $input = json_decode(file_get_contents("php://input"), true);
     if (!is_array($input)) $input = $_POST ?? [];
 
-    $merchantId  = trim((string)($input['merchant_id'] ?? ''));
+    $merchantId = trim((string)($input['merchant_id'] ?? ''));
     // Back-compat: accept member_id but prefer identifier
-    $identifier  = trim((string)($input['identifier'] ?? ($input['member_id'] ?? '')));
-    $password    = (string)($input['password'] ?? '');
-
-    error_log("login.php: method=" . $_SERVER['REQUEST_METHOD'] . " merchant_id=" . $merchantId . " identifier=" . $identifier);
+    $identifier = trim((string)($input['identifier'] ?? ($input['member_id'] ?? '')));
+    $password   = (string)($input['password'] ?? '');
 
     if ($identifier === '') {
         http_response_code(400);
@@ -47,12 +45,22 @@ try {
     $identifierLower = mb_strtolower($identifier);
     $isEmail = is_email($identifier);
 
+    // ✅ Pull merchant_name from merchant table (like get-wallet.php) and return broker + timezone
     if ($isEmail) {
         $stmt = $conn->prepare("
-            SELECT member_id, member_email, member_password_hash
-            FROM wallet
-            WHERE LOWER(member_email) = :identifier
-              AND (:merchant_id = '' OR merchant_id = :merchant_id OR merchant_id IS NULL)
+            SELECT
+                w.member_id,
+                w.member_email,
+                w.member_password_hash,
+                w.merchant_id,
+                m.merchant_name,
+                w.broker,
+                w.member_timezone
+            FROM wallet w
+            LEFT JOIN merchant m
+              ON w.merchant_id = m.merchant_id
+            WHERE LOWER(w.member_email) = :identifier
+              AND (:merchant_id = '' OR w.merchant_id = :merchant_id OR w.merchant_id IS NULL)
             LIMIT 1
         ");
         $stmt->execute([
@@ -61,10 +69,19 @@ try {
         ]);
     } else {
         $stmt = $conn->prepare("
-            SELECT member_id, member_email, member_password_hash
-            FROM wallet
-            WHERE LOWER(member_id) = :identifier
-              AND (:merchant_id = '' OR merchant_id = :merchant_id OR merchant_id IS NULL)
+            SELECT
+                w.member_id,
+                w.member_email,
+                w.member_password_hash,
+                w.merchant_id,
+                m.merchant_name,
+                w.broker,
+                w.member_timezone
+            FROM wallet w
+            LEFT JOIN merchant m
+              ON w.merchant_id = m.merchant_id
+            WHERE LOWER(w.member_id) = :identifier
+              AND (:merchant_id = '' OR w.merchant_id = :merchant_id OR w.merchant_id IS NULL)
             LIMIT 1
         ");
         $stmt->execute([
@@ -96,7 +113,11 @@ try {
     echo json_encode([
         "success" => true,
         "member_id" => $user['member_id'],
-        "member_email" => $user['member_email'] ?? null
+        "member_email" => $user['member_email'] ?? null,
+        "merchant_id" => $user['merchant_id'] ?? null,
+        "merchant_name" => $user['merchant_name'] ?? null,
+        "broker" => $user['broker'] ?? null,
+        "member_timezone" => $user['member_timezone'] ?? null
     ]);
 } catch (Exception $e) {
     error_log("login.php error: " . $e->getMessage());
