@@ -38,6 +38,11 @@ $scrId = isset($_GET['scrId'])
 
 $symbol = is_array($post) && !empty($post['symbol']) ? trim($post['symbol']) : null;
 
+// ✅ Add offset parameter for pagination (default 0)
+$offset = isset($_GET['offset'])
+    ? (int)$_GET['offset']
+    : (is_array($post) && isset($post['offset']) ? (int)$post['offset'] : 0);
+
 $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 $curlTimeout = 20;
 $cacheDir = __DIR__ . "/cache";
@@ -189,7 +194,9 @@ try {
     // 🔹 SCREENER FETCH
     // -----------------------------------------------------------
     $scr = $scrId ?: 'most_actives';
-    $cacheFile = $cacheDir . "/cache_" . preg_replace('/[^a-z0-9_-]/i', '_', $scr) . ".json";
+    
+    // ✅ Include offset in cache key
+    $cacheFile = $cacheDir . "/cache_" . preg_replace('/[^a-z0-9_-]/i', '_', $scr) . "_offset{$offset}.json";
     $cacheTime = 300;
 
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $cacheTime) {
@@ -198,8 +205,9 @@ try {
         exit;
     }
 
-    $url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=" . urlencode($scr) . "&count=50&lang=en&region=US";
-    L("screener fetch: $url");
+    // ✅ Yahoo Finance uses 'start' parameter for pagination, not 'offset'
+    $url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=" . urlencode($scr) . "&count=25&start={$offset}&lang=en&region=US";
+    L("screener fetch: $url (start={$offset}, count=25)");
 
     curl_setopt_array($curl, [
         CURLOPT_URL => $url,

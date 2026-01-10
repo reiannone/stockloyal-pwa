@@ -42,6 +42,12 @@ export default function StockPicker() {
   const { amount: initialAmount = 0, pointsUsed: initialPoints = 0 } =
     location.state || {};
 
+  // ✅ Get broker name from localStorage
+  const brokerName = localStorage.getItem("broker") || 
+                     localStorage.getItem("selectedBroker") || 
+                     localStorage.getItem("brokerName") || 
+                     "Broker";
+
   // --- Wallet / points state ---
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
@@ -61,6 +67,13 @@ export default function StockPicker() {
   const [stockError, setStockError] = useState("");
   const [selectedStocks, setSelectedStocks] = useState([]);
   const [loadingCategory, setLoadingCategory] = useState(false);
+  
+  // ✅ Pagination for infinite scroll
+  const [currentOffset, setCurrentOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentScrId, setCurrentScrId] = useState("");
+  const stockListContentRef = useRef(null);
 
   // --- Symbol search state ---
   const [symbolInput, setSymbolInput] = useState("");
@@ -286,8 +299,13 @@ export default function StockPicker() {
       setSelectedStocks([]);
       setIsStockListOpen(true); // 🔥 open the bottom sheet
       setLoadingCategory(true);
+      
+      // ✅ Reset pagination
+      setCurrentOffset(0);
+      setHasMore(true);
+      setCurrentScrId(scrId);
 
-      const data = await apiPost("proxy.php", { scrId });
+      const data = await apiPost("proxy.php", { scrId, offset: 0 });
       if (!data || data.error) throw new Error(data.error || "Failed to load");
 
       const quotes =
@@ -312,11 +330,112 @@ export default function StockPicker() {
       }));
 
       setResults(fetched);
+      
+      // ✅ Check if there might be more results
+      // Yahoo typically returns 25 results per page
+      setHasMore(fetched.length >= 25);
+      setCurrentOffset(25);
+      
     } catch (err) {
       console.error("[StockPicker] proxy error:", err);
       setStockError("Failed to fetch stocks.");
     } finally {
       setLoadingCategory(false);
+    }
+  };
+
+  // ✅ Load more stocks when scrolling (infinite scroll)
+  const loadMoreStocks = async () => {
+    if (loadingMore || !hasMore || !currentScrId) {
+      console.log("🚫 Skipping load more:", { loadingMore, hasMore, currentScrId });
+      return;
+    }
+
+    try {
+      console.log("📥 Loading more stocks - offset:", currentOffset);
+      setLoadingMore(true);
+      
+      const data = await apiPost("proxy.php", { 
+        scrId: currentScrId, 
+        offset: currentOffset 
+      });
+      
+      console.log("📦 Received data:", data);
+      
+      if (!data || data.error) {
+        console.error("Failed to load more stocks:", data?.error);
+        setHasMore(false);
+        return;
+      }
+
+      const quotes =
+        data.finance?.result?.[0]?.quotes ??
+        data.data ??
+        data.results ??
+        [];
+
+      console.log("📊 Quotes received:", quotes.length);
+
+      if (quotes.length === 0) {
+        console.log("✋ No more results - stopping pagination");
+        setHasMore(false);
+        return;
+      }
+
+      const fetched = quotes.map((q) => ({
+        symbol: q.symbol,
+        name: q.shortName || q.longName || q.symbol,
+        price:
+          q.regularMarketPrice ??
+          q.postMarketPrice ??
+          q.preMarketPrice ??
+          null,
+        change:
+          q.regularMarketChangePercent ??
+          q.postMarketChangePercent ??
+          q.preMarketChangePercent ??
+          0,
+      }));
+
+      console.log("✅ Fetched symbols:", fetched.map(f => f.symbol).join(", "));
+
+      // ✅ Check for duplicates before appending
+      setResults(prev => {
+        const existingSymbols = new Set(prev.map(s => s.symbol));
+        const newStocks = fetched.filter(s => !existingSymbols.has(s.symbol));
+        
+        console.log(`Adding ${newStocks.length} new stocks (filtered ${fetched.length - newStocks.length} duplicates)`);
+        
+        if (newStocks.length === 0) {
+          console.log("⚠️ All stocks were duplicates - stopping pagination");
+          setHasMore(false);
+          return prev;
+        }
+        
+        return [...prev, ...newStocks];
+      });
+      
+      // ✅ Update pagination state
+      const newOffset = currentOffset + 25;
+      console.log("➡️ Next offset will be:", newOffset);
+      setCurrentOffset(newOffset);
+      setHasMore(fetched.length >= 25);
+      
+    } catch (err) {
+      console.error("[StockPicker] load more error:", err);
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // ✅ Handle scroll event for infinite scroll
+  const handleStockListScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    
+    // Load more when user scrolls to bottom (with 100px threshold)
+    if (scrollHeight - scrollTop <= clientHeight + 100) {
+      loadMoreStocks();
     }
   };
 
@@ -620,7 +739,7 @@ export default function StockPicker() {
             color: isCashOutsideLimits ? "#b91c1c" : "#6b7280",
           }}
         >
-          Broker order range: ${minOrderAmount?.toFixed(2)} – $
+          {brokerName} order range: ${minOrderAmount?.toFixed(2)} – $
           {maxOrderAmount?.toFixed(2)}
         </p>
       )}
@@ -744,7 +863,11 @@ export default function StockPicker() {
                 )}
               </div>
 
-              <div className="stocklist-sheet-content">
+              <div 
+                className="stocklist-sheet-content"
+                ref={stockListContentRef}
+                onScroll={handleStockListScroll}
+              >
                 {!loadingCategory && !stockError && results.length === 0 && (
                   <p className="stocklist-empty">No stocks found.</p>
                 )}
@@ -818,6 +941,31 @@ export default function StockPicker() {
                         ))}
                       </tbody>
                     </table>
+                    
+                    {/* ✅ Loading indicator for infinite scroll */}
+                    {loadingMore && (
+                      <div style={{ 
+                        textAlign: "center", 
+                        padding: "20px",
+                        color: "#6b7280",
+                        fontSize: "0.9rem"
+                      }}>
+                        Loading more stocks...
+                      </div>
+                    )}
+                    
+                    {/* ✅ End of results indicator */}
+                    {!hasMore && results.length > 0 && !loadingMore && (
+                      <div style={{ 
+                        textAlign: "center", 
+                        padding: "20px",
+                        color: "#9ca3af",
+                        fontSize: "0.85rem",
+                        fontStyle: "italic"
+                      }}>
+                        No more stocks to load
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
