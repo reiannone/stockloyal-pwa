@@ -76,33 +76,26 @@ export default function Login() {
     setPoints(Number.isFinite(lsPoints) ? lsPoints : 0);
     setConversionRate(detectedConv);
 
-    const initial = lsMemberId || lsEmail || "";
-    setIdentifier(initial);
-
+    // ✅ Don't pre-populate identifier from URL params
+    // Let user enter their actual login username/email
+    // Only check if they're already logged in
+    
     (async () => {
       try {
-        if (!initial) {
-          setMode("login");
+        // If user is already logged in (has both memberId and email), go to wallet
+        if (lsMemberId && lsEmail) {
+          console.log("[Login] User already logged in, redirecting to wallet");
+          navigate("/wallet");
           return;
         }
 
-        const lookup = await apiPost("member_lookup.php", {
-          merchant_id: lsMerchantId || "",
-          identifier: initial,
-        });
-
-        if (lookup?.success && lookup.exists && lookup.has_password) {
-          setMode("login"); // already a member
-        } else {
-          setMode("create");
-          if (lookup?.member_id) setUsername(String(lookup.member_id));
-          if (lookup?.member_email) setEmail(String(lookup.member_email));
-        }
+        // Otherwise, show login form with empty identifier
+        setMode("login");
       } catch {
         setMode("login");
       }
     })();
-  }, [detectedConv]);
+  }, [detectedConv, navigate]);
 
   const applyPointsIfAny = async (memberIdToUse) => {
     if (!points || points <= 0) return;

@@ -1,5 +1,5 @@
 // src/pages/OrderConfirmation.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { CheckCircle } from "lucide-react";
@@ -22,9 +22,8 @@ export default function OrderConfirmation() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // ✅ success banner + sound
+  // ✅ success banner (sound removed - plays elsewhere)
   const [showSuccess, setShowSuccess] = useState(false);
-  const playedSuccessSoundRef = useRef(false);
 
   // ✅ passed from Order.jsx
   const totalAmount = Number(location.state?.amount || 0); // keep if referenced elsewhere
@@ -79,16 +78,6 @@ export default function OrderConfirmation() {
           if (hasSuccess) {
             console.log("🎉 Setting showSuccess to TRUE");
             setShowSuccess(true);
-
-            // Play success sound ONCE per page load
-            if (!playedSuccessSoundRef.current) {
-              playedSuccessSoundRef.current = true;
-              const audio = new Audio("/sounds/success.mp3");
-              audio.volume = 0.55;
-              audio.play().catch((err) => {
-                console.log("Audio play blocked:", err);
-              });
-            }
 
             // Update portfolio value from all orders in this basket
             const portfolioValue = fetchedOrders.reduce(

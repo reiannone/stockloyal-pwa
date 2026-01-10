@@ -69,10 +69,21 @@ function Promotions() {
   }, []);
 
   // ------------------------------------
-  // Routes to Login (memberEmail preserved)
+  // Routes to Wallet if logged in, otherwise Login
   // ------------------------------------
   const handleGetStarted = () => {
-    navigate("/login");
+    const memberId = localStorage.getItem("memberId");
+    const memberEmail = localStorage.getItem("memberEmail");
+    
+    // ✅ If user is already logged in (has memberId), go to wallet
+    if (memberId) {
+      console.log("[Promotions] User already logged in, navigating to wallet");
+      navigate("/wallet");
+    } else {
+      // Otherwise, go to login
+      console.log("[Promotions] User not logged in, navigating to login");
+      navigate("/login");
+    }
   };
 
   const handleNoThanks = () => navigate("/goodbye");

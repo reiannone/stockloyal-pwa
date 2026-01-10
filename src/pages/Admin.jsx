@@ -4,6 +4,46 @@ import { apiGet, apiPost } from "../api.js";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
 
+// ✅ Custom upload adapter for CKEditor images
+class MyUploadAdapter {
+  constructor(loader) {
+    this.loader = loader;
+  }
+
+  upload() {
+    return this.loader.file.then(
+      (file) =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.onload = () => {
+            // Convert image to base64 data URI
+            resolve({
+              default: reader.result,
+            });
+          };
+
+          reader.onerror = (error) => {
+            reject(error);
+          };
+
+          reader.readAsDataURL(file);
+        })
+    );
+  }
+
+  abort() {
+    // Reject promise on abort
+  }
+}
+
+// Plugin to use the custom adapter
+function MyCustomUploadAdapterPlugin(editor) {
+  editor.plugins.get("FileRepository").createUploadAdapter = (loader) => {
+    return new MyUploadAdapter(loader);
+  };
+}
+
 export default function Admin() {
   const [merchants, setMerchants] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -244,7 +284,43 @@ export default function Admin() {
                   const data = editor.getData();
                   setSelected((prev) => ({ ...prev, promotion_text: data }));
                 }}
-                config={{ placeholder: "Enter promotion text here..." }}
+                config={{
+                  placeholder: "Enter promotion text here...",
+                  // ✅ Enable image upload plugin
+                  extraPlugins: [MyCustomUploadAdapterPlugin],
+                  // ✅ Add image toolbar options
+                  toolbar: {
+                    items: [
+                      'heading',
+                      '|',
+                      'bold',
+                      'italic',
+                      'link',
+                      'bulletedList',
+                      'numberedList',
+                      '|',
+                      'imageUpload',
+                      'blockQuote',
+                      'insertTable',
+                      'mediaEmbed',
+                      '|',
+                      'undo',
+                      'redo'
+                    ]
+                  },
+                  // ✅ Image configuration
+                  image: {
+                    toolbar: [
+                      'imageTextAlternative',
+                      'imageStyle:inline',
+                      'imageStyle:block',
+                      'imageStyle:side',
+                      '|',
+                      'toggleImageCaption',
+                      'linkImage'
+                    ]
+                  }
+                }}
               />
             </div>
 
