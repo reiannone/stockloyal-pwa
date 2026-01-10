@@ -111,7 +111,7 @@ export default function Transactions() {
   return (
     <div className="transactions-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        Order Transaction History
+        Buy Order Transaction History
       </h2>
 
       <p className="subtext" style={{ textAlign: "center", marginTop: -6, marginBottom: 12 }}>
@@ -141,41 +141,52 @@ export default function Transactions() {
                 <th>Symbol</th>
                 <th>Shares</th>
                 <th style={{ textAlign: "right" }}>Amount</th>
+                <th style={{ textAlign: "right" }}>Price/Share</th>
                 <th style={{ width: "140px" }}>Order / Status</th>
                 <th>Placed (Local)</th>
               </tr>
             </thead>
 
             <tbody>
-              {orders.map((order, idx) => (
-                <tr
-                  key={idx}
-                  onClick={() => openTx(order)}
-                  style={{ cursor: "pointer" }}
-                  title="Click to view details"
-                >
-                  <td>{order.symbol}</td>
-                  <td>{order.shares}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {order.amount ? formatDollars(order.amount) : "-"}
-                  </td>
+              {orders.map((order, idx) => {
+                // Calculate price per share
+                const shares = parseFloat(order.shares) || 0;
+                const amount = parseFloat(order.amount) || 0;
+                const pricePerShare = shares > 0 ? amount / shares : 0;
 
-                  <td style={{ textAlign: "center", lineHeight: "1.3" }}>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                      <span style={{ fontWeight: "600", color: "#1e3a8a", fontSize: "0.9rem" }}>
-                        {order.order_type || "-"}
-                      </span>
-                      <span style={getStatusPillStyle(order.status)}>
-                        {order.status || "-"}
-                      </span>
-                    </div>
-                  </td>
+                return (
+                  <tr
+                    key={idx}
+                    onClick={() => openTx(order)}
+                    style={{ cursor: "pointer" }}
+                    title="Click to view details"
+                  >
+                    <td>{order.symbol}</td>
+                    <td>{order.shares}</td>
+                    <td style={{ textAlign: "right" }}>
+                      {order.amount ? formatDollars(order.amount) : "-"}
+                    </td>
+                    <td style={{ textAlign: "right", fontSize: "0.9rem", color: "#6b7280" }}>
+                      {pricePerShare > 0 ? formatDollars(pricePerShare) : "-"}
+                    </td>
 
-                  <td style={{ fontSize: "0.9rem" }}>
-                    {order.placed_at ? toLocalZonedString(order.placed_at) : "-"}
-                  </td>
-                </tr>
-              ))}
+                    <td style={{ textAlign: "center", lineHeight: "1.3" }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                        <span style={{ fontWeight: "600", color: "#1e3a8a", fontSize: "0.9rem" }}>
+                          {order.order_type ? `bought ${order.order_type}` : "bought"}
+                        </span>
+                        <span style={getStatusPillStyle(order.status)}>
+                          {order.status || "-"}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td style={{ fontSize: "0.9rem" }}>
+                      {order.placed_at ? toLocalZonedString(order.placed_at) : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

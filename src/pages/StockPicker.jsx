@@ -509,7 +509,7 @@ export default function StockPicker() {
           className="wallet-intro"
           style={{ marginBottom: "0.25rem", fontWeight: "600" }}
         >
-          Cash-Value used for this Order
+          Cash-Value used for this Buy Order
         </p>
 
         {/* 💰 Editable Cash Input */}

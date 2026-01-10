@@ -171,7 +171,7 @@ export default function Order() {
 
   return (
     <div className="order-container">
-      <h2 className="page-title">Place Market Order with {broker || "Broker"}</h2>
+      <h2 className="page-title">Place Buy Order with {broker || "Broker"}</h2>
       <p className="order-subtext">
         These orders will be executed as <span className="highlight">Market Orders</span>.
       </p>
@@ -215,7 +215,7 @@ export default function Order() {
           className="btn-primary"
           disabled={placing}
         >
-          {placing ? "Placing orders…" : `Place Market Order with ${broker || "Broker"}`}
+          {placing ? "Placing orders…" : `Place Buy Order with ${broker || "Broker"}`}
         </button>
 
         <button

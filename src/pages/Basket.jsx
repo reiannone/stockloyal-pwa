@@ -13,6 +13,12 @@ export default function Basket() {
   const pointsUsed = location.state?.pointsUsed || 0;
   const memberId = location.state?.memberId || localStorage.getItem("memberId");
 
+  // ✅ Get broker name from localStorage
+  const brokerName = localStorage.getItem("broker") || 
+                     localStorage.getItem("selectedBroker") || 
+                     localStorage.getItem("brokerName") || 
+                     "your broker";
+
   // ✅ Prevent divide-by-zero
   const enrichedBasket =
     basket.length > 0
@@ -47,7 +53,7 @@ export default function Basket() {
   if (basket.length === 0) {
     return (
       <div className="basket-container">
-        <h2 className="page-title">Your Basket</h2>
+        <h2 className="page-title">Your Basket for Buy Order</h2>
         <p className="basket-empty">Your basket is empty.</p>
         <button
           type="button"
@@ -62,7 +68,7 @@ export default function Basket() {
 
   return (
     <div className="basket-container">
-      <h2 className="page-title">Your Basket</h2>
+      <h2 className="page-title">Your Basket for Buy Order</h2>
       <p className="page-deck">
         You're investing <strong>${investedAmount.toFixed(2)}</strong> across{" "}
         {basket.length} stocks, using <strong>{pointsUsed}</strong> points.
@@ -107,7 +113,7 @@ export default function Basket() {
 
       <div className="basket-actions">
         <button type="button" onClick={handleProceed} className="btn-primary">
-          Proceed to Order
+          Proceed to Buy Order with {brokerName}
         </button>
 
         <button
