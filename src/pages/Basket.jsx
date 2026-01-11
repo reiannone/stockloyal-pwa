@@ -1,5 +1,5 @@
 // src/pages/Basket.jsx
-import React from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useBasket } from "../context/BasketContext";
 
@@ -8,38 +8,81 @@ export default function Basket() {
   const location = useLocation();
   const { basket, removeFromBasket } = useBasket();
 
-  // ✅ Values passed from earlier steps
-  const investedAmount = location.state?.amount || 0;
-  const pointsUsed = location.state?.pointsUsed || 0;
-  const memberId = location.state?.memberId || localStorage.getItem("memberId");
+  // ✅ Prefer route state (when coming from StockPicker),
+  // otherwise fall back to persisted values (when coming from Footer/Menu)
+  const investedAmount = useMemo(() => {
+    const fromState = location.state?.amount;
+    if (fromState != null && fromState !== "") return Number(fromState) || 0;
+
+    const fromStorage =
+      localStorage.getItem("basket_amount") ??
+      localStorage.getItem("lastInvestedAmount");
+
+    return Number(fromStorage) || 0;
+  }, [location.state]);
+
+  const pointsUsed = useMemo(() => {
+    const fromState = location.state?.pointsUsed;
+    if (fromState != null && fromState !== "") return parseInt(fromState, 10) || 0;
+
+    const fromStorage =
+      localStorage.getItem("basket_pointsUsed") ??
+      localStorage.getItem("lastPointsUsed");
+
+    return parseInt(fromStorage || "0", 10) || 0;
+  }, [location.state]);
+
+  const memberId =
+    location.state?.memberId || localStorage.getItem("memberId");
+
+  // ✅ Persist the values whenever Basket is opened with valid state
+  useEffect(() => {
+    if (location.state?.amount != null) {
+      localStorage.setItem("basket_amount", String(location.state.amount));
+      localStorage.setItem("lastInvestedAmount", String(location.state.amount));
+    }
+    if (location.state?.pointsUsed != null) {
+      localStorage.setItem("basket_pointsUsed", String(location.state.pointsUsed));
+      localStorage.setItem("lastPointsUsed", String(location.state.pointsUsed));
+    }
+  }, [location.state]);
 
   // ✅ Get broker name from localStorage
-  const brokerName = localStorage.getItem("broker") || 
-                     localStorage.getItem("selectedBroker") || 
-                     localStorage.getItem("brokerName") || 
-                     "your broker";
+  const brokerName =
+    localStorage.getItem("broker") ||
+    localStorage.getItem("selectedBroker") ||
+    localStorage.getItem("brokerName") ||
+    "your broker";
+
+  // ✅ Safety: basket is expected to be an array here
+  const basketArray = Array.isArray(basket) ? basket : [];
+  const basketCount = basketArray.length;
 
   // ✅ Prevent divide-by-zero
   const enrichedBasket =
-    basket.length > 0
-      ? basket.map((stock) => {
-          const allocation = investedAmount / basket.length;
-          const shares =
-            stock.price && stock.price > 0 ? allocation / stock.price : 0;
+    basketCount > 0
+      ? basketArray.map((stock) => {
+          const allocation = investedAmount / basketCount;
+          const price = Number(stock.price || 0);
+          const shares = price > 0 ? allocation / price : 0;
 
           return {
             ...stock,
             allocatedAmount: allocation,
-            shares: parseFloat(shares.toFixed(4)), // fractional shares
+            shares: parseFloat(shares.toFixed(4)),
           };
         })
       : [];
 
   const handleProceed = () => {
-    // 🔥 Save to localStorage so SharePointsSheet can access them
-    localStorage.setItem("lastPointsUsed", pointsUsed.toString());
-    localStorage.setItem("lastInvestedAmount", investedAmount.toString());
-    
+    // 🔥 Ensure persisted values are always available for other pages
+    localStorage.setItem("lastPointsUsed", String(pointsUsed));
+    localStorage.setItem("lastInvestedAmount", String(investedAmount));
+
+    // also keep the basket_* keys current
+    localStorage.setItem("basket_pointsUsed", String(pointsUsed));
+    localStorage.setItem("basket_amount", String(investedAmount));
+
     navigate("/order", {
       state: {
         basket: enrichedBasket,
@@ -50,7 +93,7 @@ export default function Basket() {
     });
   };
 
-  if (basket.length === 0) {
+  if (basketCount === 0) {
     return (
       <div className="basket-container">
         <h2 className="page-title">Your Basket for Buy Order</h2>
@@ -69,9 +112,11 @@ export default function Basket() {
   return (
     <div className="basket-container">
       <h2 className="page-title">Your Basket for Buy Order</h2>
+
       <p className="page-deck">
-        You're investing <strong>${investedAmount.toFixed(2)}</strong> across{" "}
-        {basket.length} stocks, using <strong>{pointsUsed}</strong> points.
+        You're investing <strong>${Number(investedAmount).toFixed(2)}</strong> across{" "}
+        {basketCount} stock{basketCount !== 1 ? "s" : ""}, using{" "}
+        <strong>{Number(pointsUsed).toLocaleString()}</strong> points.
       </p>
 
       <div className="basket-table-wrapper">
@@ -89,6 +134,7 @@ export default function Basket() {
               <th></th>
             </tr>
           </thead>
+
           <tbody>
             {enrichedBasket.map((stock) => (
               <tr key={stock.symbol} className="stock-row">

@@ -75,8 +75,7 @@ export default function About() {
       <section className="about-section">
         <p className="body-text">
           Learn more about how StockLoyal works and find answers to common
-          questions. These FAQs are maintained by the admin team and are
-          read-only here.
+          questions.
         </p>
       </section>
 

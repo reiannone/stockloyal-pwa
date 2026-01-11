@@ -139,8 +139,11 @@ export default function Login() {
         password,
       });
 
+      console.log("[Login] API response:", data);
+
       if (!data?.success) {
-        setError(data?.error || "Login failed. Please check your credentials.");
+        // ✅ Show specific error from server
+        setError(data?.error || "Invalid username or password. Please try again.");
         return;
       }
 
@@ -152,8 +155,18 @@ export default function Login() {
 
       await applyPointsIfAny(data.member_id);
       navigate("/wallet");
-    } catch {
-      setError("Network or server error. Please try again.");
+    } catch (err) {
+      console.error("[Login] Error caught:", err);
+      
+      // ✅ Check if error has a message from the API
+      if (err?.error) {
+        setError(err.error);
+      } else if (err?.message) {
+        setError(err.message);
+      } else {
+        // Only show network error if there's an actual network/server failure
+        setError("Unable to connect to server. Please check your internet connection and try again.");
+      }
     }
   };
 
@@ -195,8 +208,11 @@ export default function Login() {
         password,
       });
 
+      console.log("[Login] Create account response:", data);
+
       if (!data?.success) {
-        setError(data?.error || "Account creation failed.");
+        // ✅ Show specific error from server (e.g., "Username already exists")
+        setError(data?.error || "Account creation failed. Please try again.");
         return;
       }
 
@@ -211,8 +227,18 @@ export default function Login() {
       navigate("/member-onboard", {
         state: { memberId: data.member_id, memberEmail: data.member_email },
       });
-    } catch {
-      setError("Network or server error. Please try again.");
+    } catch (err) {
+      console.error("[Login] Error caught:", err);
+      
+      // ✅ Check if error has a message from the API
+      if (err?.error) {
+        setError(err.error);
+      } else if (err?.message) {
+        setError(err.message);
+      } else {
+        // Only show network error if there's an actual network/server failure
+        setError("Unable to connect to server. Please check your internet connection and try again.");
+      }
     }
   };
 

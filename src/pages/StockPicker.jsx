@@ -495,6 +495,8 @@ export default function StockPicker() {
     results
       .filter((stock) => selectedStocks.includes(stock.symbol))
       .forEach((stock) => addToBasket(stock));
+    localStorage.setItem("basket_amount", String(cashValue));
+    localStorage.setItem("basket_pointsUsed", String(selectedPoints));
     navigate("/basket", {
       state: { category, amount: cashValue, pointsUsed: selectedPoints, memberId },
     });

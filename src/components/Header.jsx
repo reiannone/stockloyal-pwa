@@ -2,8 +2,8 @@
 // Based on your uploaded Header.jsx :contentReference[oaicite:0]{index=0}
 
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Menu } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Menu, LogOut } from "lucide-react";
 import logo from "/logos/stockloyal.png";
 import SlideOutPanel from "./SlideOutPanel";
 import { useBasket } from "../context/BasketContext";
@@ -13,11 +13,49 @@ import { apiPost } from "../api.js";
 
 export default function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { basket } = useBasket();
   const [showMenu, setShowMenu] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [userAvatar, setUserAvatar] = useState(null);
   const [memberId, setMemberId] = useState(null);
+
+  // ✅ Logout function with confirmation
+  const handleLogout = () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to log out?\n\nThis will clear your session and return you to the login page."
+    );
+    
+    if (!confirmed) return;
+
+    // Clear all user session data
+    localStorage.removeItem("memberId");
+    localStorage.removeItem("memberEmail");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userAvatar");
+    localStorage.removeItem("merchantId");
+    localStorage.removeItem("merchantName");
+    localStorage.removeItem("broker");
+    localStorage.removeItem("brokerName");
+    localStorage.removeItem("selectedBroker");
+    localStorage.removeItem("points");
+    localStorage.removeItem("cashBalance");
+    localStorage.removeItem("portfolio_value");
+    localStorage.removeItem("basketId");
+    localStorage.removeItem("memberTimezone");
+    localStorage.removeItem("lastLoginAt");
+    
+    // Clear state
+    setMemberId(null);
+    setUserAvatar(null);
+    setShowMenu(false);
+    
+    // Notify other components
+    window.dispatchEvent(new Event("member-updated"));
+    
+    // Navigate to login
+    navigate("/login");
+  };
 
   // Load user avatar + memberId from database and localStorage, and wire update listeners
   useEffect(() => {
@@ -334,9 +372,25 @@ export default function Header() {
               background: "#f3f4f6",
               border: "1px solid #d1d5db",
               color: "#000",
+              marginBottom: "8px",
             }}
           >
             Install App Bookmark
+          </button>
+          
+          {/* ✅ Logout Button */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-colors font-medium text-sm shadow-sm"
+            style={{
+              background: "#fee2e2",
+              border: "1px solid #dc2626",
+              color: "#991b1b",
+            }}
+          >
+            <LogOut size={16} />
+            Log Out
           </button>
         </div>
       </SlideOutPanel>
