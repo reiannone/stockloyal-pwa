@@ -88,19 +88,18 @@ function Promotions() {
           navigate("/wallet");
           return;
         } else {
-          // Wallet not found - clear invalid memberId
-          console.log("[Promotions] No wallet found, clearing memberId");
-          localStorage.removeItem("memberId");
+          // Wallet not found - user needs to complete registration
+          // ✅ DON'T clear memberId - Login needs it to pre-fill the username field!
+          console.log("[Promotions] No wallet found - user needs to register");
         }
       } catch (err) {
         console.log("[Promotions] Wallet check failed:", err);
-        // Clear invalid memberId on error
-        localStorage.removeItem("memberId");
+        // ✅ DON'T clear memberId on error - Login needs it!
       }
     }
     
-    // Otherwise, go to login to complete registration
-    console.log("[Promotions] No valid wallet, navigating to login");
+    // Go to login to complete registration (with memberId preserved for pre-fill)
+    console.log("[Promotions] Navigating to login");
     navigate("/login");
   };
 

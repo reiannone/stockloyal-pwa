@@ -12,19 +12,28 @@ function SplashScreen() {
     console.log("[Splash] location.search:", window.location.search);
     console.log("[Splash] location.hash:", window.location.hash);
 
-    const params = new URLSearchParams(window.location.search);
+    // ✅ Parse from search params first
+    let params = new URLSearchParams(window.location.search);
+    
+    // ✅ If no search params, parse from hash (for hash routing)
+    if (!params.toString() && window.location.hash) {
+      const hashQuery = window.location.hash.replace(/^#\/?/, "");
+      params = new URLSearchParams(hashQuery);
+      console.log("[Splash] Using hash params:", hashQuery);
+    }
 
-    // Prefer member_email if present, fall back to member_id
+    // Extract all parameters
     let memberEmail = params.get("member_email");
     let memberId = params.get("member_id");
+    let merchantId = params.get("merchant_id");
+    let merchantName = params.get("merchant_name"); // ✅ Optional
+    let points = parseInt(params.get("points") || "0", 10);
+    let action = params.get("action");
 
+    // Prefer member_email if present, fall back to member_id
     if (memberEmail && !memberId) {
       memberId = memberEmail;
     }
-
-    let merchantId = params.get("merchant_id");
-    let points = parseInt(params.get("points") || "0", 10);
-    let action = params.get("action");
 
     // Load conversion rate from localStorage, fallback to 0.01
     let conversionRate = parseFloat(localStorage.getItem("conversion_rate") || "0");
@@ -36,49 +45,49 @@ function SplashScreen() {
       memberId,
       memberEmail,
       merchantId,
+      merchantName,
       points,
       action,
       conversionRate,
     });
 
-    // Try to recover from hash if missing
-    if ((!memberId || !merchantId) && window.location.hash) {
-      const hashQuery = new URLSearchParams(
-        window.location.hash.replace(/^#\/?/, "")
-      );
-
-      const hashMerchantId = hashQuery.get("merchant_id");
-      const hashMemberEmail = hashQuery.get("member_email");
-      const hashMemberId = hashQuery.get("member_id");
-
-      merchantId = merchantId || hashMerchantId;
-
-      if (!memberId) {
-        if (hashMemberEmail) {
-          memberEmail = hashMemberEmail;
-          memberId = hashMemberEmail;
-        } else if (hashMemberId) {
-          memberId = hashMemberId;
-        }
-      }
-
-      if (hashQuery.get("points")) {
-        points = parseInt(hashQuery.get("points"), 10);
-      }
-    }
-
     // Persist some values for downstream pages
     if (memberId) {
+      // ✅ Clear old session data when new member_id is provided
+      localStorage.removeItem("userName");
+      localStorage.removeItem("userAvatar");
+      localStorage.removeItem("broker");
+      localStorage.removeItem("brokerName");
+      localStorage.removeItem("cashBalance");
+      localStorage.removeItem("portfolio_value");
+      localStorage.removeItem("basketId");
+      
       localStorage.setItem("memberId", memberId);
+      console.log("[Splash] Stored memberId:", memberId);
+      
+      // Only clear memberEmail if it doesn't match the new memberId
+      const oldEmail = localStorage.getItem("memberEmail");
+      if (oldEmail && oldEmail !== memberId && !memberEmail) {
+        console.log("[Splash] Clearing old memberEmail:", oldEmail);
+        localStorage.removeItem("memberEmail");
+      }
     }
     if (memberEmail) {
       localStorage.setItem("memberEmail", memberEmail);
+      console.log("[Splash] Stored memberEmail:", memberEmail);
     }
     if (merchantId) {
       localStorage.setItem("merchantId", merchantId);
+      console.log("[Splash] Stored merchantId:", merchantId);
+    }
+    if (merchantName) {
+      // ✅ Store merchantName from URL if provided (will be overwritten by API if available)
+      localStorage.setItem("merchantName", merchantName);
+      console.log("[Splash] Stored merchantName from URL:", merchantName);
     }
     if (points > 0) {
       localStorage.setItem("points", String(points));
+      console.log("[Splash] Stored points:", points);
     }
     if (conversionRate) {
       localStorage.setItem("conversion_rate", String(conversionRate));
@@ -123,6 +132,12 @@ function SplashScreen() {
             // Save merchant to localStorage for downstream pages
             try {
               localStorage.setItem("merchant", JSON.stringify(merchantData));
+              
+              // ✅ Also save merchantName separately for easy access
+              if (merchantData.merchant_name) {
+                localStorage.setItem("merchantName", merchantData.merchant_name);
+                console.log("[Splash] Stored merchantName:", merchantData.merchant_name);
+              }
             } catch (e) {
               console.warn(
                 "[Splash] failed to store merchant in localStorage",

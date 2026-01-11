@@ -72,6 +72,10 @@ export default function Login() {
     const lsEmail = localStorage.getItem("memberEmail") || "";
     const lsPoints = parseInt(localStorage.getItem("points") || "0", 10);
 
+    console.log("[Login] useEffect - lsMemberId:", lsMemberId);
+    console.log("[Login] useEffect - lsEmail:", lsEmail);
+    console.log("[Login] useEffect - username state:", username);
+
     setMerchantId(lsMerchantId);
     setPoints(Number.isFinite(lsPoints) ? lsPoints : 0);
     setConversionRate(detectedConv);
@@ -100,9 +104,18 @@ export default function Login() {
           
           // ✅ No wallet found - this is a new user
           // Pre-populate the username field and show create form
-          console.log("[Login] No wallet found, pre-filling username and showing create form");
+          console.log("[Login] No wallet found, pre-filling username with:", lsMemberId);
+          console.log("[Login] Setting username state to:", lsMemberId);
           setUsername(lsMemberId);
+          
+          console.log("[Login] Setting mode to: create");
           setMode("create");
+          
+          // Verify state was set
+          setTimeout(() => {
+            console.log("[Login] After setState - username:", username);
+            console.log("[Login] After setState - mode:", mode);
+          }, 100);
           
           // Don't clear memberId yet - we need it for the form
           // It will be properly set after account creation
@@ -114,6 +127,7 @@ export default function Login() {
         setMode("login");
         
       } catch {
+        console.log("[Login] Exception caught, showing login form");
         setMode("login");
       }
     })();
