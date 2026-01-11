@@ -29,13 +29,50 @@ try {
     // Ensure record_id is an integer
     $recordId = (int)$input['record_id'];
 
-    $stmt = $conn->prepare("DELETE FROM wallet WHERE record_id = :record_id");
-    $stmt->execute([':record_id' => $recordId]);
+    // ✅ First, get the member_id from the wallet record before deleting
+    $getWallet = $conn->prepare("SELECT member_id FROM wallet WHERE record_id = :record_id");
+    $getWallet->execute([':record_id' => $recordId]);
+    $walletRow = $getWallet->fetch(PDO::FETCH_ASSOC);
 
-    if ($stmt->rowCount() > 0) {
-        echo json_encode(["success" => true, "deleted_id" => $recordId]);
-    } else {
-        echo json_encode(["success" => false, "error" => "Wallet not found or already deleted"]);
+    if (!$walletRow) {
+        echo json_encode(["success" => false, "error" => "Wallet not found"]);
+        exit;
+    }
+
+    $memberId = $walletRow['member_id'];
+
+    // ✅ Begin transaction to ensure atomic deletion
+    $conn->beginTransaction();
+
+    try {
+        // ✅ Delete broker credentials for this member
+        $deleteCreds = $conn->prepare("DELETE FROM broker_credentials WHERE member_id = :member_id");
+        $deleteCreds->execute([':member_id' => $memberId]);
+        $credsDeleted = $deleteCreds->rowCount();
+
+        // ✅ Delete the wallet record
+        $deleteWallet = $conn->prepare("DELETE FROM wallet WHERE record_id = :record_id");
+        $deleteWallet->execute([':record_id' => $recordId]);
+        $walletDeleted = $deleteWallet->rowCount();
+
+        // ✅ Commit transaction
+        $conn->commit();
+
+        if ($walletDeleted > 0) {
+            echo json_encode([
+                "success" => true, 
+                "deleted_id" => $recordId,
+                "member_id" => $memberId,
+                "broker_credentials_deleted" => $credsDeleted
+            ]);
+        } else {
+            echo json_encode(["success" => false, "error" => "Wallet not found or already deleted"]);
+        }
+
+    } catch (Exception $e) {
+        // ✅ Rollback on error
+        $conn->rollBack();
+        throw $e;
     }
 
 } catch (Exception $e) {

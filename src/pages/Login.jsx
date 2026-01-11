@@ -152,6 +152,29 @@ export default function Login() {
       localStorage.setItem("conversion_rate", String(conv));
       
       console.log("[Login] Populated localStorage - points:", points, "cashBalance:", cashBalance);
+
+      // ✅ Log transaction to ledger
+      const clientTxId = `initial_points_${memberIdToUse}_${Date.now()}`;
+      const memberTimezone = localStorage.getItem("memberTimezone") || 
+                            Intl.DateTimeFormat().resolvedOptions().timeZone || 
+                            "America/New_York";
+      
+      try {
+        await apiPost("log-ledger.php", {
+          member_id: memberIdToUse,
+          merchant_id: merchantId || "",
+          points: points,
+          amount_cash: cashBalance,
+          action: "earn",
+          client_tx_id: clientTxId,
+          member_timezone: memberTimezone,
+          note: "Initial points from merchant referral"
+        });
+        console.log("[Login] Transaction logged to ledger:", clientTxId);
+      } catch (ledgerErr) {
+        console.error("[Login] Failed to log transaction to ledger:", ledgerErr);
+        // Don't fail the whole flow if ledger logging fails
+      }
     } catch (err) {
       console.error("[Login] update_points.php error:", err);
     }
