@@ -24,6 +24,26 @@ $active_status    = $input["active_status"]    ?? 1;
 $promotion_text   = $input["promotion_text"]   ?? "";
 $promotion_active = $input["promotion_active"] ?? 0;
 
+// ✅ Extract tier fields
+$tier1_name            = $input["tier1_name"]            ?? null;
+$tier1_min_points      = $input["tier1_min_points"]      ?? null;
+$tier1_conversion_rate = $input["tier1_conversion_rate"] ?? null;
+$tier2_name            = $input["tier2_name"]            ?? null;
+$tier2_min_points      = $input["tier2_min_points"]      ?? null;
+$tier2_conversion_rate = $input["tier2_conversion_rate"] ?? null;
+$tier3_name            = $input["tier3_name"]            ?? null;
+$tier3_min_points      = $input["tier3_min_points"]      ?? null;
+$tier3_conversion_rate = $input["tier3_conversion_rate"] ?? null;
+$tier4_name            = $input["tier4_name"]            ?? null;
+$tier4_min_points      = $input["tier4_min_points"]      ?? null;
+$tier4_conversion_rate = $input["tier4_conversion_rate"] ?? null;
+$tier5_name            = $input["tier5_name"]            ?? null;
+$tier5_min_points      = $input["tier5_min_points"]      ?? null;
+$tier5_conversion_rate = $input["tier5_conversion_rate"] ?? null;
+$tier6_name            = $input["tier6_name"]            ?? null;
+$tier6_min_points      = $input["tier6_min_points"]      ?? null;
+$tier6_conversion_rate = $input["tier6_conversion_rate"] ?? null;
+
 try {
     if (!$merchant_id) {
         echo json_encode(["success" => false, "error" => "Missing merchant_id"]);
@@ -47,7 +67,25 @@ try {
                 conversion_rate = :conversion_rate,
                 active_status   = :active_status,
                 promotion_text  = :promotion_text,
-                promotion_active= :promotion_active
+                promotion_active= :promotion_active,
+                tier1_name            = :tier1_name,
+                tier1_min_points      = :tier1_min_points,
+                tier1_conversion_rate = :tier1_conversion_rate,
+                tier2_name            = :tier2_name,
+                tier2_min_points      = :tier2_min_points,
+                tier2_conversion_rate = :tier2_conversion_rate,
+                tier3_name            = :tier3_name,
+                tier3_min_points      = :tier3_min_points,
+                tier3_conversion_rate = :tier3_conversion_rate,
+                tier4_name            = :tier4_name,
+                tier4_min_points      = :tier4_min_points,
+                tier4_conversion_rate = :tier4_conversion_rate,
+                tier5_name            = :tier5_name,
+                tier5_min_points      = :tier5_min_points,
+                tier5_conversion_rate = :tier5_conversion_rate,
+                tier6_name            = :tier6_name,
+                tier6_min_points      = :tier6_min_points,
+                tier6_conversion_rate = :tier6_conversion_rate
             WHERE merchant_id = :merchant_id
         ");
     } else {
@@ -56,11 +94,23 @@ try {
             INSERT INTO merchant (
                 merchant_id, merchant_name, program_name, 
                 contact_email, contact_phone, website_url,
-                conversion_rate, active_status, promotion_text, promotion_active
+                conversion_rate, active_status, promotion_text, promotion_active,
+                tier1_name, tier1_min_points, tier1_conversion_rate,
+                tier2_name, tier2_min_points, tier2_conversion_rate,
+                tier3_name, tier3_min_points, tier3_conversion_rate,
+                tier4_name, tier4_min_points, tier4_conversion_rate,
+                tier5_name, tier5_min_points, tier5_conversion_rate,
+                tier6_name, tier6_min_points, tier6_conversion_rate
             ) VALUES (
                 :merchant_id, :merchant_name, :program_name,
                 :contact_email, :contact_phone, :website_url,
-                :conversion_rate, :active_status, :promotion_text, :promotion_active
+                :conversion_rate, :active_status, :promotion_text, :promotion_active,
+                :tier1_name, :tier1_min_points, :tier1_conversion_rate,
+                :tier2_name, :tier2_min_points, :tier2_conversion_rate,
+                :tier3_name, :tier3_min_points, :tier3_conversion_rate,
+                :tier4_name, :tier4_min_points, :tier4_conversion_rate,
+                :tier5_name, :tier5_min_points, :tier5_conversion_rate,
+                :tier6_name, :tier6_min_points, :tier6_conversion_rate
             )
         ");
     }
@@ -76,6 +126,24 @@ try {
         "active_status"    => $active_status,
         "promotion_text"   => $promotion_text,
         "promotion_active" => $promotion_active,
+        "tier1_name"            => $tier1_name,
+        "tier1_min_points"      => $tier1_min_points,
+        "tier1_conversion_rate" => $tier1_conversion_rate,
+        "tier2_name"            => $tier2_name,
+        "tier2_min_points"      => $tier2_min_points,
+        "tier2_conversion_rate" => $tier2_conversion_rate,
+        "tier3_name"            => $tier3_name,
+        "tier3_min_points"      => $tier3_min_points,
+        "tier3_conversion_rate" => $tier3_conversion_rate,
+        "tier4_name"            => $tier4_name,
+        "tier4_min_points"      => $tier4_min_points,
+        "tier4_conversion_rate" => $tier4_conversion_rate,
+        "tier5_name"            => $tier5_name,
+        "tier5_min_points"      => $tier5_min_points,
+        "tier5_conversion_rate" => $tier5_conversion_rate,
+        "tier6_name"            => $tier6_name,
+        "tier6_min_points"      => $tier6_min_points,
+        "tier6_conversion_rate" => $tier6_conversion_rate,
     ]);
 
     echo json_encode(["success" => true, "merchant_id" => $merchant_id]);

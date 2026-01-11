@@ -31,7 +31,25 @@ try {
             created_at,
             updated_at,
             promotion_text,
-            promotion_active
+            promotion_active,
+            tier1_name,
+            tier1_min_points,
+            tier1_conversion_rate,
+            tier2_name,
+            tier2_min_points,
+            tier2_conversion_rate,
+            tier3_name,
+            tier3_min_points,
+            tier3_conversion_rate,
+            tier4_name,
+            tier4_min_points,
+            tier4_conversion_rate,
+            tier5_name,
+            tier5_min_points,
+            tier5_conversion_rate,
+            tier6_name,
+            tier6_min_points,
+            tier6_conversion_rate
         FROM `stockloyal`.`merchant`
         ORDER BY created_at DESC
     ";
@@ -45,6 +63,16 @@ try {
         if (isset($r['conversion_rate']))  $r['conversion_rate']  = is_null($r['conversion_rate']) ? null : (float) $r['conversion_rate'];
         if (isset($r['active_status']))    $r['active_status']    = (int) $r['active_status'];
         if (isset($r['promotion_active'])) $r['promotion_active'] = (int) $r['promotion_active'];
+        
+        // Normalize tier fields
+        for ($i = 1; $i <= 6; $i++) {
+            if (isset($r["tier{$i}_min_points"])) {
+                $r["tier{$i}_min_points"] = is_null($r["tier{$i}_min_points"]) ? null : (int) $r["tier{$i}_min_points"];
+            }
+            if (isset($r["tier{$i}_conversion_rate"])) {
+                $r["tier{$i}_conversion_rate"] = is_null($r["tier{$i}_conversion_rate"]) ? null : (float) $r["tier{$i}_conversion_rate"];
+            }
+        }
         // leave created_at / updated_at as strings (ISO-ish)
     }
     unset($r);

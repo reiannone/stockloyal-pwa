@@ -269,6 +269,116 @@ export default function Admin() {
               />
             </FormRow>
 
+            {/* ✅ Tier Management Section */}
+            <div style={{ 
+              gridColumn: '1 / -1', 
+              marginTop: '1.5rem', 
+              marginBottom: '1rem',
+              padding: '1rem',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb'
+            }}>
+              <h3 style={{ 
+                fontSize: '1.1rem', 
+                fontWeight: '600', 
+                marginBottom: '1rem',
+                color: '#111827'
+              }}>
+                Merchant Tiers (Up to 6)
+              </h3>
+              <p style={{ 
+                fontSize: '0.875rem', 
+                color: '#6b7280', 
+                marginBottom: '1rem' 
+              }}>
+                Configure tiered conversion rates based on member points. Members automatically advance to higher tiers as they accumulate points.
+              </p>
+
+              {[1, 2, 3, 4, 5, 6].map((tierNum) => (
+                <div key={tierNum} style={{ 
+                  marginBottom: '1rem',
+                  padding: '0.75rem',
+                  background: 'white',
+                  borderRadius: '6px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <h4 style={{ 
+                    fontSize: '0.95rem', 
+                    fontWeight: '600', 
+                    marginBottom: '0.75rem',
+                    color: '#374151'
+                  }}>
+                    Tier {tierNum}
+                  </h4>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '0.75rem'
+                  }}>
+                    <div>
+                      <label style={{ 
+                        fontSize: '0.75rem', 
+                        color: '#6b7280',
+                        display: 'block',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Tier Name
+                      </label>
+                      <input
+                        className="form-input"
+                        type="text"
+                        name={`tier${tierNum}_name`}
+                        value={selected?.[`tier${tierNum}_name`] || ""}
+                        onChange={handleChange}
+                        placeholder={`e.g., ${['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Elite'][tierNum - 1]}`}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ 
+                        fontSize: '0.75rem', 
+                        color: '#6b7280',
+                        display: 'block',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Min Points Required
+                      </label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        name={`tier${tierNum}_min_points`}
+                        value={selected?.[`tier${tierNum}_min_points`] ?? ""}
+                        onChange={handleChange}
+                        placeholder="0"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ 
+                        fontSize: '0.75rem', 
+                        color: '#6b7280',
+                        display: 'block',
+                        marginBottom: '0.25rem'
+                      }}>
+                        Conversion Rate
+                      </label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        step="0.0001"
+                        name={`tier${tierNum}_conversion_rate`}
+                        value={selected?.[`tier${tierNum}_conversion_rate`] ?? ""}
+                        onChange={handleChange}
+                        placeholder="0.01"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* Promotion Text */}
             <div
               className="form-row"
@@ -372,31 +482,57 @@ export default function Admin() {
               <tr>
                 <th>Merchant ID</th>
                 <th>Name</th>
+                <th>Base Rate</th>
+                <th>Tiers Configured</th>
                 <th>Status</th>
-                <th>Promotion Active</th>
+                <th>Promotion</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {merchants.map((m) => (
-                <tr key={m.merchant_id}>
-                  <td>{m.merchant_id}</td>
-                  <td>{m.merchant_name}</td>
-                  <td>{m.active_status ? "Active" : "Inactive"}</td>
-                  <td>{m.promotion_active ? "Yes" : "No"}</td>
-                  <td>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => {
-                        setSelected({ ...m });
-                        originalRateRef.current = Number(m.conversion_rate ?? 0);
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {merchants.map((m) => {
+                // Count how many tiers are configured
+                const tiersConfigured = [1, 2, 3, 4, 5, 6].filter(
+                  (num) => m[`tier${num}_name`] && m[`tier${num}_name`].trim() !== ''
+                ).length;
+
+                return (
+                  <tr key={m.merchant_id}>
+                    <td>{m.merchant_id}</td>
+                    <td>{m.merchant_name}</td>
+                    <td>{m.conversion_rate || '0.01'}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {tiersConfigured > 0 ? (
+                        <span style={{
+                          background: '#dbeafe',
+                          color: '#1e40af',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '0.85rem',
+                          fontWeight: '600'
+                        }}>
+                          {tiersConfigured} tier{tiersConfigured !== 1 ? 's' : ''}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>None</span>
+                      )}
+                    </td>
+                    <td>{m.active_status ? "Active" : "Inactive"}</td>
+                    <td>{m.promotion_active ? "Yes" : "No"}</td>
+                    <td>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => {
+                          setSelected({ ...m });
+                          originalRateRef.current = Number(m.conversion_rate ?? 0);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

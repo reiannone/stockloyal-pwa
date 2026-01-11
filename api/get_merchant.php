@@ -40,6 +40,16 @@ try {
             }
         }
 
+        // ✅ Normalize tier fields to proper types
+        for ($i = 1; $i <= 6; $i++) {
+            if (isset($row["tier{$i}_min_points"])) {
+                $row["tier{$i}_min_points"] = is_null($row["tier{$i}_min_points"]) ? null : (int)$row["tier{$i}_min_points"];
+            }
+            if (isset($row["tier{$i}_conversion_rate"])) {
+                $row["tier{$i}_conversion_rate"] = is_null($row["tier{$i}_conversion_rate"]) ? null : (float)$row["tier{$i}_conversion_rate"];
+            }
+        }
+
         echo json_encode([
             "success"  => true,
             "merchant" => $row
