@@ -96,16 +96,35 @@ export default function Login() {
             } else {
               // User doesn't have wallet yet - need to complete registration
               console.log("[Login] No wallet found, showing login/create form");
-              // Clear the memberId since it's not valid
+              
+              // ✅ Pre-populate the username field with memberId from URL
+              if (lsMemberId) {
+                setUsername(lsMemberId);
+                console.log("[Login] Pre-populated username with:", lsMemberId);
+              }
+              
+              // Clear the memberId from storage since it's not valid yet
               localStorage.removeItem("memberId");
-              setMode("login");
+              setMode("create"); // Show create account form
             }
           } catch (walletErr) {
-            // Wallet not found or error - show login form
-            console.log("[Login] Wallet check failed, showing login/create form");
+            // Wallet not found or error - show create form with pre-filled username
+            console.log("[Login] Wallet check failed, showing create form");
+            
+            // ✅ Pre-populate username
+            if (lsMemberId) {
+              setUsername(lsMemberId);
+              console.log("[Login] Pre-populated username with:", lsMemberId);
+            }
+            
             localStorage.removeItem("memberId");
-            setMode("login");
+            setMode("create");
           }
+        } else if (lsMemberId) {
+          // Has memberId but no email - new user, show create form
+          console.log("[Login] New user detected, showing create form");
+          setUsername(lsMemberId);
+          setMode("create");
         } else {
           // No credentials in localStorage - show login form
           setMode("login");
@@ -122,11 +141,19 @@ export default function Login() {
     const cashBalance = Number((points * conv).toFixed(2));
 
     try {
+      // ✅ Update points and cash balance
       await apiPost("update_points.php", {
         member_id: memberIdToUse,
         points,
         cash_balance: cashBalance,
       });
+
+      // ✅ Populate localStorage with wallet data
+      localStorage.setItem("points", String(points));
+      localStorage.setItem("cashBalance", cashBalance.toFixed(2));
+      localStorage.setItem("conversion_rate", String(conv));
+      
+      console.log("[Login] Populated localStorage - points:", points, "cashBalance:", cashBalance);
     } catch (err) {
       console.error("[Login] update_points.php error:", err);
     }
@@ -241,7 +268,21 @@ export default function Login() {
         merchant_id: data.merchant_id ?? merchantId,
       });
 
+      // ✅ Apply points and populate localStorage
       await applyPointsIfAny(data.member_id);
+
+      // ✅ Fetch and store merchant name if we have merchantId
+      if (merchantId) {
+        try {
+          const merchantData = await apiPost("get_merchant.php", { merchant_id: merchantId });
+          if (merchantData?.success && merchantData?.merchant) {
+            localStorage.setItem("merchantName", merchantData.merchant.merchant_name || "");
+            console.log("[Login] Set merchantName:", merchantData.merchant.merchant_name);
+          }
+        } catch (err) {
+          console.error("[Login] Failed to fetch merchant name:", err);
+        }
+      }
 
       navigate("/member-onboard", {
         state: { memberId: data.member_id, memberEmail: data.member_email },
