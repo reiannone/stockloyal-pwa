@@ -81,9 +81,9 @@ export default function Login() {
     
     (async () => {
       try {
-        // If we have memberId and email, check if wallet exists
-        if (lsMemberId && lsEmail) {
-          console.log("[Login] Checking if user has wallet...");
+        // ✅ Always check wallet first if we have a memberId
+        if (lsMemberId) {
+          console.log("[Login] memberId found, checking wallet for:", lsMemberId);
           
           try {
             const walletCheck = await apiPost("get-wallet.php", { member_id: lsMemberId });
@@ -93,42 +93,26 @@ export default function Login() {
               console.log("[Login] User has wallet, redirecting to wallet");
               navigate("/wallet");
               return;
-            } else {
-              // User doesn't have wallet yet - need to complete registration
-              console.log("[Login] No wallet found, showing login/create form");
-              
-              // ✅ Pre-populate the username field with memberId from URL
-              if (lsMemberId) {
-                setUsername(lsMemberId);
-                console.log("[Login] Pre-populated username with:", lsMemberId);
-              }
-              
-              // Clear the memberId from storage since it's not valid yet
-              localStorage.removeItem("memberId");
-              setMode("create"); // Show create account form
             }
           } catch (walletErr) {
-            // Wallet not found or error - show create form with pre-filled username
-            console.log("[Login] Wallet check failed, showing create form");
-            
-            // ✅ Pre-populate username
-            if (lsMemberId) {
-              setUsername(lsMemberId);
-              console.log("[Login] Pre-populated username with:", lsMemberId);
-            }
-            
-            localStorage.removeItem("memberId");
-            setMode("create");
+            console.log("[Login] Wallet check failed - new user");
           }
-        } else if (lsMemberId) {
-          // Has memberId but no email - new user, show create form
-          console.log("[Login] New user detected, showing create form");
+          
+          // ✅ No wallet found - this is a new user
+          // Pre-populate the username field and show create form
+          console.log("[Login] No wallet found, pre-filling username and showing create form");
           setUsername(lsMemberId);
           setMode("create");
-        } else {
-          // No credentials in localStorage - show login form
-          setMode("login");
+          
+          // Don't clear memberId yet - we need it for the form
+          // It will be properly set after account creation
+          return;
         }
+        
+        // No memberId at all - show login form
+        console.log("[Login] No memberId, showing login form");
+        setMode("login");
+        
       } catch {
         setMode("login");
       }
