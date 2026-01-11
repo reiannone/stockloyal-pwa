@@ -71,19 +71,37 @@ function Promotions() {
   // ------------------------------------
   // Routes to Wallet if logged in, otherwise Login
   // ------------------------------------
-  const handleGetStarted = () => {
+  const handleGetStarted = async () => {
     const memberId = localStorage.getItem("memberId");
     const memberEmail = localStorage.getItem("memberEmail");
     
-    // ✅ If user is already logged in (has memberId), go to wallet
+    // ✅ If user has memberId, verify they actually have a wallet
     if (memberId) {
-      console.log("[Promotions] User already logged in, navigating to wallet");
-      navigate("/wallet");
-    } else {
-      // Otherwise, go to login
-      console.log("[Promotions] User not logged in, navigating to login");
-      navigate("/login");
+      console.log("[Promotions] Checking if user has wallet...");
+      
+      try {
+        const walletCheck = await apiPost("get-wallet.php", { member_id: memberId });
+        
+        if (walletCheck?.success && walletCheck?.wallet) {
+          // User has a wallet - they're fully registered
+          console.log("[Promotions] User has wallet, navigating to wallet");
+          navigate("/wallet");
+          return;
+        } else {
+          // Wallet not found - clear invalid memberId
+          console.log("[Promotions] No wallet found, clearing memberId");
+          localStorage.removeItem("memberId");
+        }
+      } catch (err) {
+        console.log("[Promotions] Wallet check failed:", err);
+        // Clear invalid memberId on error
+        localStorage.removeItem("memberId");
+      }
     }
+    
+    // Otherwise, go to login to complete registration
+    console.log("[Promotions] No valid wallet, navigating to login");
+    navigate("/login");
   };
 
   const handleNoThanks = () => navigate("/goodbye");

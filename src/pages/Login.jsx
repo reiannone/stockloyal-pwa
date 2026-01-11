@@ -76,21 +76,40 @@ export default function Login() {
     setPoints(Number.isFinite(lsPoints) ? lsPoints : 0);
     setConversionRate(detectedConv);
 
-    // ✅ Don't pre-populate identifier from URL params
-    // Let user enter their actual login username/email
-    // Only check if they're already logged in
+    // ✅ Check if user actually has a wallet (is fully registered)
+    // Don't just check localStorage - verify with API
     
     (async () => {
       try {
-        // If user is already logged in (has both memberId and email), go to wallet
+        // If we have memberId and email, check if wallet exists
         if (lsMemberId && lsEmail) {
-          console.log("[Login] User already logged in, redirecting to wallet");
-          navigate("/wallet");
-          return;
+          console.log("[Login] Checking if user has wallet...");
+          
+          try {
+            const walletCheck = await apiPost("get-wallet.php", { member_id: lsMemberId });
+            
+            if (walletCheck?.success && walletCheck?.wallet) {
+              // User has a wallet - they're fully registered
+              console.log("[Login] User has wallet, redirecting to wallet");
+              navigate("/wallet");
+              return;
+            } else {
+              // User doesn't have wallet yet - need to complete registration
+              console.log("[Login] No wallet found, showing login/create form");
+              // Clear the memberId since it's not valid
+              localStorage.removeItem("memberId");
+              setMode("login");
+            }
+          } catch (walletErr) {
+            // Wallet not found or error - show login form
+            console.log("[Login] Wallet check failed, showing login/create form");
+            localStorage.removeItem("memberId");
+            setMode("login");
+          }
+        } else {
+          // No credentials in localStorage - show login form
+          setMode("login");
         }
-
-        // Otherwise, show login form with empty identifier
-        setMode("login");
       } catch {
         setMode("login");
       }
