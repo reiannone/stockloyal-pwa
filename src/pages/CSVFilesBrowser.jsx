@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { Download, FolderOpen, File, Calendar, CheckSquare, Square } from "lucide-react";
+import { Download, FolderOpen, File, Calendar, CheckSquare, Square, RefreshCw } from "lucide-react";
 
 export default function CSVFilesBrowser() {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ export default function CSVFilesBrowser() {
   const [error, setError] = useState("");
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [filterBroker, setFilterBroker] = useState("");
+  const [filterMerchant, setFilterMerchant] = useState("");
   const [filterType, setFilterType] = useState("");
   const [sortBy, setSortBy] = useState("date-desc");
 
@@ -48,11 +49,20 @@ export default function CSVFilesBrowser() {
     return Array.from(brokerSet).sort();
   }, [files]);
 
+  // Get unique merchants for filter dropdown
+  const merchants = useMemo(() => {
+    const merchantSet = new Set(files.map(f => f.merchant_id).filter(Boolean));
+    return Array.from(merchantSet).sort();
+  }, [files]);
+
   // Filter and sort files
   const filteredFiles = useMemo(() => {
     let result = [...files];
 
     // Apply filters
+    if (filterMerchant) {
+      result = result.filter(f => f.merchant_id === filterMerchant);
+    }
     if (filterBroker) {
       result = result.filter(f => f.broker === filterBroker);
     }
@@ -68,6 +78,9 @@ export default function CSVFilesBrowser() {
       case "date-asc":
         result.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         break;
+      case "merchant":
+        result.sort((a, b) => (a.merchant_id || "").localeCompare(b.merchant_id || ""));
+        break;
       case "broker":
         result.sort((a, b) => (a.broker || "").localeCompare(b.broker || ""));
         break;
@@ -82,7 +95,7 @@ export default function CSVFilesBrowser() {
     }
 
     return result;
-  }, [files, filterBroker, filterType, sortBy]);
+  }, [files, filterMerchant, filterBroker, filterType, sortBy]);
 
   // Handle file selection
   const toggleFileSelection = (fileId) => {
@@ -217,6 +230,16 @@ export default function CSVFilesBrowser() {
 
   return (
     <div className="page-container">
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+      `}</style>
+      
       <h2 className="page-title">CSV Files Browser</h2>
 
       {/* Toolbar */}
@@ -228,6 +251,22 @@ export default function CSVFilesBrowser() {
         alignItems: "center"
       }}>
         {/* Filters */}
+        <select
+          value={filterMerchant}
+          onChange={(e) => setFilterMerchant(e.target.value)}
+          style={{
+            padding: "8px 12px",
+            border: "1px solid #ddd",
+            borderRadius: "4px",
+            fontSize: "14px",
+          }}
+        >
+          <option value="">All Merchants</option>
+          {merchants.map(merchant => (
+            <option key={merchant} value={merchant}>{merchant}</option>
+          ))}
+        </select>
+
         <select
           value={filterBroker}
           onChange={(e) => setFilterBroker(e.target.value)}
@@ -272,6 +311,7 @@ export default function CSVFilesBrowser() {
         >
           <option value="date-desc">Newest First</option>
           <option value="date-asc">Oldest First</option>
+          <option value="merchant">Merchant A-Z</option>
           <option value="broker">Broker A-Z</option>
           <option value="type">Type</option>
           <option value="size-desc">Largest First</option>
@@ -309,8 +349,16 @@ export default function CSVFilesBrowser() {
             onClick={loadFiles}
             className="btn-secondary"
             disabled={loading}
+            title="Refresh file list"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: "40px",
+              padding: "8px 12px"
+            }}
           >
-            {loading ? "Loading..." : "Refresh"}
+            <RefreshCw size={16} className={loading ? "spin" : ""} />
           </button>
         </div>
       </div>
@@ -326,9 +374,10 @@ export default function CSVFilesBrowser() {
         <div style={{ textAlign: "center", padding: "40px", color: "#6b7280" }}>
           <FolderOpen size={48} style={{ margin: "0 auto 16px" }} />
           <p>No CSV files found</p>
-          {(filterBroker || filterType) && (
+          {(filterMerchant || filterBroker || filterType) && (
             <button
               onClick={() => {
+                setFilterMerchant("");
                 setFilterBroker("");
                 setFilterType("");
               }}
@@ -340,8 +389,8 @@ export default function CSVFilesBrowser() {
           )}
         </div>
       ) : (
-        <div className="table-wrapper">
-          <table className="data-table">
+        <div className="table-wrapper" style={{ overflowX: "auto" }}>
+          <table className="data-table" style={{ minWidth: "100%", tableLayout: "auto" }}>
             <thead>
               <tr>
                 <th style={{ width: "40px" }}>
@@ -363,12 +412,10 @@ export default function CSVFilesBrowser() {
                     )}
                   </button>
                 </th>
-                <th>Filename</th>
-                <th>Broker</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th style={{ minWidth: "200px" }}>File Details</th>
+                <th style={{ width: "120px" }}>Merchant / Broker</th>
+                <th style={{ width: "80px" }}>Type</th>
+                <th style={{ width: "100px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -394,33 +441,70 @@ export default function CSVFilesBrowser() {
                     </button>
                   </td>
                   <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <File size={16} color="#6b7280" />
-                      <span>{file.filename}</span>
+                    {/* Stacked file info */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {/* Filename with icon */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <File size={14} color="#6b7280" style={{ flexShrink: 0 }} />
+                        <span style={{ 
+                          fontSize: "13px",
+                          fontWeight: "500",
+                          wordBreak: "break-word",
+                          lineHeight: 1.3
+                        }}>
+                          {file.filename}
+                        </span>
+                      </div>
+                      {/* Size and date below filename */}
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "12px", 
+                        fontSize: "12px", 
+                        color: "#6b7280",
+                        flexWrap: "wrap"
+                      }}>
+                        <span>{formatFileSize(file.file_size)}</span>
+                        <span>•</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <Calendar size={12} />
+                          {formatDate(file.created_at)}
+                        </div>
+                      </div>
                     </div>
                   </td>
-                  <td>{file.broker || "-"}</td>
+                  <td>
+                    {/* Stacked merchant and broker info */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <span style={{ 
+                        fontSize: "11px",
+                        color: "#6b7280",
+                        fontWeight: "500"
+                      }}>
+                        {file.merchant_id || "-"}
+                      </span>
+                      <span style={{ 
+                        fontSize: "13px",
+                        fontWeight: "500"
+                      }}>
+                        {file.broker || "-"}
+                      </span>
+                    </div>
+                  </td>
                   <td>
                     <span
                       style={{
                         backgroundColor: getTypeBadgeColor(file.type),
                         color: "white",
-                        padding: "2px 8px",
+                        padding: "3px 8px",
                         borderRadius: "4px",
-                        fontSize: "12px",
-                        fontWeight: "500",
-                        textTransform: "uppercase"
+                        fontSize: "11px",
+                        fontWeight: "600",
+                        textTransform: "uppercase",
+                        display: "inline-block"
                       }}
                     >
-                      {file.type || "unknown"}
+                      {file.type || "?"}
                     </span>
-                  </td>
-                  <td>{formatFileSize(file.file_size)}</td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#6b7280" }}>
-                      <Calendar size={14} />
-                      {formatDate(file.created_at)}
-                    </div>
                   </td>
                   <td>
                     <button
@@ -429,17 +513,18 @@ export default function CSVFilesBrowser() {
                         display: "flex",
                         alignItems: "center",
                         gap: "4px",
-                        padding: "6px 12px",
+                        padding: "6px 10px",
                         backgroundColor: "#007bff",
                         color: "white",
                         border: "none",
                         borderRadius: "4px",
                         cursor: "pointer",
-                        fontSize: "13px"
+                        fontSize: "12px",
+                        whiteSpace: "nowrap"
                       }}
                     >
                       <Download size={14} />
-                      Download
+                      <span>Get</span>
                     </button>
                   </td>
                 </tr>
