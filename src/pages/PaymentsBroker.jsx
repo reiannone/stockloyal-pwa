@@ -105,6 +105,10 @@ export default function PaymentsBroker() {
   const [summary, setSummary] = useState([]);
   const [error, setError] = useState("");
   const [exportResult, setExportResult] = useState(null);
+  
+  // ✅ Add confirmation modal and success tracking
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [generatedBrokers, setGeneratedBrokers] = useState(new Set());
 
   useEffect(() => {
     if (!merchantId) {
@@ -262,6 +266,8 @@ export default function PaymentsBroker() {
         setExportResult(null);
       } else {
         setExportResult(normalizeExportResult(res));
+        // ✅ Mark this broker as successfully generated
+        setGeneratedBrokers(prev => new Set([...prev, broker]));
       }
     } catch (err) {
       console.error("[PaymentsBroker] export error:", err);
@@ -270,6 +276,22 @@ export default function PaymentsBroker() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ✅ Show confirmation modal before generating
+  const handleGenerateClick = () => {
+    setShowConfirmModal(true);
+  };
+
+  // ✅ Confirm and execute generation
+  const confirmGenerate = () => {
+    setShowConfirmModal(false);
+    handleExport();
+  };
+
+  // ✅ Cancel generation
+  const cancelGenerate = () => {
+    setShowConfirmModal(false);
   };
 
   const handleBasketClick = (basketId) => {
@@ -388,7 +410,7 @@ export default function PaymentsBroker() {
           <button
             type="button"
             className="btn-primary"
-            onClick={handleExport}
+            onClick={handleGenerateClick}
             disabled={loading || !merchantId || !broker}
             title={!broker ? "Select a broker first" : "Generate export CSVs"}
           >
@@ -440,7 +462,15 @@ export default function PaymentsBroker() {
           <div className="form-grid">
             <div className="form-row">
               <label className="form-label">Broker</label>
-              <div className="form-input">{brokerAchDetails.brokerName}</div>
+              <div className="form-input" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {brokerAchDetails.brokerName}
+                {/* ✅ Show green checkmark if CSVs generated for this broker */}
+                {generatedBrokers.has(broker) && (
+                  <span style={{ color: "#22c55e", fontSize: "20px", fontWeight: "bold" }} title="CSVs generated successfully">
+                    ✓
+                  </span>
+                )}
+              </div>
             </div>
             <div className="form-row">
               <label className="form-label">Broker ID</label>
@@ -521,6 +551,86 @@ export default function PaymentsBroker() {
           </p>
         )}
       </div>
+
+      {/* ✅ Confirmation Modal */}
+      {showConfirmModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 3000,
+          }}
+          onClick={cancelGenerate}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              borderRadius: "8px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90%",
+              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "600" }}>
+              Generate Broker CSVs
+            </h3>
+            
+            <p style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px" }}>
+              Are you sure you want to generate CSV files for <strong>{broker}</strong>?
+            </p>
+
+            <p style={{ margin: "0 0 20px 0", color: "#666", fontSize: "14px" }}>
+              This will create:
+            </p>
+            
+            <ul style={{ margin: "0 0 20px 0", paddingLeft: "20px", color: "#666", fontSize: "14px" }}>
+              <li>Detail CSV (order-level data)</li>
+              <li>ACH CSV (payment settlement data)</li>
+            </ul>
+
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                onClick={cancelGenerate}
+                style={{
+                  padding: "10px 20px",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  backgroundColor: "white",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmGenerate}
+                style={{
+                  padding: "10px 20px",
+                  border: "none",
+                  borderRadius: "4px",
+                  backgroundColor: "#007bff",
+                  color: "white",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                }}
+              >
+                Generate CSVs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
