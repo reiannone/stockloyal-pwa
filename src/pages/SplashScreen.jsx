@@ -160,8 +160,59 @@ function SplashScreen() {
           console.log("[Splash] no merchantId provided; skipping merchant fetch.");
         }
 
-        // 🚫 IMPORTANT: no wallet updates here.
-        // We only update wallet after successful login / account creation.
+        // ✅ NEW: If points are provided in URL and user exists, update their wallet
+        if (memberId && points > 0) {
+          console.log("[Splash] Points detected in URL, checking if user exists...");
+          
+          try {
+            // Check if wallet exists
+            const walletCheck = await apiPost("get-wallet.php", { member_id: memberId });
+            
+            if (walletCheck?.success && walletCheck?.wallet) {
+              console.log("[Splash] User exists, updating points and balance...");
+              
+              // Get conversion rate
+              const conv = parseFloat(localStorage.getItem("conversion_rate") || "0.01");
+              const cashBalance = Number((points * conv).toFixed(2));
+              
+              // Update wallet
+              await apiPost("update_points.php", {
+                member_id: memberId,
+                points: points,
+                cash_balance: cashBalance,
+              });
+              
+              // Log to ledger
+              const clientTxId = `merchant_update_${memberId}_${Date.now()}`;
+              const memberTimezone = localStorage.getItem("memberTimezone") || 
+                                    Intl.DateTimeFormat().resolvedOptions().timeZone || 
+                                    "America/New_York";
+              
+              await apiPost("log-ledger.php", {
+                member_id: memberId,
+                merchant_id: merchantId,
+                points: points,
+                // ✅ DON'T send amount_cash - constraint requires only ONE amount field
+                action: "earn",
+                client_tx_id: clientTxId,
+                member_timezone: memberTimezone,
+                note: "Points update from merchant referral link"
+              });
+              
+              console.log("[Splash] Points updated - points:", points, "cashBalance:", cashBalance);
+              console.log("[Splash] Transaction logged:", clientTxId);
+              
+              // Update localStorage
+              localStorage.setItem("points", String(points));
+              localStorage.setItem("cashBalance", cashBalance.toFixed(2));
+            } else {
+              console.log("[Splash] User doesn't exist yet, will create on registration");
+            }
+          } catch (err) {
+            console.log("[Splash] User doesn't exist or update failed:", err);
+            // Not an error - just means new user
+          }
+        }
 
         // Final routing decision
         if (merchantId && isActive && promoActive) {

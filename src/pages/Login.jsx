@@ -164,7 +164,7 @@ export default function Login() {
           member_id: memberIdToUse,
           merchant_id: merchantId || "",
           points: points,
-          amount_cash: cashBalance,
+          // ✅ DON'T send amount_cash - constraint requires only ONE amount field
           action: "earn",
           client_tx_id: clientTxId,
           member_timezone: memberTimezone,
