@@ -18,9 +18,48 @@ export default function Portfolio() {
     brokerContext = null;
   }
 
-  const storedBrokerName = localStorage.getItem("brokerName");
-  const memberBroker =
-    brokerContext?.broker?.name || storedBrokerName || "your brokerage firm";
+  // ✅ Get broker from localStorage (brokerName may not be populated)
+  const storedBroker = localStorage.getItem("broker");
+  
+  console.log("[Portfolio] storedBroker:", storedBroker);
+  
+  // ✅ Use broker directly
+  const memberBroker = brokerContext?.broker?.name || storedBroker || "your brokerage firm";
+
+  // ✅ Get broker website URL (only if actual broker is set)
+  const getBrokerUrl = () => {
+    if (!storedBroker) return null; // No broker selected, no link
+    
+    console.log("[Portfolio] Looking up URL for broker:", storedBroker);
+    
+    // Map broker values (handle case-insensitive matching)
+    const brokerUrls = {
+      // Match both display names and internal values
+      "interactive brokers": "https://www.interactivebrokers.com",
+      "Interactive Brokers": "https://www.interactivebrokers.com",
+      "charles schwab": "https://www.schwab.com",
+      "Charles Schwab": "https://www.schwab.com",
+      "fidelity": "https://www.fidelity.com",
+      "Fidelity": "https://www.fidelity.com",
+      "td ameritrade": "https://www.tdameritrade.com",
+      "TD Ameritrade": "https://www.tdameritrade.com",
+      "e*trade": "https://www.etrade.com",
+      "E*TRADE": "https://www.etrade.com",
+      "robinhood": "https://robinhood.com",
+      "Robinhood": "https://robinhood.com",
+      "webull": "https://www.webull.com",
+      "Webull": "https://www.webull.com",
+      "vanguard": "https://www.vanguard.com",
+      "Vanguard": "https://www.vanguard.com",
+    };
+    
+    const url = brokerUrls[storedBroker] || null;
+    console.log("[Portfolio] Broker URL found:", url);
+    
+    return url;
+  };
+
+  const brokerUrl = getBrokerUrl();
 
   const [orders, setOrders] = useState([]);
   const [portfolioValue, setPortfolioValue] = useState(0);
@@ -263,14 +302,26 @@ export default function Portfolio() {
           Back to Wallet
         </button>
       </div>
-
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
       <p className="form-disclosure">
         <strong>Disclosure:</strong> Your <em>StockLoyal Portfolio</em> displays
         only the securities purchased through the <strong>StockLoyal app</strong>.
-        These holdings are maintained directly with your brokerage firm,
-        <strong> {memberBroker}</strong>. To view your full investment portfolio,
-        please visit your broker’s website or app.
+        These holdings are maintained directly with your brokerage firm,{" "}
+        {brokerUrl ? (
+          <strong>
+            <a 
+              href={brokerUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ color: "#007bff", textDecoration: "underline" }}
+            >
+              {memberBroker}
+            </a>
+          </strong>
+        ) : (
+          <strong>{memberBroker}</strong>
+        )}
+        . To view your full investment portfolio, please visit your broker's website or app.
       </p>
     </div>
   );
