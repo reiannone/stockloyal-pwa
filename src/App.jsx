@@ -39,6 +39,7 @@ import SocialFeed from "./pages/SocialFeed.jsx";
 import PostDetail from "./pages/PostDetail.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
 import SymbolChart from "./pages/SymbolChart.jsx";
+import CSVFilesBrowser from "./pages/CSVFilesBrowser.jsx"; // ✅ NEW
 import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
 
 // ⭐ NEW: global share sheet
@@ -334,6 +335,16 @@ function App() {
                 element={
                   <PageWrapper>
                     <DemoLaunch />
+                  </PageWrapper>
+                }
+              />
+
+              {/* ✅ NEW: CSV Files Browser */}
+              <Route
+                path="/csv-files"
+                element={
+                  <PageWrapper>
+                    <CSVFilesBrowser />
                   </PageWrapper>
                 }
               />

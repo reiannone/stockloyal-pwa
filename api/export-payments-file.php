@@ -37,6 +37,40 @@ function json_exit(array $payload, int $statusCode = 200): void
     exit;
 }
 
+/**
+ * Log generated CSV file to csv_files table for tracking
+ */
+function logCsvFile($conn, $merchantId, $broker, $filename, $relativePath, $fileType): ?int
+{
+    try {
+        $fullPath = __DIR__ . '/' . ltrim($relativePath, '/');
+        $fileSize = file_exists($fullPath) ? filesize($fullPath) : null;
+        
+        $stmt = $conn->prepare("
+            INSERT INTO csv_files 
+            (merchant_id, broker, filename, relative_path, file_size, file_type)
+            VALUES (:merchant_id, :broker, :filename, :relative_path, :file_size, :file_type)
+        ");
+        
+        $stmt->execute([
+            ':merchant_id' => $merchantId,
+            ':broker' => $broker,
+            ':filename' => $filename,
+            ':relative_path' => $relativePath,
+            ':file_size' => $fileSize,
+            ':file_type' => $fileType
+        ]);
+        
+        $fileId = $conn->lastInsertId();
+        error_log("[export-payments-file] Logged CSV file: $filename (ID: $fileId, Type: $fileType)");
+        
+        return (int)$fileId;
+    } catch (PDOException $e) {
+        error_log("[export-payments-file] Failed to log CSV file: " . $e->getMessage());
+        return null;
+    }
+}
+
 try {
     // 1) Parse input
     $raw    = file_get_contents('php://input');
@@ -224,6 +258,25 @@ try {
 
     fclose($fpAch);
 
+    // ✅ Log CSV files to database for CSV Files Browser
+    $detailFileId = logCsvFile(
+        $conn, 
+        $merchantId, 
+        $broker, 
+        basename($detailCsvPath), 
+        'exports/' . basename($detailCsvPath), 
+        'detail'
+    );
+    
+    $achFileId = logCsvFile(
+        $conn, 
+        $merchantId, 
+        $broker, 
+        basename($achCsvPath), 
+        'exports/' . basename($achCsvPath), 
+        'ach'
+    );
+
     // Generate download URLs
     $apiBase = rtrim($_ENV['API_BASE'] ?? 'https://api.stockloyal.com/api', '/');
     $detailUrl = $apiBase . '/exports/' . basename($detailCsvPath);
@@ -383,11 +436,13 @@ try {
             'filename' => basename($detailCsvPath),
             'relative_path' => 'exports/' . basename($detailCsvPath),
             'url' => $detailUrl,
+            'file_id' => $detailFileId,
         ],
         'ach_csv' => [
             'filename' => basename($achCsvPath),
             'relative_path' => 'exports/' . basename($achCsvPath),
             'url' => $achUrl,
+            'file_id' => $achFileId,
         ],
         'batch_id' => $batchId,
         'merchant_id' => $merchantId,

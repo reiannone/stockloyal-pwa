@@ -95,6 +95,7 @@ export default function Footer() {
     { to: "/admin", label: "Merchant Admin" },
     { to: "/admin-broker", label: "Broker Admin" },
     { to: "/payments-processing", label: "Payments Processing" },
+    { to: "/csv-files", label: "CSV Files Browser" },
     { to: "/wallet-admin", label: "Wallet Admin" },
     { to: "/ledger-admin", label: "Ledger Admin" },
     { to: "/admin-faq", label: "FAQ Admin" },
