@@ -74,6 +74,16 @@ function MemberOnboard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // Read-only merchant/account information
+  const [merchantInfo, setMerchantInfo] = useState({
+    merchant_id: "",
+    merchant_name: "",
+    tier_name: "",
+    election_type: "",
+    sweep_percentage: "",
+    broker: "",
+  });
+
   const usStates = [
     { code: "AL", name: "Alabama" },
     { code: "AK", name: "Alaska" },
@@ -164,6 +174,27 @@ function MemberOnboard() {
             const merged = { ...prev, ...data.wallet };
             if (!merged.member_timezone) merged.member_timezone = localTZ;
             return merged;
+          });
+
+          // Debug: Log wallet data to see available fields
+          console.log("Wallet data received:", data.wallet);
+          console.log("Tier-related fields:", {
+            tier_name: data.wallet.tier_name,
+            current_tier: data.wallet.current_tier,
+            member_tier: data.wallet.member_tier,
+            memberTier: data.wallet.memberTier,
+            tier: data.wallet.tier,
+          });
+
+          // Set merchant and account information (using camelCase field names from API)
+          setMerchantInfo({
+            merchant_id: data.wallet.merchantId || data.wallet.merchant_id || "",
+            merchant_name: data.wallet.merchantName || data.wallet.merchant_name || "",
+            // Check both camelCase and snake_case field names
+            tier_name: data.wallet.memberTier || data.wallet.tier_name || data.wallet.current_tier || data.wallet.member_tier || data.wallet.tier || "",
+            election_type: data.wallet.election_type || data.wallet.electionType || "",
+            sweep_percentage: data.wallet.sweep_percentage != null ? data.wallet.sweep_percentage : (data.wallet.sweepPercentage != null ? data.wallet.sweepPercentage : ""),
+            broker: data.wallet.broker || "",
           });
 
           // ✅ Load avatar ONLY from database
@@ -310,6 +341,123 @@ function MemberOnboard() {
         <div className="member-form-row">
           <label className="member-form-label">Member ID:</label>
           <input value={memberId || ""} disabled className="member-form-input" />
+        </div>
+
+        {/* Merchant Information Section (read-only) */}
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            background: "#f9fafb",
+            padding: "16px",
+            borderRadius: "8px",
+            border: "1px solid #e5e7eb",
+            marginBottom: "20px",
+          }}
+        >
+          <h3
+            style={{
+              fontSize: "14px",
+              fontWeight: "600",
+              color: "#374151",
+              marginBottom: "12px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Merchant & Account Information
+          </h3>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Merchant ID
+              </label>
+              <input 
+                value={merchantInfo.merchant_id || "-"} 
+                disabled 
+                className="member-form-input"
+                style={{ background: "#f3f4f6", cursor: "not-allowed" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Merchant Name
+              </label>
+              <input 
+                value={merchantInfo.merchant_name || "-"} 
+                disabled 
+                className="member-form-input"
+                style={{ background: "#f3f4f6", cursor: "not-allowed" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Member Tier
+              </label>
+              <input 
+                value={merchantInfo.tier_name || "-"} 
+                disabled 
+                className="member-form-input"
+                style={{ background: "#f3f4f6", cursor: "not-allowed" }}
+              />
+            </div>
+
+            {/* Broker - Clickable */}
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Broker
+              </label>
+              <input 
+                value={merchantInfo.broker || "-"} 
+                readOnly
+                onClick={() => navigate("/select-broker")}
+                className="member-form-input"
+                style={{ 
+                  background: "#e0f2fe", 
+                  cursor: "pointer",
+                  color: "#0369a1",
+                  fontWeight: "500",
+                  border: "1px solid #0ea5e9"
+                }}
+                title="Click to change broker"
+              />
+            </div>
+
+            {/* Election Type - Clickable */}
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Election Type
+              </label>
+              <input 
+                value={merchantInfo.election_type || "-"} 
+                readOnly
+                onClick={() => navigate("/election")}
+                className="member-form-input"
+                style={{ 
+                  background: "#e0f2fe", 
+                  cursor: "pointer",
+                  color: "#0369a1",
+                  fontWeight: "500",
+                  border: "1px solid #0ea5e9"
+                }}
+                title="Click to change election type"
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "block", marginBottom: "4px" }}>
+                Sweep Percentage
+              </label>
+              <input 
+                value={merchantInfo.sweep_percentage !== "" ? `${merchantInfo.sweep_percentage}%` : "-"} 
+                disabled 
+                className="member-form-input"
+                style={{ background: "#f3f4f6", cursor: "not-allowed" }}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="member-form-row">

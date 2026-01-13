@@ -298,7 +298,7 @@ export default function TransactionsLedgerAdmin() {
 
           <input
             className="form-input"
-            type="text"
+            type={filterField === "date" ? "date" : "text"}
             placeholder={inputPlaceholder}
             value={filterValue}
             onChange={(e) => setFilterValue(e.target.value)}
@@ -568,7 +568,6 @@ export default function TransactionsLedgerAdmin() {
                 <th>Channel / Status</th>
                 <th>Points / Cash</th>
                 <th>Event (Local)</th>
-                <th>Timezone</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -599,17 +598,9 @@ export default function TransactionsLedgerAdmin() {
                       <div>Cash: {fmtMoney(r?.amount_cash)}</div>
                     </td>
                     <td>{localTime}</td>
-                    <td className="subtext">{r?.member_timezone || "-"}</td>
                     <td>
                       <button className="btn-secondary" onClick={() => handleEditClick(r)}>
                         Edit
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        style={{ marginLeft: 8, color: "#dc2626", borderColor: "#dc2626" }}
-                        onClick={() => deleteRow(r)}
-                      >
-                        Delete
                       </button>
                     </td>
                   </tr>
@@ -617,7 +608,7 @@ export default function TransactionsLedgerAdmin() {
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
                     No ledger records found.
                   </td>
                 </tr>

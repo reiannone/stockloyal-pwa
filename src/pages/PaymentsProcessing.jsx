@@ -197,6 +197,19 @@ export default function PaymentsProcessing() {
     };
   }, [merchantRows]);
 
+  // Check if all caught up (all values are zero or null)
+  const isAllCaughtUp = useMemo(() => {
+    return (
+      !allLoading &&
+      merchantRows.length > 0 &&
+      topTotals.merchants_with_unpaid === 0 &&
+      topTotals.unpaid_orders === 0 &&
+      topTotals.unpaid_baskets === 0 &&
+      topTotals.brokers === 0 &&
+      topTotals.total_payment_due === 0
+    );
+  }, [allLoading, merchantRows.length, topTotals]);
+
   // Build per-broker basket counts from raw orders (distinct basket_id per broker)
   const basketCountByBroker = useMemo(() => {
     const map = new Map(); // broker -> Set(basket_id)
@@ -415,6 +428,39 @@ export default function PaymentsProcessing() {
       <p className="page-deck">
         Summary of <strong>unpaid</strong> ACH obligations across all merchants. Click a merchant row to drill down.
       </p>
+
+      {/* All Caught Up Message */}
+      {isAllCaughtUp && (
+        <div
+          style={{
+            backgroundColor: "#d1fae5",
+            border: "2px solid #10b981",
+            borderRadius: "8px",
+            padding: "1rem 1.5rem",
+            marginBottom: "1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+          }}
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#10b981"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span style={{ fontSize: "1.125rem", fontWeight: "600", color: "#065f46" }}>
+            You're all caught up! No pending payments.
+          </span>
+        </div>
+      )}
 
       {/* Top summary card */}
       <div className="card" style={{ marginBottom: "1rem" }}>

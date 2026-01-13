@@ -12,6 +12,10 @@ export default function Ledger() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // ── Filter state ────────────────────────────────────────────────────────────
+  const [filterField, setFilterField] = useState(""); // "" = all | tx_type | date | status | direction | channel
+  const [filterValue, setFilterValue] = useState("");
+
   // Slider state for selected ledger entry
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
@@ -82,6 +86,52 @@ export default function Ledger() {
       maximumFractionDigits: 2,
     });
 
+  // Filter entries based on selected filter
+  const filteredEntries = useMemo(() => {
+    if (!filterField || !filterValue.trim()) {
+      return entries; // No filter applied
+    }
+
+    const val = filterValue.trim().toLowerCase();
+
+    switch (filterField) {
+      case "tx_type":
+        return entries.filter((e) => 
+          (e.tx_type || "").toLowerCase().includes(val)
+        );
+      
+      case "date": {
+        // Filter by date (YYYY-MM-DD)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(filterValue)) {
+          return entries;
+        }
+        return entries.filter((e) => {
+          if (!e.created_at) return false;
+          const entryDate = e.created_at.split(" ")[0]; // Extract YYYY-MM-DD
+          return entryDate === filterValue;
+        });
+      }
+      
+      case "status":
+        return entries.filter((e) => 
+          (e.status || "").toLowerCase().includes(val)
+        );
+      
+      case "direction":
+        return entries.filter((e) => 
+          (e.direction || "").toLowerCase().includes(val)
+        );
+      
+      case "channel":
+        return entries.filter((e) => 
+          (e.channel || "").toLowerCase().includes(val)
+        );
+      
+      default:
+        return entries;
+    }
+  }, [entries, filterField, filterValue]);
+
   // Convert UTC/MySQL-ish timestamps to member's local time string
   const toLocalZonedString = (ts) => {
     if (!ts) return "-";
@@ -130,13 +180,87 @@ export default function Ledger() {
         Showing times in <strong>{memberTimezone || detectedTz}</strong>
       </p>
 
+      {/* Filter bar */}
+      {!loading && !error && entries.length > 0 && (
+        <div className="card" style={{ marginBottom: "1rem", padding: "1rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {/* Filter controls row */}
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: "600", color: "#374151", minWidth: "50px" }}>
+                Filter:
+              </label>
+              <select
+                className="form-input"
+                style={{ minWidth: 200, flex: "0 1 auto" }}
+                value={filterField}
+                onChange={(e) => {
+                  setFilterField(e.target.value);
+                  setFilterValue("");
+                }}
+              >
+                <option value="">All Entries</option>
+                <option value="tx_type">Transaction Type</option>
+                <option value="date">Date</option>
+                <option value="status">Status</option>
+                <option value="direction">Direction</option>
+                <option value="channel">Channel</option>
+              </select>
+
+              {filterField && (
+                <input
+                  className="form-input"
+                  type={filterField === "date" ? "date" : "text"}
+                  placeholder={
+                    filterField === "tx_type"
+                      ? "e.g. points_received"
+                      : filterField === "date"
+                      ? "Select date"
+                      : filterField === "status"
+                      ? "e.g. confirmed"
+                      : filterField === "direction"
+                      ? "e.g. inbound"
+                      : filterField === "channel"
+                      ? "e.g. web"
+                      : ""
+                  }
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                />
+              )}
+
+              <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                Showing <strong>{filteredEntries.length}</strong> of <strong>{entries.length}</strong> entries
+              </span>
+            </div>
+
+            {/* Clear filter button row */}
+            {(filterField || filterValue) && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFilterField("");
+                    setFilterValue("");
+                  }}
+                  style={{ fontSize: "0.85rem", minWidth: "120px" }}
+                >
+                  Clear Filter
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p>Loading your ledger...</p>
       ) : error ? (
         <p className="error-text">{error}</p>
-      ) : entries.length === 0 ? (
+      ) : filteredEntries.length === 0 ? (
         <p className="portfolio-subtext" style={{ textAlign: "center" }}>
-          No ledger entries found.
+          {entries.length === 0 ? "No ledger entries found." : "No entries match the current filter."}
         </p>
       ) : (
         <div className="basket-table-wrapper" style={{ overflowX: "auto" }}>
@@ -163,7 +287,7 @@ export default function Ledger() {
             </thead>
 
             <tbody>
-              {entries.map((entry, idx) => (
+              {filteredEntries.map((entry, idx) => (
                 <tr
                   key={idx}
                   onClick={() => openEntry(entry)}

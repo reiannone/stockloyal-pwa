@@ -440,7 +440,16 @@ export default function AdminBroker() {
                   <td>
                     <button
                       className="btn-secondary"
-                      onClick={() => setSelected({ ...b })}
+                      onClick={() => {
+                        setSelected({ ...b });
+                        // Scroll to top of page - multiple methods for compatibility
+                        const container = document.getElementById('admin-broker-container');
+                        if (container) {
+                          container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        document.documentElement.scrollTop = 0;
+                      }}
                     >
                       Edit
                     </button>

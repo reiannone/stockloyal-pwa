@@ -525,6 +525,13 @@ export default function Admin() {
                         onClick={() => {
                           setSelected({ ...m });
                           originalRateRef.current = Number(m.conversion_rate ?? 0);
+                          // Scroll to top of page - multiple methods for compatibility
+                          const container = document.getElementById('admin-container');
+                          if (container) {
+                            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                          document.documentElement.scrollTop = 0;
                         }}
                       >
                         Edit
