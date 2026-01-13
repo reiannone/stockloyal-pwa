@@ -13,6 +13,10 @@ export default function WalletAdmin() {
   const [merchants, setMerchants] = useState([]);
   const [merchantsLoading, setMerchantsLoading] = useState(true);
 
+  // ── Filter state ────────────────────────────────────────────────────────────
+  const [filterMerchantId, setFilterMerchantId] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+
   // ---- timezone helpers ----
   const detectedTz = useMemo(() => {
     try {
@@ -351,6 +355,40 @@ export default function WalletAdmin() {
     }, 100);
   };
 
+  // Filter wallets based on merchant and search term
+  const filteredWallets = useMemo(() => {
+    let result = wallets;
+
+    // Filter by merchant
+    if (filterMerchantId) {
+      result = result.filter((w) => 
+        String(w.merchant_id) === String(filterMerchantId)
+      );
+    }
+
+    // Search by member_id, first_name, last_name, or email
+    if (searchTerm.trim()) {
+      const search = searchTerm.trim().toLowerCase();
+      result = result.filter((w) => {
+        const memberId = (w.member_id || "").toLowerCase();
+        const firstName = (w.first_name || "").toLowerCase();
+        const lastName = (w.last_name || "").toLowerCase();
+        const email = (w.member_email || "").toLowerCase();
+        const fullName = `${firstName} ${lastName}`.toLowerCase();
+        
+        return (
+          memberId.includes(search) ||
+          firstName.includes(search) ||
+          lastName.includes(search) ||
+          fullName.includes(search) ||
+          email.includes(search)
+        );
+      });
+    }
+
+    return result;
+  }, [wallets, filterMerchantId, searchTerm]);
+
   return (
     <div className="app-container app-content">
       <h1 className="page-title">Wallet Administration</h1>
@@ -358,6 +396,67 @@ export default function WalletAdmin() {
         This administration page is to manage member wallet information to correct or originate
         information for demonstration purposes.
       </p>
+
+      {/* Filter bar */}
+      {!loading && wallets.length > 0 && (
+        <div className="card" style={{ marginBottom: "1rem", padding: "1rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {/* Filter controls row */}
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: "600", color: "#374151", minWidth: "80px" }}>
+                Filter by:
+              </label>
+              
+              {/* Merchant dropdown */}
+              <select
+                className="form-input"
+                style={{ minWidth: 200, flex: "0 1 auto" }}
+                value={filterMerchantId}
+                onChange={(e) => setFilterMerchantId(e.target.value)}
+                disabled={merchantsLoading}
+              >
+                <option value="">All Merchants</option>
+                {merchants.map((m) => (
+                  <option key={m.merchant_id} value={m.merchant_id}>
+                    {m.merchant_name || m.merchant_id}
+                  </option>
+                ))}
+              </select>
+
+              {/* Search input */}
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Search member ID, name, or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ minWidth: 280, flex: "1 1 auto", maxWidth: "500px" }}
+              />
+
+              <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                Showing <strong>{filteredWallets.length}</strong> of <strong>{wallets.length}</strong> wallets
+              </span>
+            </div>
+
+            {/* Clear filters button row */}
+            {(filterMerchantId || searchTerm) && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFilterMerchantId("");
+                    setSearchTerm("");
+                  }}
+                  style={{ fontSize: "0.85rem", minWidth: "120px" }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%" }}>
         {selected ? (
@@ -711,7 +810,7 @@ export default function WalletAdmin() {
               </tr>
             </thead>
             <tbody>
-              {wallets.map((w) => {
+              {filteredWallets.map((w) => {
                 const points = w.points == null || isNaN(Number(w.points)) ? null : Number(w.points);
                 const cash =
                   w.cash_balance != null && !isNaN(Number(w.cash_balance))
@@ -762,6 +861,15 @@ export default function WalletAdmin() {
                   </tr>
                 );
               })}
+              {filteredWallets.length === 0 && (
+                <tr>
+                  <td colSpan="4" style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+                    {wallets.length === 0 
+                      ? "No wallets found." 
+                      : "No wallets match the current filters."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
