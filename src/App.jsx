@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
+import DataQualityCheck from "./pages/DataQualityCheck.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
 import SocialFeed from "./pages/SocialFeed.jsx";
 import PostDetail from "./pages/PostDetail.jsx";
@@ -327,6 +328,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <AdminFAQ />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/data-quality"
+                element={
+                  <PageWrapper>
+                    <DataQualityCheck />
                   </PageWrapper>
                 }
               />

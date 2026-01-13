@@ -92,13 +92,14 @@ export default function Footer() {
 
   // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
   const allPages = [
-    { to: "/admin", label: "Merchant Admin" },
-    { to: "/admin-broker", label: "Broker Admin" },
     { to: "/payments-processing", label: "Payments Processing" },
     { to: "/csv-files", label: "CSV Files Browser" },
-    { to: "/wallet-admin", label: "Wallet Admin" },
+    { to: "/admin", label: "Merchant Admin" },
+    { to: "/admin-broker", label: "Broker Admin" },
+    { to: "/wallet-admin", label: "Member Wallet Admin" },
     { to: "/ledger-admin", label: "Ledger Admin" },
     { to: "/admin-faq", label: "FAQ Admin" },
+    { to: "/data-quality", label: "Data Quality Check" },
     { to: "/demo-launch", label: "Demo Launch" },
     { to: "/skyblue-rewards", label: "Sky Blue Airlines Miles" },
   ];

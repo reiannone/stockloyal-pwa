@@ -475,7 +475,7 @@ export default function WalletAdmin() {
 
   return (
     <div className="app-container app-content">
-      <h1 className="page-title">Wallet Administration</h1>
+      <h1 className="page-title">Member Wallet Administration</h1>
       <p className="page-deck">
         This administration page is to manage member wallet information to correct or originate
         information for demonstration purposes.
