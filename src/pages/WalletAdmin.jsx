@@ -26,20 +26,46 @@ export default function WalletAdmin() {
   const timezones = useMemo(
     () => [
       // Americas
-      "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-      "America/Phoenix", "America/Anchorage", "Pacific/Honolulu",
-      "America/Detroit", "America/Indiana/Indianapolis", "America/Kentucky/Louisville",
-      "America/Toronto", "America/Vancouver", "America/Winnipeg", "America/Edmonton",
-      "America/Mexico_City", "America/Cancun",
+      "America/New_York",
+      "America/Chicago",
+      "America/Denver",
+      "America/Los_Angeles",
+      "America/Phoenix",
+      "America/Anchorage",
+      "Pacific/Honolulu",
+      "America/Detroit",
+      "America/Indiana/Indianapolis",
+      "America/Kentucky/Louisville",
+      "America/Toronto",
+      "America/Vancouver",
+      "America/Winnipeg",
+      "America/Edmonton",
+      "America/Mexico_City",
+      "America/Cancun",
       // Europe
-      "Europe/London", "Europe/Dublin", "Europe/Paris", "Europe/Berlin",
-      "Europe/Madrid", "Europe/Rome", "Europe/Amsterdam", "Europe/Brussels",
+      "Europe/London",
+      "Europe/Dublin",
+      "Europe/Paris",
+      "Europe/Berlin",
+      "Europe/Madrid",
+      "Europe/Rome",
+      "Europe/Amsterdam",
+      "Europe/Brussels",
       // Asia
-      "Asia/Tokyo", "Asia/Shanghai", "Asia/Hong_Kong", "Asia/Singapore",
-      "Asia/Taipei", "Asia/Seoul", "Asia/Kolkata", "Asia/Dubai",
+      "Asia/Tokyo",
+      "Asia/Shanghai",
+      "Asia/Hong_Kong",
+      "Asia/Singapore",
+      "Asia/Taipei",
+      "Asia/Seoul",
+      "Asia/Kolkata",
+      "Asia/Dubai",
       // Oceania
-      "Australia/Sydney", "Australia/Melbourne", "Australia/Brisbane",
-      "Australia/Perth", "Pacific/Auckland",
+      "Australia/Sydney",
+      "Australia/Melbourne",
+      "Australia/Brisbane",
+      "Australia/Perth",
+      "Pacific/Auckland",
       // Fallback
       "UTC",
     ],
@@ -74,6 +100,19 @@ export default function WalletAdmin() {
     return cents / 100;
   };
 
+  // Friendly display + safe fallback for member tier
+  const memberTierLabel = useMemo(() => {
+    if (!selected) return "";
+    const raw =
+      selected.member_tier ??
+      selected.tier ??
+      selected.tier_name ??
+      selected.loyalty_tier ??
+      "";
+    const t = String(raw || "").trim();
+    return t || "Standard";
+  }, [selected]);
+
   // derive current merchant and rate for the selected wallet
   const selectedMerchant = useMemo(() => {
     if (!selected) return null;
@@ -81,6 +120,27 @@ export default function WalletAdmin() {
   }, [merchants, selected]);
 
   const selectedMerchantRate = selectedMerchant?.conversion_rate ?? 0;
+  
+  // ✅ Helper function to get tier-specific rate from merchant
+  const getTierRate = (merchant, tierName) => {
+    if (!merchant || !tierName) return null;
+    
+    for (let i = 1; i <= 6; i++) {
+      const mTierName = merchant[`tier${i}_name`];
+      if (mTierName && mTierName.toLowerCase() === tierName.toLowerCase()) {
+        return merchant[`tier${i}_conversion_rate`] ?? null;
+      }
+    }
+    return null;
+  };
+  
+  // ✅ Calculate tier-specific rate for selected wallet
+  const selectedTierRate = useMemo(() => {
+    return getTierRate(selectedMerchant, selected?.member_tier);
+  }, [selected, selectedMerchant]);
+  
+  // ✅ Effective rate: tier-specific if available, otherwise base merchant rate
+  const effectiveConversionRate = selectedTierRate ?? selectedMerchantRate;
 
   // --- load merchants for dropdown ---
   useEffect(() => {
@@ -119,14 +179,26 @@ export default function WalletAdmin() {
           if (!initialWallet && (data.wallets || []).length > 0) {
             initialWallet = data.wallets[0];
           }
+
           if (initialWallet) {
             // merchant lookup for rate
             const m = merchants.find(
               (x) => String(x.merchant_id) === String(initialWallet.merchant_id)
             );
-            const rateFromMerchant = m?.conversion_rate ?? 0;
+            
+            // normalize tier fields first
+            const member_tier =
+              initialWallet.member_tier ??
+              initialWallet.tier ??
+              initialWallet.tier_name ??
+              initialWallet.loyalty_tier ??
+              "";
+            
+            // ✅ Use tier rate if member has a tier
+            const tierRate = getTierRate(m, member_tier);
+            const rateToUse = tierRate ?? (m?.conversion_rate ?? 0);
             const points = Number(initialWallet.points || 0);
-            const cash_balance = calcCashFromPoints(points, rateFromMerchant);
+            const cash_balance = calcCashFromPoints(points, rateToUse);
 
             // ensure timezone present (default to detected only if blank/missing)
             const member_timezone =
@@ -136,9 +208,10 @@ export default function WalletAdmin() {
 
             setSelected({
               ...initialWallet,
-              cash_balance, // live calc from merchant rate
+              cash_balance, // live calc from tier-specific or base merchant rate
               merchant_name: initialWallet.merchant_name || m?.merchant_name || "",
               member_timezone,
+              member_tier,
             });
           }
         } else {
@@ -159,13 +232,14 @@ export default function WalletAdmin() {
     if (!selected) return;
 
     const updated = { ...selected };
+
     if (newPassword.trim()) {
       updated.new_password = newPassword.trim();
     }
 
-    // Recalc using live merchant rate (do not persist rate)
+    // Recalc using effective merchant rate (tier-specific or base)
     const points = Number(updated.points || 0);
-    updated.cash_balance = calcCashFromPoints(points, selectedMerchantRate);
+    updated.cash_balance = calcCashFromPoints(points, effectiveConversionRate);
 
     // Ensure we DO NOT send conversion_rate from the admin page
     delete updated.conversion_rate;
@@ -212,7 +286,8 @@ export default function WalletAdmin() {
 
     if (name === "points") {
       const points = Number(updated.points || 0);
-      updated.cash_balance = calcCashFromPoints(points, selectedMerchantRate);
+      // ✅ Use effective rate (tier-specific or base)
+      updated.cash_balance = calcCashFromPoints(points, effectiveConversionRate);
     }
 
     setSelected(updated);
@@ -230,8 +305,10 @@ export default function WalletAdmin() {
     };
 
     const points = Number(updated.points || 0);
-    const rateFromMerchant = m?.conversion_rate ?? 0;
-    updated.cash_balance = calcCashFromPoints(points, rateFromMerchant);
+    // ✅ Use tier rate if member has a tier
+    const tierRate = getTierRate(m, updated.member_tier);
+    const rateToUse = tierRate ?? (m?.conversion_rate ?? 0);
+    updated.cash_balance = calcCashFromPoints(points, rateToUse);
 
     setSelected(updated);
   };
@@ -242,13 +319,25 @@ export default function WalletAdmin() {
     const points = Number(withCalc.points || 0);
 
     const m = merchants.find((x) => String(x.merchant_id) === String(withCalc.merchant_id));
-    const rateFromMerchant = m?.conversion_rate ?? 0;
+    // ✅ Use tier rate if member has a tier
+    const tierRate = getTierRate(m, withCalc.member_tier);
+    const rateToUse = tierRate ?? (m?.conversion_rate ?? 0);
 
-    withCalc.cash_balance = calcCashFromPoints(points, rateFromMerchant);
+    withCalc.cash_balance = calcCashFromPoints(points, rateToUse);
 
     if (!withCalc.merchant_name && m?.merchant_name) withCalc.merchant_name = m.merchant_name;
     if (!withCalc.broker && m?.broker) withCalc.broker = m.broker;
     if (!withCalc.broker_url && m?.broker_url) withCalc.broker_url = m.broker_url;
+
+    // normalize tier fields (support multiple backend names)
+    if (withCalc.member_tier == null) {
+      withCalc.member_tier =
+        withCalc.member_tier ??
+        withCalc.tier ??
+        withCalc.tier_name ??
+        withCalc.loyalty_tier ??
+        "";
+    }
 
     // ensure timezone present
     if (!withCalc.member_timezone || String(withCalc.member_timezone).trim() === "") {
@@ -266,8 +355,8 @@ export default function WalletAdmin() {
     <div className="app-container app-content">
       <h1 className="page-title">Wallet Administration</h1>
       <p className="page-deck">
-        This administration page is to manage member wallet information to correct or
-        originate information for demonstration purposes.
+        This administration page is to manage member wallet information to correct or originate
+        information for demonstration purposes.
       </p>
 
       <div className="card" ref={editPanelRef}>
@@ -455,8 +544,20 @@ export default function WalletAdmin() {
               />
             </FormRow>
 
-            {/* 🔒 Conversion Rate (display-only from merchant) */}
-            <FormRow label="Conversion Rate (from Merchant)">
+            {/* ✅ Member Tier (display below merchant name and above conversion rate) */}
+            <FormRow label="Member Tier">
+              <input
+                className="form-input"
+                type="text"
+                name="member_tier"
+                value={memberTierLabel}
+                onChange={handleChange}
+                placeholder="e.g., Standard / Silver / Gold / Platinum"
+              />
+            </FormRow>
+
+            {/* 🔒 Base Conversion Rate (display-only from merchant) */}
+            <FormRow label="Base Conversion Rate (Merchant Default)">
               <input
                 className="form-input"
                 type="text"
@@ -467,6 +568,30 @@ export default function WalletAdmin() {
                     : ""
                 }
                 readOnly
+                style={{
+                  color: "#6b7280",
+                  fontStyle: "italic"
+                }}
+              />
+            </FormRow>
+            
+            {/* ✅ Active Conversion Rate (tier-specific or base) */}
+            <FormRow label="Active Conversion Rate (Currently Using)">
+              <input
+                className="form-input"
+                type="text"
+                name="active_rate_display"
+                value={
+                  effectiveConversionRate
+                    ? `${effectiveConversionRate}${selectedTierRate ? ` (${selected?.member_tier} Tier)` : " (Base Rate)"}`
+                    : ""
+                }
+                readOnly
+                style={{
+                  fontWeight: "600",
+                  color: selectedTierRate ? "#059669" : "#1f2937",
+                  backgroundColor: selectedTierRate ? "#f0fdf4" : "transparent"
+                }}
               />
             </FormRow>
 
@@ -521,7 +646,7 @@ export default function WalletAdmin() {
                 value={
                   Number.isFinite(Number(selected?.cash_balance))
                     ? selected?.cash_balance
-                    : calcCashFromPoints(Number(selected?.points || 0), selectedMerchantRate)
+                    : calcCashFromPoints(Number(selected?.points || 0), effectiveConversionRate)
                 }
                 readOnly
               />
@@ -550,7 +675,9 @@ export default function WalletAdmin() {
             </FormRow>
 
             <div className="card-actions">
-              <button type="submit" className="btn-primary">Save Wallet</button>
+              <button type="submit" className="btn-primary">
+                Save Wallet
+              </button>
               {selected?.record_id && (
                 <button
                   type="button"
@@ -586,8 +713,7 @@ export default function WalletAdmin() {
             </thead>
             <tbody>
               {wallets.map((w) => {
-                const points =
-                  w.points == null || isNaN(Number(w.points)) ? null : Number(w.points);
+                const points = w.points == null || isNaN(Number(w.points)) ? null : Number(w.points);
                 const cash =
                   w.cash_balance != null && !isNaN(Number(w.cash_balance))
                     ? Number(w.cash_balance)
@@ -602,9 +728,7 @@ export default function WalletAdmin() {
                     <td>{w.member_id}</td>
                     <td>
                       <div>{w.member_email}</div>
-                      {w.member_timezone && (
-                        <div className="subtext">{w.member_timezone}</div>
-                      )}
+                      {w.member_timezone && <div className="subtext">{w.member_timezone}</div>}
                     </td>
                     <td>
                       <div>{w.merchant_name || "-"}</div>
@@ -613,14 +737,13 @@ export default function WalletAdmin() {
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                         <span>{points == null ? "-" : points.toLocaleString()}</span>
-                        <span aria-hidden="true" title="converts to">➜</span>
+                        <span aria-hidden="true" title="converts to">
+                          ➜
+                        </span>
                         <span>
                           {cash == null
                             ? "-"
-                            : cash.toLocaleString(undefined, {
-                                style: "currency",
-                                currency: "USD",
-                              })}
+                            : cash.toLocaleString(undefined, { style: "currency", currency: "USD" })}
                         </span>
                       </div>
                       <div className="subtext" style={{ marginTop: "0.15rem" }}>

@@ -102,12 +102,12 @@ try {
     if ($memberTier === '' && $merchantId !== '') {
         $tierStmt = $conn->prepare("
             SELECT 
-                tier_1_name, tier_1_min_points,
-                tier_2_name, tier_2_min_points,
-                tier_3_name, tier_3_min_points,
-                tier_4_name, tier_4_min_points,
-                tier_5_name, tier_5_min_points,
-                tier_6_name, tier_6_min_points
+                tier1_name, tier1_min_points,
+                tier2_name, tier2_min_points,
+                tier3_name, tier3_min_points,
+                tier4_name, tier4_min_points,
+                tier5_name, tier5_min_points,
+                tier6_name, tier6_min_points
             FROM merchant 
             WHERE merchant_id = :merchant_id
             LIMIT 1
@@ -119,8 +119,8 @@ try {
             // Find lowest tier (tier with smallest min_points)
             $tiers = [];
             for ($i = 1; $i <= 6; $i++) {
-                $tierName = $tierData["tier_{$i}_name"];
-                $tierMinPoints = $tierData["tier_{$i}_min_points"];
+                $tierName = $tierData["tier{$i}_name"];
+                $tierMinPoints = $tierData["tier{$i}_min_points"];
                 if ($tierName) {
                     $tiers[] = [
                         'name' => $tierName,
