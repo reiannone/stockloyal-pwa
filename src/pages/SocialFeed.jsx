@@ -30,6 +30,10 @@ export default function SocialFeed() {
   // initial load state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  
+  // ✨ Influencer stats
+  const [influencers, setInfluencers] = useState(null);
+  const [influencersLoading, setInfluencersLoading] = useState(true);
 
   // infinite scroll state
   const LIMIT = 20;
@@ -99,6 +103,23 @@ export default function SocialFeed() {
       setLoading(false);
     }
   }, [buildPayload]);
+
+  // ✨ Load influencer stats on mount
+  useEffect(() => {
+    (async () => {
+      setInfluencersLoading(true);
+      try {
+        const data = await apiGet("get-influencers.php");
+        if (data?.success) {
+          setInfluencers(data.influencers || null);
+        }
+      } catch (e) {
+        console.error("[SocialFeed] Failed to load influencers:", e);
+      } finally {
+        setInfluencersLoading(false);
+      }
+    })();
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loading) return;
@@ -278,6 +299,199 @@ export default function SocialFeed() {
       >
         See how members are turning everyday points into investment strategies.
       </p>
+
+      {/* ✨ Top Influencers Chart */}
+      {!influencersLoading && influencers && (
+        <div className="card" style={{ marginBottom: "1rem", padding: "1rem" }}>
+          <h2 style={{ 
+            fontSize: "1.1rem", 
+            fontWeight: "600", 
+            marginTop: 0, 
+            marginBottom: "1rem",
+            color: "#1f2937"
+          }}>
+            🏆 Top Influencers
+          </h2>
+          
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", 
+            gap: "1.5rem" 
+          }}>
+            {/* Most Posts */}
+            {influencers.most_posts && influencers.most_posts.length > 0 && (
+              <div>
+                <h3 style={{ 
+                  fontSize: "0.9rem", 
+                  fontWeight: "600", 
+                  marginBottom: "0.75rem",
+                  color: "#6366f1"
+                }}>
+                  📝 Most Posts
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {influencers.most_posts.slice(0, 10).map((inf, idx) => {
+                    const maxPosts = influencers.most_posts[0].post_count;
+                    const percentage = (inf.post_count / maxPosts) * 100;
+                    
+                    return (
+                      <div 
+                        key={inf.member_id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          fontSize: "0.85rem"
+                        }}
+                      >
+                        <span style={{ 
+                          minWidth: "20px", 
+                          color: "#9ca3af", 
+                          fontSize: "0.75rem",
+                          fontWeight: "600"
+                        }}>
+                          {idx + 1}
+                        </span>
+                        
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/social?member_id=${inf.member_id}`)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                            color: "#2563eb",
+                            textDecoration: "none",
+                            fontWeight: "500",
+                            minWidth: "100px",
+                            textAlign: "left"
+                          }}
+                          onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
+                          onMouseLeave={(e) => e.target.style.textDecoration = "none"}
+                        >
+                          {inf.member_id}
+                        </button>
+                        
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <div style={{ 
+                            flex: 1,
+                            height: "18px", 
+                            background: "#e0e7ff", 
+                            borderRadius: "4px",
+                            overflow: "hidden"
+                          }}>
+                            <div style={{
+                              height: "100%",
+                              width: `${percentage}%`,
+                              background: "linear-gradient(90deg, #6366f1, #8b5cf6)",
+                              transition: "width 0.3s ease"
+                            }} />
+                          </div>
+                          
+                          <span style={{ 
+                            minWidth: "35px",
+                            fontWeight: "600",
+                            color: "#4b5563"
+                          }}>
+                            {inf.post_count}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Most Likes */}
+            {influencers.most_likes && influencers.most_likes.length > 0 && (
+              <div>
+                <h3 style={{ 
+                  fontSize: "0.9rem", 
+                  fontWeight: "600", 
+                  marginBottom: "0.75rem",
+                  color: "#ec4899"
+                }}>
+                  ❤️ Most Likes
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {influencers.most_likes.slice(0, 10).map((inf, idx) => {
+                    const maxLikes = influencers.most_likes[0].total_likes;
+                    const percentage = (inf.total_likes / maxLikes) * 100;
+                    
+                    return (
+                      <div 
+                        key={inf.member_id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          fontSize: "0.85rem"
+                        }}
+                      >
+                        <span style={{ 
+                          minWidth: "20px", 
+                          color: "#9ca3af", 
+                          fontSize: "0.75rem",
+                          fontWeight: "600"
+                        }}>
+                          {idx + 1}
+                        </span>
+                        
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/social?member_id=${inf.member_id}`)}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                            color: "#2563eb",
+                            textDecoration: "none",
+                            fontWeight: "500",
+                            minWidth: "100px",
+                            textAlign: "left"
+                          }}
+                          onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
+                          onMouseLeave={(e) => e.target.style.textDecoration = "none"}
+                        >
+                          {inf.member_id}
+                        </button>
+                        
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <div style={{ 
+                            flex: 1,
+                            height: "18px", 
+                            background: "#fce7f3", 
+                            borderRadius: "4px",
+                            overflow: "hidden"
+                          }}>
+                            <div style={{
+                              height: "100%",
+                              width: `${percentage}%`,
+                              background: "linear-gradient(90deg, #ec4899, #f43f5e)",
+                              transition: "width 0.3s ease"
+                            }} />
+                          </div>
+                          
+                          <span style={{ 
+                            minWidth: "35px",
+                            fontWeight: "600",
+                            color: "#4b5563"
+                          }}>
+                            {inf.total_likes}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 🔎 Banner when filtering by author (from ticker) */}
       {filterMemberId && (

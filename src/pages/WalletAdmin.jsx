@@ -182,14 +182,38 @@ export default function WalletAdmin() {
         if (data?.success) {
           setWallets(data.wallets || []);
 
-          const activeMemberId = localStorage.getItem("memberId");
           let initialWallet = null;
 
-          if (activeMemberId) {
-            initialWallet = (data.wallets || []).find(
-              (w) => String(w.member_id) === String(activeMemberId)
-            );
+          // ✅ Priority 1: If coming from Data Quality Check, load first affected member
+          if (fromDataQuality && fieldName) {
+            if (affectedMembers.length > 0) {
+              // Find first affected member in the wallet list
+              const firstAffectedId = affectedMembers[0];
+              initialWallet = (data.wallets || []).find(
+                (w) => String(w.member_id) === String(firstAffectedId)
+              );
+            } else {
+              // No specific member IDs, find first record with missing field
+              initialWallet = (data.wallets || []).find((w) => {
+                const fieldValue = w[fieldName];
+                return fieldValue === null || 
+                       fieldValue === undefined || 
+                       (typeof fieldValue === 'string' && fieldValue.trim() === '');
+              });
+            }
           }
+
+          // ✅ Priority 2: Use active member from localStorage
+          if (!initialWallet) {
+            const activeMemberId = localStorage.getItem("memberId");
+            if (activeMemberId) {
+              initialWallet = (data.wallets || []).find(
+                (w) => String(w.member_id) === String(activeMemberId)
+              );
+            }
+          }
+
+          // ✅ Priority 3: Fallback to first wallet
           if (!initialWallet && (data.wallets || []).length > 0) {
             initialWallet = data.wallets[0];
           }
@@ -238,7 +262,8 @@ export default function WalletAdmin() {
       }
     })();
     // include merchants so merchant_name/rate can hydrate once loaded
-  }, [merchants, detectedTz]);
+    // include fromDataQuality, fieldName, affectedMembers to auto-load when coming from DQ Check
+  }, [merchants, detectedTz, fromDataQuality, fieldName, affectedMembers]);
 
   // --- save wallet (with optional password reset) ---
   const saveWallet = async (e) => {
