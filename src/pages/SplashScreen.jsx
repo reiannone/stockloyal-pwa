@@ -27,6 +27,7 @@ function SplashScreen() {
     let memberId = params.get("member_id");
     let merchantId = params.get("merchant_id");
     let merchantName = params.get("merchant_name"); // ✅ Optional
+    let memberTier = params.get("tier"); // ✅ NEW: Member tier
     let points = parseInt(params.get("points") || "0", 10);
     let action = params.get("action");
 
@@ -46,6 +47,7 @@ function SplashScreen() {
       memberEmail,
       merchantId,
       merchantName,
+      memberTier,
       points,
       action,
       conversionRate,
@@ -84,6 +86,11 @@ function SplashScreen() {
       // ✅ Store merchantName from URL if provided (will be overwritten by API if available)
       localStorage.setItem("merchantName", merchantName);
       console.log("[Splash] Stored merchantName from URL:", merchantName);
+    }
+    if (memberTier) {
+      // ✅ Store tier from URL if provided
+      localStorage.setItem("memberTier", memberTier);
+      console.log("[Splash] Stored memberTier from URL:", memberTier);
     }
     if (points > 0) {
       localStorage.setItem("points", String(points));
@@ -148,8 +155,49 @@ function SplashScreen() {
             // Use merchant-specific conversion_rate if provided
             let merchantRate = parseFloat(merchantData.conversion_rate || "0");
             if (!merchantRate || merchantRate <= 0) merchantRate = 0.01;
+            
+            // ✅ Handle tier assignment and tier-specific conversion rate
+            if (!memberTier && merchantData.tiers) {
+              // No tier provided in URL - default to lowest tier
+              const tierKeys = [];
+              for (let i = 1; i <= 6; i++) {
+                const tierName = merchantData[`tier${i}_name`];
+                if (tierName) {
+                  tierKeys.push({
+                    name: tierName,
+                    minPoints: parseFloat(merchantData[`tier${i}_min_points`] || 0),
+                    rate: parseFloat(merchantData[`tier${i}_conversion_rate`] || merchantRate)
+                  });
+                }
+              }
+              
+              // Sort by min points to find lowest tier
+              if (tierKeys.length > 0) {
+                tierKeys.sort((a, b) => a.minPoints - b.minPoints);
+                memberTier = tierKeys[0].name;
+                merchantRate = tierKeys[0].rate; // Use tier's rate
+                localStorage.setItem("memberTier", memberTier);
+                console.log("[Splash] Defaulted to lowest tier:", memberTier, "with rate:", merchantRate);
+              }
+            } else if (memberTier) {
+              // ✅ Tier provided - look up its conversion rate
+              console.log("[Splash] Using tier from URL:", memberTier);
+              
+              for (let i = 1; i <= 6; i++) {
+                const tierName = merchantData[`tier${i}_name`];
+                if (tierName && tierName.toLowerCase() === memberTier.toLowerCase()) {
+                  const tierRate = parseFloat(merchantData[`tier${i}_conversion_rate`] || merchantRate);
+                  if (tierRate > 0) {
+                    merchantRate = tierRate;
+                    console.log("[Splash] Applied tier conversion rate:", merchantRate, "for tier:", memberTier);
+                  }
+                  break;
+                }
+              }
+            }
+            
             localStorage.setItem("conversion_rate", merchantRate.toString());
-            console.log("[Splash] merchant conversion_rate set:", merchantRate);
+            console.log("[Splash] Final conversion_rate set:", merchantRate);
           } else {
             console.warn(
               "[Splash] merchant lookup returned no merchant or success=false",
@@ -175,12 +223,22 @@ function SplashScreen() {
               const conv = parseFloat(localStorage.getItem("conversion_rate") || "0.01");
               const cashBalance = Number((points * conv).toFixed(2));
               
-              // Update wallet
+              // ✅ Update wallet with REPLACE action (not add)
               await apiPost("update_points.php", {
                 member_id: memberId,
                 points: points,
                 cash_balance: cashBalance,
+                action: "replace"  // ← Replace existing values, don't add
               });
+              
+              // ✅ Update tier if provided in URL
+              if (memberTier) {
+                console.log("[Splash] Updating member tier to:", memberTier);
+                await apiPost("update_member_tier.php", {
+                  member_id: memberId,
+                  member_tier: memberTier
+                });
+              }
               
               // Log to ledger
               const clientTxId = `merchant_update_${memberId}_${Date.now()}`;
@@ -196,7 +254,7 @@ function SplashScreen() {
                 action: "earn",
                 client_tx_id: clientTxId,
                 member_timezone: memberTimezone,
-                note: "Points update from merchant referral link"
+                note: `Points update from merchant referral link${memberTier ? ` - Tier: ${memberTier}` : ''}`
               });
               
               console.log("[Splash] Points updated - points:", points, "cashBalance:", cashBalance);

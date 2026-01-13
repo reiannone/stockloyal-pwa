@@ -307,7 +307,8 @@ export default function Wallet() {
   const sweepPct = wallet.sweep_percentage ?? null;
   const merchantName = wallet.merchant_name || "Merchant";
 
-  const effectiveCashBalance = baseCash + (conversionRate > 0 ? points * conversionRate : 0);
+  // ✅ Use cash_balance from database directly (already converted)
+  const effectiveCashBalance = baseCash;
 
   return (
     <div className="wallet-container">
@@ -406,6 +407,11 @@ export default function Wallet() {
               Points from <strong>{merchantName}</strong>:{" "}
               <strong>{formatPoints(points)}</strong>
             </div>
+            {localStorage.getItem("memberTier") && (
+              <div className="caption" style={{ marginTop: 4 }}>
+                Tier: <strong>{localStorage.getItem("memberTier")}</strong>
+              </div>
+            )}
             {sweepPct !== null && (
               <div className="caption" style={{ marginTop: 4 }}>Sweep: {Number(sweepPct)}%</div>
             )}

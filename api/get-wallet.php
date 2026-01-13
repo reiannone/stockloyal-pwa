@@ -36,7 +36,7 @@ if (!$memberId) {
 }
 
 try {
-    // 1. Fetch wallet + merchant conversion rate + broker limits
+    // 1. Fetch wallet + merchant conversion rate + broker limits + member tier
     $stmt = $conn->prepare("
         SELECT
             w.*,
@@ -100,6 +100,24 @@ try {
         // Column not present in schema yet — keep explicit null for the client
         $wallet['member_timezone'] = null;
     }
+
+    // ✅ Normalize member_tier (trim and validate)
+    if (array_key_exists('member_tier', $wallet)) {
+        $tier = $wallet['member_tier'];
+        if ($tier !== null) {
+            $tier = trim((string)$tier);
+            // Ensure tier is reasonable length (max 50 chars per DB schema)
+            if ($tier === '' || strlen($tier) > 50) {
+                $wallet['member_tier'] = null;
+            } else {
+                $wallet['member_tier'] = $tier;
+            }
+        }
+    } else {
+        // Column not present in schema yet - set to null
+        $wallet['member_tier'] = null;
+    }
+
 
     // 2. Fetch broker_credentials info
     $stmt2 = $conn->prepare("

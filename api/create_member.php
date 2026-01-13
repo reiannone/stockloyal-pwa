@@ -30,6 +30,7 @@ try {
     $memberIdRaw = trim((string)($input['member_id'] ?? ''));
     $emailRaw    = trim((string)($input['member_email'] ?? ''));
     $password    = (string)($input['password'] ?? '');
+    $memberTier  = trim((string)($input['member_tier'] ?? '')); // ✅ NEW
 
     if ($memberIdRaw === '') {
         http_response_code(400);
@@ -97,12 +98,55 @@ try {
         exit;
     }
 
+    // ✅ Default to lowest tier if not provided
+    if ($memberTier === '' && $merchantId !== '') {
+        $tierStmt = $conn->prepare("
+            SELECT 
+                tier_1_name, tier_1_min_points,
+                tier_2_name, tier_2_min_points,
+                tier_3_name, tier_3_min_points,
+                tier_4_name, tier_4_min_points,
+                tier_5_name, tier_5_min_points,
+                tier_6_name, tier_6_min_points
+            FROM merchant 
+            WHERE merchant_id = :merchant_id
+            LIMIT 1
+        ");
+        $tierStmt->execute([':merchant_id' => $merchantId]);
+        $tierData = $tierStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($tierData) {
+            // Find lowest tier (tier with smallest min_points)
+            $tiers = [];
+            for ($i = 1; $i <= 6; $i++) {
+                $tierName = $tierData["tier_{$i}_name"];
+                $tierMinPoints = $tierData["tier_{$i}_min_points"];
+                if ($tierName) {
+                    $tiers[] = [
+                        'name' => $tierName,
+                        'min_points' => floatval($tierMinPoints ?? 0)
+                    ];
+                }
+            }
+            
+            if (!empty($tiers)) {
+                // Sort by min_points ascending
+                usort($tiers, function($a, $b) {
+                    return $a['min_points'] <=> $b['min_points'];
+                });
+                $memberTier = $tiers[0]['name'];
+                error_log("create_member.php: Defaulted to lowest tier: $memberTier");
+            }
+        }
+    }
+
     $stmt = $conn->prepare("
         INSERT INTO wallet (
             member_id,
             member_email,
             member_password_hash,
             merchant_id,
+            member_tier,
             created_at,
             updated_at
         ) VALUES (
@@ -110,6 +154,7 @@ try {
             :member_email,
             :member_password_hash,
             :merchant_id,
+            :member_tier,
             NOW(),
             NOW()
         )
@@ -119,6 +164,7 @@ try {
         ":member_email" => $memberEmail,
         ":member_password_hash" => $hash,
         ":merchant_id" => ($merchantId !== '' ? $merchantId : null),
+        ":member_tier" => ($memberTier !== '' ? $memberTier : null),
     ]);
 
     $conn->commit();
@@ -137,6 +183,7 @@ try {
         "member_email" => $memberEmail,
         "merchant_id" => ($merchantId !== '' ? $merchantId : null),
         "merchant_name" => $merchantName,
+        "member_tier" => ($memberTier !== '' ? $memberTier : null),
         "broker" => null,
         "member_timezone" => null
     ]);
