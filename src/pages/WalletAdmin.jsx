@@ -263,24 +263,108 @@ export default function WalletAdmin() {
     }
   };
 
+  // --- Custom confirmation state ---
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteData, setDeleteData] = useState(null);
+
   // --- delete wallet ---
   const deleteWallet = async (record_id) => {
-    if (!window.confirm("Delete this wallet?")) return;
+    if (!selected?.member_id) {
+      alert("Cannot determine member ID for deletion.");
+      return;
+    }
+
+    const memberId = selected.member_id;
+
     try {
-      const res = await apiPost("delete-wallet.php", { record_id });
-      if (res?.success) {
-        alert("Deleted");
-        setWallets(wallets.filter((w) => w.record_id !== record_id));
-        if (selected?.record_id === record_id) {
+      // Check for related data
+      const checkRes = await apiPost("check-member-references.php", { 
+        member_id: memberId 
+      }).catch((err) => {
+        console.warn("[WalletAdmin] check-member-references.php not available, proceeding with simple delete:", err);
+        return null; // Endpoint doesn't exist yet, proceed with simple delete
+      });
+
+      let hasReferences = false;
+      let referenceCounts = {};
+
+      // If endpoint doesn't exist or returns error, proceed with simple delete confirmation
+      if (!checkRes || !checkRes.success) {
+        // Simple delete without cascade
+        setDeleteData({
+          record_id,
+          member_id: memberId,
+          has_references: false,
+          reference_counts: {}
+        });
+        setShowDeleteConfirm(true);
+        return;
+      }
+
+      hasReferences = checkRes.has_references;
+      referenceCounts = checkRes.reference_counts || {};
+
+      // Store data and show confirmation dialog
+      setDeleteData({
+        record_id,
+        member_id: memberId,
+        has_references: hasReferences,
+        reference_counts: referenceCounts
+      });
+      setShowDeleteConfirm(true);
+
+    } catch (e) {
+      console.error("[WalletAdmin] delete check failed", e);
+      // Fallback to simple delete confirmation
+      setDeleteData({
+        record_id,
+        member_id: memberId,
+        has_references: false,
+        reference_counts: {}
+      });
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteData) return;
+
+    try {
+      // Perform the deletion
+      const deleteRes = await apiPost("delete-wallet.php", { 
+        record_id: deleteData.record_id,
+        member_id: deleteData.member_id,
+        cascade_delete: deleteData.has_references ? true : false
+      });
+
+      if (deleteRes?.success) {
+        const deletedCount = deleteRes.deleted_count || 1;
+        if (deleteData.has_references) {
+          alert(`Successfully deleted member "${deleteData.member_id}" and ${deletedCount} related records.`);
+        } else {
+          alert("Wallet deleted successfully.");
+        }
+        
+        // Remove from local state
+        setWallets(wallets.filter((w) => w.record_id !== deleteData.record_id));
+        if (selected?.record_id === deleteData.record_id) {
           setSelected(null);
         }
       } else {
-        alert("Delete failed: " + (res?.error || "Unknown error"));
+        alert("Delete failed: " + (deleteRes?.error || "Unknown error"));
       }
     } catch (e) {
       console.error("[WalletAdmin] delete failed", e);
       alert("Delete failed: network/server error");
+    } finally {
+      setShowDeleteConfirm(false);
+      setDeleteData(null);
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setDeleteData(null);
   };
 
   // --- handle field changes (LIVE RECALC) ---
@@ -872,6 +956,106 @@ export default function WalletAdmin() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Dialog */}
+      {showDeleteConfirm && deleteData && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}
+          onClick={cancelDelete}
+        >
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '16px', fontSize: '1.5rem', fontWeight: '600' }}>
+              Confirm Delete
+            </h2>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ marginBottom: '12px' }}>
+                Delete wallet for member <strong>{deleteData.member_id}</strong>?
+              </p>
+
+              {deleteData.has_references && (
+                <>
+                  <p style={{ marginBottom: '12px', fontWeight: '600', color: '#dc2626' }}>
+                    ⚠️ This member has related data in the following tables:
+                  </p>
+                  <ul style={{ marginBottom: '12px', paddingLeft: '24px' }}>
+                    {deleteData.reference_counts.orders > 0 && (
+                      <li>Orders: <strong>{deleteData.reference_counts.orders}</strong></li>
+                    )}
+                    {deleteData.reference_counts.transactions > 0 && (
+                      <li>Transactions/Ledger: <strong>{deleteData.reference_counts.transactions}</strong></li>
+                    )}
+                    {deleteData.reference_counts.portfolios > 0 && (
+                      <li>Portfolio Holdings: <strong>{deleteData.reference_counts.portfolios}</strong></li>
+                    )}
+                    {deleteData.reference_counts.social > 0 && (
+                      <li>Social Posts: <strong>{deleteData.reference_counts.social}</strong></li>
+                    )}
+                    {deleteData.reference_counts.other > 0 && (
+                      <li>Other Records: <strong>{deleteData.reference_counts.other}</strong></li>
+                    )}
+                  </ul>
+                  <p style={{ 
+                    padding: '12px', 
+                    backgroundColor: '#fef2f2', 
+                    border: '1px solid #fca5a5',
+                    borderRadius: '6px',
+                    color: '#991b1b',
+                    fontSize: '0.9rem',
+                    fontWeight: '600'
+                  }}>
+                    WARNING: This will permanently delete ALL of this member's data across all tables.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={cancelDelete}
+                style={{ minWidth: '100px' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={confirmDelete}
+                style={{ 
+                  minWidth: '100px',
+                  backgroundColor: '#dc2626',
+                  borderColor: '#dc2626'
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

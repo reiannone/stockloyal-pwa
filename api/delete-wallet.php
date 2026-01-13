@@ -25,6 +25,9 @@ if (!$input || empty($input['record_id'])) {
     exit;
 }
 
+// Get optional cascade_delete flag
+$cascade_delete = $input['cascade_delete'] ?? false;
+
 try {
     // Ensure record_id is an integer
     $recordId = (int)$input['record_id'];
@@ -45,15 +48,68 @@ try {
     $conn->beginTransaction();
 
     try {
-        // ✅ Delete broker credentials for this member
+        $deletedCount = 0;
+
+        // If cascade delete is requested, delete all related member data
+        if ($cascade_delete) {
+            // Delete from orders table
+            try {
+                $stmt = $conn->prepare("DELETE FROM orders WHERE member_id = :member_id");
+                $stmt->execute([':member_id' => $memberId]);
+                $deletedCount += $stmt->rowCount();
+            } catch (PDOException $e) {
+                // Table might not exist, log and continue
+                error_log("Could not delete from orders: " . $e->getMessage());
+            }
+
+            // Delete from transactions_ledger table
+            try {
+                $stmt = $conn->prepare("DELETE FROM transactions_ledger WHERE member_id = :member_id");
+                $stmt->execute([':member_id' => $memberId]);
+                $deletedCount += $stmt->rowCount();
+            } catch (PDOException $e) {
+                error_log("Could not delete from transactions_ledger: " . $e->getMessage());
+            }
+
+            // Delete from portfolio holdings (if table exists)
+            try {
+                $stmt = $conn->prepare("DELETE FROM portfolio_holdings WHERE member_id = :member_id");
+                $stmt->execute([':member_id' => $memberId]);
+                $deletedCount += $stmt->rowCount();
+            } catch (PDOException $e) {
+                error_log("Could not delete from portfolio_holdings: " . $e->getMessage());
+            }
+
+            // Delete from social posts (if table exists)
+            try {
+                $stmt = $conn->prepare("DELETE FROM social_posts WHERE member_id = :member_id");
+                $stmt->execute([':member_id' => $memberId]);
+                $deletedCount += $stmt->rowCount();
+            } catch (PDOException $e) {
+                error_log("Could not delete from social_posts: " . $e->getMessage());
+            }
+
+            // Delete from baskets (if table exists)
+            try {
+                $stmt = $conn->prepare("DELETE FROM baskets WHERE member_id = :member_id");
+                $stmt->execute([':member_id' => $memberId]);
+                $deletedCount += $stmt->rowCount();
+            } catch (PDOException $e) {
+                error_log("Could not delete from baskets: " . $e->getMessage());
+            }
+        }
+
+        // ✅ Delete broker credentials for this member (always)
         $deleteCreds = $conn->prepare("DELETE FROM broker_credentials WHERE member_id = :member_id");
         $deleteCreds->execute([':member_id' => $memberId]);
         $credsDeleted = $deleteCreds->rowCount();
+        $deletedCount += $credsDeleted;
 
-        // ✅ Delete the wallet record
+        // ✅ Delete the wallet record (always last)
         $deleteWallet = $conn->prepare("DELETE FROM wallet WHERE record_id = :record_id");
         $deleteWallet->execute([':record_id' => $recordId]);
         $walletDeleted = $deleteWallet->rowCount();
+        $deletedCount += $walletDeleted;
 
         // ✅ Commit transaction
         $conn->commit();
@@ -63,7 +119,8 @@ try {
                 "success" => true, 
                 "deleted_id" => $recordId,
                 "member_id" => $memberId,
-                "broker_credentials_deleted" => $credsDeleted
+                "deleted_count" => $deletedCount,
+                "cascade_delete" => $cascade_delete
             ]);
         } else {
             echo json_encode(["success" => false, "error" => "Wallet not found or already deleted"]);
