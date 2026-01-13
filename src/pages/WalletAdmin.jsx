@@ -1,8 +1,10 @@
 // src/pages/WalletAdmin.jsx
 import React, { useEffect, useState, useRef, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
 
 export default function WalletAdmin() {
+  const location = useLocation();
   const [wallets, setWallets] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,6 +18,12 @@ export default function WalletAdmin() {
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filterMerchantId, setFilterMerchantId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // ✅ Check if we're coming from Data Quality Check
+  const affectedMembers = location.state?.affectedMembers || [];
+  const fieldName = location.state?.fieldName || "";
+  const fromDataQuality = location.state?.fromDataQuality || false;
+  const totalAffected = location.state?.totalAffected || 0;
 
   // ---- timezone helpers ----
   const detectedTz = useMemo(() => {
@@ -105,18 +113,6 @@ export default function WalletAdmin() {
   };
 
   // Friendly display + safe fallback for member tier
-  const memberTierLabel = useMemo(() => {
-    if (!selected) return "";
-    const raw =
-      selected.member_tier ??
-      selected.tier ??
-      selected.tier_name ??
-      selected.loyalty_tier ??
-      "";
-    const t = String(raw || "").trim();
-    return t || "Standard";
-  }, [selected]);
-
   // derive current merchant and rate for the selected wallet
   const selectedMerchant = useMemo(() => {
     if (!selected) return null;
@@ -145,6 +141,20 @@ export default function WalletAdmin() {
   
   // ✅ Effective rate: tier-specific if available, otherwise base merchant rate
   const effectiveConversionRate = selectedTierRate ?? selectedMerchantRate;
+
+  // ✅ Get available tier names for the selected merchant
+  const availableTiers = useMemo(() => {
+    if (!selectedMerchant) return [];
+    
+    const tiers = [];
+    for (let i = 1; i <= 6; i++) {
+      const tierName = selectedMerchant[`tier${i}_name`];
+      if (tierName && tierName.trim() !== '') {
+        tiers.push(tierName.trim());
+      }
+    }
+    return tiers;
+  }, [selectedMerchant]);
 
   // --- load merchants for dropdown ---
   useEffect(() => {
@@ -443,6 +453,35 @@ export default function WalletAdmin() {
   const filteredWallets = useMemo(() => {
     let result = wallets;
 
+    // ✅ If coming from Data Quality Check, filter by affected members OR by missing field
+    if (fromDataQuality && fieldName) {
+      if (affectedMembers.length > 0) {
+        // If we have specific member IDs, use those
+        result = result.filter((w) => affectedMembers.includes(w.member_id));
+      } else {
+        // Otherwise, filter by records where the field is missing/empty
+        result = result.filter((w) => {
+          const fieldValue = w[fieldName];
+          
+          // Check if field is null, undefined, empty string, or whitespace only
+          if (fieldValue === null || fieldValue === undefined) {
+            return true;
+          }
+          
+          // For string fields, check if empty or whitespace
+          if (typeof fieldValue === 'string') {
+            return fieldValue.trim() === '' || 
+                   fieldValue === '0000-00-00 00:00:00' || 
+                   fieldValue === '0000-00-00';
+          }
+          
+          // For numbers, check if 0 (might indicate missing data)
+          // Be careful here - 0 might be a valid value for some fields
+          return false;
+        });
+      }
+    }
+
     // Filter by merchant
     if (filterMerchantId) {
       result = result.filter((w) => 
@@ -471,7 +510,7 @@ export default function WalletAdmin() {
     }
 
     return result;
-  }, [wallets, filterMerchantId, searchTerm]);
+  }, [wallets, filterMerchantId, searchTerm, fromDataQuality, affectedMembers, fieldName]);
 
   return (
     <div className="app-container app-content">
@@ -480,6 +519,38 @@ export default function WalletAdmin() {
         This administration page is to manage member wallet information to correct or originate
         information for demonstration purposes.
       </p>
+
+      {/* ✅ Data Quality Check Banner */}
+      {fromDataQuality && fieldName && (
+        <div style={{
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          color: "white",
+          padding: "1rem",
+          borderRadius: "8px",
+          marginBottom: "1rem",
+          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+            <span style={{ fontSize: "1.5rem" }}>🔍</span>
+            <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: "600" }}>
+              Data Quality Issue: Missing {fieldName}
+            </h3>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.95 }}>
+            {affectedMembers.length > 0 ? (
+              <>
+                Filtered to show <strong>{affectedMembers.length}</strong> member{affectedMembers.length !== 1 ? 's' : ''} with missing <strong>{fieldName}</strong>.
+              </>
+            ) : (
+              <>
+                Filtered to show records with missing or invalid <strong>{fieldName}</strong> data.
+                {totalAffected > 0 && ` (${totalAffected} total records affected)`}
+              </>
+            )}
+            {" "}Click any row below to edit and fix the issue.
+          </p>
+        </div>
+      )}
 
       {/* Filter bar */}
       {!loading && wallets.length > 0 && (
@@ -729,14 +800,42 @@ export default function WalletAdmin() {
 
             {/* ✅ Member Tier (display below merchant name and above conversion rate) */}
             <FormRow label="Member Tier">
-              <input
+              <select
                 className="form-input"
-                type="text"
                 name="member_tier"
-                value={memberTierLabel}
+                value={selected?.member_tier || ""}
                 onChange={handleChange}
-                placeholder="e.g., Standard / Silver / Gold / Platinum"
-              />
+                style={{
+                  backgroundColor: availableTiers.length === 0 ? "#f3f4f6" : "white"
+                }}
+              >
+                <option value="">-- Select Tier --</option>
+                {availableTiers.map((tierName) => (
+                  <option key={tierName} value={tierName}>
+                    {tierName}
+                  </option>
+                ))}
+              </select>
+              {availableTiers.length === 0 && (
+                <p style={{ 
+                  fontSize: "0.8rem", 
+                  color: "#ef4444", 
+                  marginTop: "0.25rem",
+                  marginBottom: 0
+                }}>
+                  No tiers configured for this merchant
+                </p>
+              )}
+              {availableTiers.length > 0 && (
+                <p style={{ 
+                  fontSize: "0.8rem", 
+                  color: "#6b7280", 
+                  marginTop: "0.25rem",
+                  marginBottom: 0
+                }}>
+                  Available tiers: {availableTiers.join(", ")}
+                </p>
+              )}
             </FormRow>
 
             {/* 🔒 Base Conversion Rate (display-only from merchant) */}
@@ -909,16 +1008,44 @@ export default function WalletAdmin() {
                   <tr 
                     key={w.record_id}
                     onClick={() => handleEditClick(w)}
-                    style={{ cursor: 'pointer' }}
-                    title="Click to edit this wallet"
+                    style={{ 
+                      cursor: 'pointer',
+                      // Highlight row if this record has the missing field
+                      backgroundColor: fromDataQuality && fieldName && !w[fieldName] ? '#fef2f2' : 'transparent'
+                    }}
+                    title={
+                      fromDataQuality && fieldName && !w[fieldName] 
+                        ? `⚠️ Missing ${fieldName} - Click to fix`
+                        : "Click to edit this wallet"
+                    }
                   >
                     <td>{w.member_id}</td>
                     <td>
-                      <div>{w.member_email}</div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem' 
+                      }}>
+                        <span>{w.member_email}</span>
+                        {/* Show warning icon if this is the missing field */}
+                        {fromDataQuality && fieldName === 'member_email' && !w.member_email && (
+                          <span style={{ color: '#ef4444', fontSize: '1rem' }} title="Missing email">⚠️</span>
+                        )}
+                      </div>
                       {w.member_timezone && <div className="subtext">{w.member_timezone}</div>}
                     </td>
                     <td>
-                      <div>{w.merchant_name || "-"}</div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem' 
+                      }}>
+                        <span>{w.merchant_name || "-"}</span>
+                        {/* Show warning icon if merchant_name is the missing field */}
+                        {fromDataQuality && fieldName === 'merchant_name' && !w.merchant_name && (
+                          <span style={{ color: '#ef4444', fontSize: '1rem' }} title="Missing merchant name">⚠️</span>
+                        )}
+                      </div>
                       <div className="subtext">{w.broker || "-"}</div>
                     </td>
                     <td>

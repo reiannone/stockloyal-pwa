@@ -1,8 +1,10 @@
 // src/pages/DataQualityCheck.jsx
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
 export default function DataQualityCheck() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [error, setError] = useState("");
@@ -46,6 +48,30 @@ export default function DataQualityCheck() {
     if (score >= 90) return "#22c55e"; // green
     if (score >= 70) return "#f59e0b"; // orange
     return "#ef4444"; // red
+  };
+
+  // Navigate to WalletAdmin with affected member IDs
+  const goToWalletAdmin = (fieldName) => {
+    const issueKey = "missing_" + fieldName;
+    const affectedData = profileData.affected_members?.[issueKey];
+    
+    console.log("goToWalletAdmin called for:", fieldName);
+    console.log("Issue key:", issueKey);
+    console.log("Affected data:", affectedData);
+    console.log("All affected members:", profileData.affected_members);
+    
+    // Navigate even if we don't have member_ids - WalletAdmin will show all records
+    // and the banner will explain the issue
+    const memberIds = affectedData?.member_ids || [];
+    
+    navigate("/wallet-admin", { 
+      state: { 
+        affectedMembers: memberIds,
+        fieldName: fieldName,
+        fromDataQuality: true,
+        totalAffected: profileData.field_analysis?.find(f => f.field_name === fieldName)?.missing_count || 0
+      } 
+    });
   };
 
   return (
@@ -228,6 +254,94 @@ export default function DataQualityCheck() {
                                 </li>
                               ))}
                             </ul>
+                          ) : affectedData?.issue_type === 'invalid_format' && affectedData?.details ? (
+                            /* Show details for invalid formats (e.g., emails) */
+                            <ul style={{ margin: 0, paddingLeft: "1.5rem" }}>
+                              {affectedData.details.map((detail, i) => (
+                                <li key={i} style={{ marginBottom: "0.25rem" }}>
+                                  <code style={{ fontSize: "0.85rem" }}>{detail.member_id}</code>
+                                  {" → "}
+                                  <span style={{ color: "#dc2626", fontSize: "0.85rem" }}>
+                                    {detail.member_email || "(empty)"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : affectedData?.issue_type === 'invalid_value' && affectedData?.details ? (
+                            /* Show details for invalid values (e.g., negative balances) */
+                            <table style={{ width: "100%", fontSize: "0.85rem" }}>
+                              <thead>
+                                <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                  <th style={{ textAlign: "left", padding: "4px" }}>Member ID</th>
+                                  <th style={{ textAlign: "right", padding: "4px" }}>Points</th>
+                                  <th style={{ textAlign: "right", padding: "4px" }}>Cash Balance</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {affectedData.details.map((detail, i) => (
+                                  <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                                    <td style={{ padding: "4px" }}>
+                                      <code style={{ fontSize: "0.8rem" }}>{detail.member_id}</code>
+                                    </td>
+                                    <td style={{ 
+                                      textAlign: "right", 
+                                      padding: "4px",
+                                      color: detail.points < 0 ? "#dc2626" : "#374151"
+                                    }}>
+                                      {Number(detail.points).toLocaleString()}
+                                    </td>
+                                    <td style={{ 
+                                      textAlign: "right", 
+                                      padding: "4px",
+                                      color: detail.cash_balance < 0 ? "#dc2626" : "#374151"
+                                    }}>
+                                      ${Number(detail.cash_balance).toFixed(2)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : affectedData?.issue_type === 'outlier' && affectedData?.details ? (
+                            /* Show details for outliers */
+                            <table style={{ width: "100%", fontSize: "0.85rem" }}>
+                              <thead>
+                                <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                  <th style={{ textAlign: "left", padding: "4px" }}>Member ID</th>
+                                  <th style={{ textAlign: "right", padding: "4px" }}>Points</th>
+                                  <th style={{ textAlign: "right", padding: "4px" }}>Cash Balance</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {affectedData.details.map((detail, i) => (
+                                  <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                                    <td style={{ padding: "4px" }}>
+                                      <code style={{ fontSize: "0.8rem" }}>{detail.member_id}</code>
+                                    </td>
+                                    <td style={{ textAlign: "right", padding: "4px", fontWeight: "600" }}>
+                                      {Number(detail.points).toLocaleString()}
+                                    </td>
+                                    <td style={{ textAlign: "right", padding: "4px", fontWeight: "600" }}>
+                                      ${Number(detail.cash_balance).toFixed(2)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : affectedData?.issue_type === 'referential_integrity' && affectedData?.details ? (
+                            /* Show details for referential integrity issues */
+                            <ul style={{ margin: 0, paddingLeft: "1.5rem" }}>
+                              {affectedData.details.map((detail, i) => (
+                                <li key={i} style={{ marginBottom: "0.25rem" }}>
+                                  <code style={{ fontSize: "0.85rem" }}>{detail.member_id}</code>
+                                  {" → "}
+                                  <span style={{ color: "#dc2626", fontSize: "0.85rem" }}>
+                                    merchant_id: {detail.merchant_id}
+                                  </span>
+                                  {" "}
+                                  <span style={{ fontSize: "0.8rem", color: "#6b7280" }}>(not found)</span>
+                                </li>
+                              ))}
+                            </ul>
                           ) : (
                             /* Simple list for missing data */
                             <div style={{ 
@@ -301,18 +415,60 @@ export default function DataQualityCheck() {
                       completeness >= 80 ? "#3b82f6" :
                       completeness >= 50 ? "#f59e0b" :
                       "#ef4444";
+                    
+                    // Check if this field has missing data
+                    const hasMissingData = field.missing_count > 0;
+                    
+                    // Check if we have affected member data for this field
+                    const issueKey = "missing_" + field.field_name;
+                    const affectedData = profileData.affected_members?.[issueKey];
+                    const hasAffectedMembers = affectedData?.member_ids?.length > 0;
 
                     return (
-                      <tr key={idx}>
+                      <tr 
+                        key={idx}
+                        onClick={() => {
+                          if (hasMissingData) {
+                            console.log("Clicked field:", field.field_name);
+                            console.log("Has affected members:", hasAffectedMembers);
+                            console.log("Affected data:", affectedData);
+                            goToWalletAdmin(field.field_name);
+                          }
+                        }}
+                        style={{ 
+                          cursor: hasMissingData ? "pointer" : "default",
+                          transition: "background-color 0.2s"
+                        }}
+                        onMouseEnter={(e) => {
+                          if (hasMissingData) {
+                            e.currentTarget.style.backgroundColor = "#f9fafb";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                        title={hasMissingData ? `Click to view ${field.missing_count} members with missing ${field.field_name}` : ""}
+                      >
                         <td>
-                          <code style={{ 
-                            background: "#f3f4f6", 
-                            padding: "2px 6px", 
-                            borderRadius: "4px",
-                            fontSize: "0.9rem"
-                          }}>
-                            {field.field_name}
-                          </code>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <code style={{ 
+                              background: "#f3f4f6", 
+                              padding: "2px 6px", 
+                              borderRadius: "4px",
+                              fontSize: "0.9rem"
+                            }}>
+                              {field.field_name}
+                            </code>
+                            {hasMissingData && (
+                              <span style={{
+                                fontSize: "0.75rem",
+                                color: "#3b82f6",
+                                fontWeight: "600"
+                              }}>
+                                {hasAffectedMembers ? "→ View in Admin" : "→ Click to filter"}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ textAlign: "right" }}>
                           {field.populated_count?.toLocaleString() || "0"}
