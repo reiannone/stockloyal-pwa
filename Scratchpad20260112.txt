@@ -1,0 +1,41 @@
+
+# 1. Path to your PEM key
+$KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
+
+# 2. Local file to upload
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\create_member.php"
+
+# 3. EC2 Host (rename variable so we avoid conflict with $Host)
+$EC2 = "ec2-user@3.150.49.91"
+
+# 4. Destination on remote server
+$DEST = "/home/ec2-user/create_member.php"
+
+# 5. Upload using scp — THIS WORKS IN POWERSHELL
+scp -i $KEY "$SRC" "${EC2}:${DEST}"
+
+
+
+sudo mv /home/ec2-user/create_member.php /var/www/html/api/create_member.php
+sudo chown apache:apache /var/www/html/api/create_member.php
+sudo chmod 644 /var/www/html/api/create_member.php
+
+https://app.stockloyal.com/#/?merchant_id=merchant001&member_id=liam111&points=442231&action=earn
+http://localhost:5173/#/?merchant_id=merchant001&member_id=utah1220&points=547645&member_tier='Business Class'
+
+https://app.stockloyal.com/#/?member_id=utah1220&tier=Elite Class&merchant_id=merchant001&points=50000
+http://localhost:5173/#/?member_id=steeler0112&tier=World Traveler&merchant_id=merchant001&points=715040
+
+-- Fix utah1220's wallet right now:
+UPDATE wallet 
+SET 
+  cash_balance = 300.00,
+  points = 50000,
+  member_tier = 'Elite',
+  updated_at = NOW()
+WHERE member_id = 'utah1220';
+
+-- Verify:
+SELECT member_id, points, cash_balance, member_tier 
+FROM wallet 
+WHERE member_id = 'utah1220';

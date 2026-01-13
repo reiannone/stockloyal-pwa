@@ -429,7 +429,10 @@ export default function PaymentsProcessing() {
               </>
             )}
           </div>
+        </div>
 
+        {/* ✅ Centered button group */}
+        <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", marginTop: "1rem" }}>
           <button
             type="button"
             className="btn-primary"
@@ -437,6 +440,14 @@ export default function PaymentsProcessing() {
             disabled={allLoading || merchantsLoading || merchants.length === 0}
           >
             {allLoading ? "Loading…" : "Refresh Merchant Summary"}
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => navigate("/csv-files")}
+          >
+            CSV File Browser
           </button>
         </div>
 
