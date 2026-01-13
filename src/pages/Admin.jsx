@@ -193,9 +193,9 @@ export default function Admin() {
         This page is used for administrative purposes to manage Merchant related data.
       </p>
 
-      <div className="card">
+      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
         {selected ? (
-          <form onSubmit={saveMerchant} className="form-grid">
+          <form onSubmit={saveMerchant} className="form-grid" style={{ maxWidth: "100%" }}>
             <FormRow label="Merchant ID">
               <input
                 className="form-input"
@@ -476,7 +476,7 @@ export default function Admin() {
       {loading ? (
         <p>Loading...</p>
       ) : (
-        <div className="card">
+        <div className="card" style={{ overflowX: "auto" }}>
           <table className="basket-table">
             <thead>
               <tr>
@@ -486,7 +486,6 @@ export default function Admin() {
                 <th>Tiers Configured</th>
                 <th>Status</th>
                 <th>Promotion</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -497,7 +496,22 @@ export default function Admin() {
                 ).length;
 
                 return (
-                  <tr key={m.merchant_id}>
+                  <tr 
+                    key={m.merchant_id}
+                    onClick={() => {
+                      setSelected({ ...m });
+                      originalRateRef.current = Number(m.conversion_rate ?? 0);
+                      // Scroll to top of page - multiple methods for compatibility
+                      const container = document.getElementById('admin-container');
+                      if (container) {
+                        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      document.documentElement.scrollTop = 0;
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    title="Click to edit this merchant"
+                  >
                     <td>{m.merchant_id}</td>
                     <td>{m.merchant_name}</td>
                     <td>{m.conversion_rate || '0.01'}</td>
@@ -519,24 +533,6 @@ export default function Admin() {
                     </td>
                     <td>{m.active_status ? "Active" : "Inactive"}</td>
                     <td>{m.promotion_active ? "Yes" : "No"}</td>
-                    <td>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => {
-                          setSelected({ ...m });
-                          originalRateRef.current = Number(m.conversion_rate ?? 0);
-                          // Scroll to top of page - multiple methods for compatibility
-                          const container = document.getElementById('admin-container');
-                          if (container) {
-                            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                          }
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                          document.documentElement.scrollTop = 0;
-                        }}
-                      >
-                        Edit
-                      </button>
-                    </td>
                   </tr>
                 );
               })}
@@ -551,9 +547,11 @@ export default function Admin() {
 // Helper form row
 function FormRow({ label, children }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={{ maxWidth: "100%", boxSizing: "border-box" }}>
       {label && <label className="form-label">{label}:</label>}
-      {children}
+      <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+        {children}
+      </div>
     </div>
   );
 }

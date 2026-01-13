@@ -154,7 +154,7 @@ export default function AdminBroker() {
         <code>broker_master</code> data, including ACH routing and order limits.
       </p>
 
-      <div className="card">
+      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
         <div className="card-actions" style={{ marginBottom: "1rem" }}>
           <button type="button" className="btn-secondary" onClick={startNewBroker}>
             + New Broker
@@ -162,7 +162,7 @@ export default function AdminBroker() {
         </div>
 
         {selected ? (
-          <form onSubmit={saveBroker} className="form-grid">
+          <form onSubmit={saveBroker} className="form-grid" style={{ maxWidth: "100%" }}>
             {/* Core IDs */}
             <FormRow label="Broker ID">
               <input
@@ -419,7 +419,7 @@ export default function AdminBroker() {
       {loading ? (
         <p>Loading...</p>
       ) : (
-        <div className="card">
+        <div className="card" style={{ overflowX: "auto" }}>
           <table className="basket-table">
             <thead>
               <tr>
@@ -427,38 +427,34 @@ export default function AdminBroker() {
                 <th>Name</th>
                 <th>Support Phone</th>
                 <th>Support Email</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {brokers.map((b) => (
-                <tr key={b.broker_id}>
+                <tr 
+                  key={b.broker_id}
+                  onClick={() => {
+                    setSelected({ ...b });
+                    // Scroll to top of page - multiple methods for compatibility
+                    const container = document.getElementById('admin-broker-container');
+                    if (container) {
+                      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    document.documentElement.scrollTop = 0;
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to edit this broker"
+                >
                   <td>{b.broker_id}</td>
                   <td>{b.broker_name}</td>
                   <td>{b.support_phone || "-"}</td>
                   <td>{b.support_email || "-"}</td>
-                  <td>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => {
-                        setSelected({ ...b });
-                        // Scroll to top of page - multiple methods for compatibility
-                        const container = document.getElementById('admin-broker-container');
-                        if (container) {
-                          container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                        document.documentElement.scrollTop = 0;
-                      }}
-                    >
-                      Edit
-                    </button>
-                  </td>
                 </tr>
               ))}
               {brokers.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center" }}>
+                  <td colSpan={4} style={{ textAlign: "center" }}>
                     No brokers found. Click &quot;New Broker&quot; to add one.
                   </td>
                 </tr>
@@ -474,9 +470,11 @@ export default function AdminBroker() {
 // Helper form row – same pattern as Admin.jsx
 function FormRow({ label, children }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={{ maxWidth: "100%", boxSizing: "border-box" }}>
       {label && <label className="form-label">{label}:</label>}
-      {children}
+      <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+        {children}
+      </div>
     </div>
   );
 }

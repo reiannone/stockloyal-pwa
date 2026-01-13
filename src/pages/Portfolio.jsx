@@ -68,6 +68,10 @@ export default function Portfolio() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // ── Filter state ────────────────────────────────────────────────────────────
+  const [filterField, setFilterField] = useState(""); // "" = all | symbol | stock_name
+  const [filterValue, setFilterValue] = useState("");
+
   // ---- Load data ----
   const loadPortfolio = useCallback(
     async (isRefresh = false) => {
@@ -121,6 +125,30 @@ export default function Portfolio() {
     }, 60000);
     return () => clearInterval(intervalId);
   }, [loadPortfolio]);
+
+  // Filter orders based on selected filter
+  const filteredOrders = React.useMemo(() => {
+    if (!filterField || !filterValue.trim()) {
+      return orders; // No filter applied
+    }
+
+    const val = filterValue.trim().toLowerCase();
+
+    switch (filterField) {
+      case "symbol":
+        return orders.filter((o) => 
+          (o.symbol || "").toLowerCase().includes(val)
+        );
+      
+      case "stock_name":
+        return orders.filter((o) => 
+          (o.stock_name || "").toLowerCase().includes(val)
+        );
+      
+      default:
+        return orders;
+    }
+  }, [orders, filterField, filterValue]);
 
   // ---- Helpers ----
   const formatDollars = (val) =>
@@ -182,14 +210,79 @@ export default function Portfolio() {
         </p>
       )}
 
+      {/* Filter bar */}
+      {!loading && !error && orders.length > 0 && (
+        <div className="card" style={{ marginBottom: "1rem", padding: "1rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {/* Filter controls row */}
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: "600", color: "#374151", minWidth: "50px" }}>
+                Filter:
+              </label>
+              <select
+                className="form-input"
+                style={{ minWidth: 200, flex: "0 1 auto" }}
+                value={filterField}
+                onChange={(e) => {
+                  setFilterField(e.target.value);
+                  setFilterValue("");
+                }}
+              >
+                <option value="">All Holdings</option>
+                <option value="symbol">Symbol</option>
+                <option value="stock_name">Stock Name</option>
+              </select>
+
+              {filterField && (
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder={
+                    filterField === "symbol"
+                      ? "e.g. AAPL"
+                      : filterField === "stock_name"
+                      ? "e.g. Apple Inc."
+                      : ""
+                  }
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                />
+              )}
+
+              <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "auto", whiteSpace: "nowrap" }}>
+                Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> holdings
+              </span>
+            </div>
+
+            {/* Clear filter button row */}
+            {(filterField || filterValue) && (
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFilterField("");
+                    setFilterValue("");
+                  }}
+                  style={{ fontSize: "0.85rem", minWidth: "120px" }}
+                >
+                  Clear Filter
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---- Loading / Error / Empty ---- */}
       {loading ? (
         <p>Loading your portfolio...</p>
       ) : error ? (
         <p className="error-text">{error}</p>
-      ) : orders.length === 0 ? (
+      ) : filteredOrders.length === 0 ? (
         <p className="portfolio-subtext" style={{ textAlign: "center" }}>
-          You have no confirmed holdings yet.
+          {orders.length === 0 ? "You have no confirmed holdings yet." : "No holdings match the current filter."}
         </p>
       ) : (
         <>
@@ -244,7 +337,7 @@ export default function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o, idx) => (
+                {filteredOrders.map((o, idx) => (
                   <tr
                     key={idx}
                     onClick={() => handleSymbolClick(o.symbol)}

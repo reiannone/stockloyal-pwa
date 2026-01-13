@@ -359,9 +359,9 @@ export default function WalletAdmin() {
         information for demonstration purposes.
       </p>
 
-      <div className="card" ref={editPanelRef}>
+      <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%" }}>
         {selected ? (
-          <form onSubmit={saveWallet} className="form-grid">
+          <form onSubmit={saveWallet} className="form-grid" style={{ maxWidth: "100%" }}>
             <input type="hidden" name="record_id" value={selected?.record_id || ""} />
 
             {/* Member details */}
@@ -700,7 +700,7 @@ export default function WalletAdmin() {
       {loading ? (
         <p>Loading...</p>
       ) : (
-        <div className="card">
+        <div className="card" style={{ overflowX: "auto" }}>
           <table className="basket-table">
             <thead>
               <tr>
@@ -708,7 +708,6 @@ export default function WalletAdmin() {
                 <th>Email</th>
                 <th>Merchant / Broker</th>
                 <th>Points → Cash / Portfolio</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -724,7 +723,12 @@ export default function WalletAdmin() {
                     : Number(w.portfolio_value);
 
                 return (
-                  <tr key={w.record_id}>
+                  <tr 
+                    key={w.record_id}
+                    onClick={() => handleEditClick(w)}
+                    style={{ cursor: 'pointer' }}
+                    title="Click to edit this wallet"
+                  >
                     <td>{w.member_id}</td>
                     <td>
                       <div>{w.member_email}</div>
@@ -755,11 +759,6 @@ export default function WalletAdmin() {
                             })}
                       </div>
                     </td>
-                    <td>
-                      <button className="btn-secondary" onClick={() => handleEditClick(w)}>
-                        Edit
-                      </button>
-                    </td>
                   </tr>
                 );
               })}
@@ -773,9 +772,11 @@ export default function WalletAdmin() {
 
 function FormRow({ label, children }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={{ maxWidth: "100%", boxSizing: "border-box" }}>
       {label && <label className="form-label">{label}:</label>}
-      {children}
+      <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+        {children}
+      </div>
     </div>
   );
 }

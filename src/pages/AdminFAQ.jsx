@@ -142,9 +142,9 @@ export default function AdminFAQ() {
       <h1 className="page-title">FAQ Admin</h1>
       <p className="page-deck">Create and manage FAQs to present on a public FAQ page later.</p>
 
-      <div className="card">
+      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
         {selected ? (
-          <form onSubmit={saveFaq} className="form-grid">
+          <form onSubmit={saveFaq} className="form-grid" style={{ maxWidth: "100%" }}>
             <FormRow label="FAQ ID">
               <input
                 className="form-input"
@@ -294,7 +294,7 @@ export default function AdminFAQ() {
       {loading ? (
         <p>Loading...</p>
       ) : (
-        <div className="card">
+        <div className="card" style={{ overflowX: "auto" }}>
           <table className="basket-table">
             <thead>
               <tr>
@@ -303,30 +303,35 @@ export default function AdminFAQ() {
                 <th>Category</th>
                 <th>Active</th>
                 <th>Sort</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {(faqs || []).map((f) => (
-                <tr key={f.faq_id}>
+                <tr 
+                  key={f.faq_id}
+                  onClick={() => {
+                    setSelected({ ...f });
+                    // Scroll to top of page - multiple methods for compatibility
+                    const container = document.getElementById('adminfaq-container');
+                    if (container) {
+                      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    document.documentElement.scrollTop = 0;
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to edit this FAQ"
+                >
                   <td>{f.faq_id}</td>
                   <td>{f.question}</td>
                   <td>{f.category || "-"}</td>
                   <td>{f.is_active ? "Yes" : "No"}</td>
                   <td>{Number.isFinite(+f.sort_order) ? f.sort_order : "-"}</td>
-                  <td>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => setSelected({ ...f })}
-                    >
-                      Edit
-                    </button>
-                  </td>
                 </tr>
               ))}
               {faqs?.length === 0 && (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: "center", color: "#6b7280" }}>
+                  <td colSpan="5" style={{ textAlign: "center", color: "#6b7280" }}>
                     No FAQs yet.
                   </td>
                 </tr>
@@ -341,9 +346,11 @@ export default function AdminFAQ() {
 
 function FormRow({ label, children }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={{ maxWidth: "100%", boxSizing: "border-box" }}>
       {label && <label className="form-label">{label}:</label>}
-      {children}
+      <div style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+        {children}
+      </div>
     </div>
   );
 }
