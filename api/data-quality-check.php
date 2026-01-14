@@ -231,36 +231,95 @@ try {
     $incompleteRecords = $totalRecords - $completeRecords;
     
     // ===============================================================================
-    // DATA CONSISTENCY CHECKS
+    // DATA CONSISTENCY CHECKS - TIER-AWARE (PHP-BASED)
     // ===============================================================================
     
-    // Check if points match cash_balance based on conversion_rate
+    // ✅ PHP-based tier-aware conversion check
     try {
+        // First, get all merchants with their tier info
+        $stmt = $conn->query("SELECT * FROM merchant");
+        $merchantsById = [];
+        while ($merchant = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $merchantsById[$merchant['merchant_id']] = $merchant;
+        }
+        
+        // Helper function to get tier-specific rate
+        $getTierRate = function($merchant, $memberTier) {
+            if (!$merchant || !$memberTier || trim($memberTier) === '') {
+                return null;
+            }
+            
+            $tierLower = strtolower(trim($memberTier));
+            
+            // Check each tier
+            for ($i = 1; $i <= 6; $i++) {
+                $tierNameKey = "tier{$i}_name";
+                $tierRateKey = "tier{$i}_conversion_rate";
+                
+                if (isset($merchant[$tierNameKey]) && 
+                    strtolower(trim($merchant[$tierNameKey])) === $tierLower &&
+                    isset($merchant[$tierRateKey])) {
+                    return (float) $merchant[$tierRateKey];
+                }
+            }
+            
+            return null;
+        };
+        
+        // Get all wallet records with points and cash_balance
         $stmt = $conn->query("
-            SELECT COUNT(*) as inconsistent_count
-            FROM $table w
-            LEFT JOIN merchant m ON w.merchant_id = m.merchant_id
-            WHERE w.points IS NOT NULL 
-            AND w.cash_balance IS NOT NULL
-            AND m.conversion_rate IS NOT NULL
-            AND ABS(w.cash_balance - (w.points * m.conversion_rate)) > 0.01
+            SELECT member_id, merchant_id, member_tier, points, cash_balance
+            FROM $table
+            WHERE points IS NOT NULL 
+            AND cash_balance IS NOT NULL
         ");
-        $inconsistentConversion = (int) $stmt->fetchColumn();
+        $wallets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $conversionIssues = [];
+        $inconsistentConversion = 0;
+        
+        foreach ($wallets as $wallet) {
+            $merchantId = $wallet['merchant_id'];
+            
+            if (!isset($merchantsById[$merchantId])) {
+                continue; // Skip if merchant doesn't exist
+            }
+            
+            $merchant = $merchantsById[$merchantId];
+            $baseRate = (float) ($merchant['conversion_rate'] ?? 0);
+            
+            if ($baseRate === 0.0) {
+                continue; // Skip if no base rate
+            }
+            
+            // Determine effective rate (tier-specific or base)
+            $tierRate = $getTierRate($merchant, $wallet['member_tier']);
+            $effectiveRate = $tierRate ?? $baseRate;
+            
+            $points = (float) $wallet['points'];
+            $cashBalance = (float) $wallet['cash_balance'];
+            $expectedCash = $points * $effectiveRate;
+            
+            // Check if mismatch (tolerance of $0.01)
+            if (abs($cashBalance - $expectedCash) > 0.01) {
+                $inconsistentConversion++;
+                
+                // Store details for first 100
+                if (count($conversionIssues) < 100) {
+                    $conversionIssues[] = [
+                        'member_id' => $wallet['member_id'],
+                        'member_tier' => $wallet['member_tier'] ?: null,
+                        'points' => $points,
+                        'cash_balance' => $cashBalance,
+                        'base_rate' => $baseRate,
+                        'effective_rate' => $effectiveRate,
+                        'expected_cash' => $expectedCash
+                    ];
+                }
+            }
+        }
         
         if ($inconsistentConversion > 0) {
-            $stmt = $conn->query("
-                SELECT w.member_id, w.points, w.cash_balance, m.conversion_rate,
-                       (w.points * m.conversion_rate) as expected_cash
-                FROM $table w
-                LEFT JOIN merchant m ON w.merchant_id = m.merchant_id
-                WHERE w.points IS NOT NULL 
-                AND w.cash_balance IS NOT NULL
-                AND m.conversion_rate IS NOT NULL
-                AND ABS(w.cash_balance - (w.points * m.conversion_rate)) > 0.01
-                LIMIT 100
-            ");
-            $conversionIssues = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
             $issueKey = "conversion_mismatch";
             $affectedMembers[$issueKey] = [
                 'field' => 'cash_balance / points',
@@ -273,17 +332,18 @@ try {
             
             $criticalIssues[] = [
                 'field' => 'cash_balance / points',
-                'description' => 'Cash balance does not match points * conversion_rate',
+                'description' => 'Cash balance does not match points * conversion_rate (tier-aware)',
                 'count' => $inconsistentConversion,
                 'severity' => 'medium',
                 'issue_key' => $issueKey
             ];
             
             $issuesByCategory['Data Consistency'][] = 
-                "Points/Cash mismatch: $inconsistentConversion records have inconsistent conversion calculations";
+                "Points/Cash mismatch: $inconsistentConversion records have inconsistent conversion (tier-aware check)";
         }
-    } catch (PDOException $e) {
-        error_log("Conversion check failed: " . $e->getMessage());
+    } catch (Exception $e) {
+        error_log("Tier-aware conversion check failed: " . $e->getMessage());
+        // Continue with other checks even if this fails
     }
     
     // Check for duplicate member_id entries

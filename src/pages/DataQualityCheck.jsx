@@ -168,29 +168,66 @@ export default function DataQualityCheck() {
                 const showingCount = affectedData?.showing_count || 0;
                 const totalCount = affectedData?.total_count || issue.count;
                 
+                // Handler to navigate to WalletAdmin with this issue's data
+                const handleNavigateToIssue = () => {
+                  navigate("/wallet-admin", {
+                    state: {
+                      affectedMembers: memberIds,
+                      fieldName: issue.field,
+                      fromDataQuality: true,
+                      totalAffected: totalCount
+                    }
+                  });
+                };
+                
                 return (
                   <div 
                     key={idx} 
+                    onClick={handleNavigateToIssue}
                     style={{ 
                       marginBottom: "1rem",
                       padding: "1rem",
                       background: "#fef2f2",
                       border: "1px solid #fca5a5",
-                      borderRadius: "6px"
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#fee2e2";
+                      e.currentTarget.style.borderColor = "#f87171";
+                      e.currentTarget.style.transform = "translateX(4px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "#fef2f2";
+                      e.currentTarget.style.borderColor = "#fca5a5";
+                      e.currentTarget.style.transform = "translateX(0)";
                     }}
                   >
-                    <div style={{ marginBottom: "0.5rem" }}>
-                      <strong style={{ color: "#991b1b" }}>{issue.field}:</strong>{" "}
-                      <span style={{ color: "#dc2626" }}>{issue.description}</span>
-                      {totalCount && (
-                        <span style={{ color: "#7f1d1d", marginLeft: "0.5rem" }}>
-                          ({totalCount} records affected)
-                        </span>
-                      )}
+                    <div style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <strong style={{ color: "#991b1b" }}>{issue.field}:</strong>{" "}
+                        <span style={{ color: "#dc2626" }}>{issue.description}</span>
+                        {totalCount && (
+                          <span style={{ color: "#7f1d1d", marginLeft: "0.5rem" }}>
+                            ({totalCount} records affected)
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ 
+                        color: "#2563eb",
+                        fontSize: "0.85rem",
+                        fontWeight: "600"
+                      }}>
+                        → Fix in WalletAdmin
+                      </span>
                     </div>
                     
                     {memberIds.length > 0 && (
-                      <details style={{ marginTop: "0.5rem" }}>
+                      <details 
+                        style={{ marginTop: "0.5rem" }}
+                        onClick={(e) => e.stopPropagation()} // Prevent card click when expanding details
+                      >
                         <summary 
                           style={{ 
                             cursor: "pointer", 
@@ -217,6 +254,8 @@ export default function DataQualityCheck() {
                               <thead>
                                 <tr style={{ borderBottom: "1px solid #e5e7eb" }}>
                                   <th style={{ textAlign: "left", padding: "4px" }}>Member ID</th>
+                                  <th style={{ textAlign: "left", padding: "4px" }}>Tier</th>
+                                  <th style={{ textAlign: "right", padding: "4px" }}>Rate</th>
                                   <th style={{ textAlign: "right", padding: "4px" }}>Points</th>
                                   <th style={{ textAlign: "right", padding: "4px" }}>Cash Balance</th>
                                   <th style={{ textAlign: "right", padding: "4px" }}>Expected</th>
@@ -227,6 +266,12 @@ export default function DataQualityCheck() {
                                   <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                                     <td style={{ padding: "4px" }}>
                                       <code style={{ fontSize: "0.8rem" }}>{detail.member_id}</code>
+                                    </td>
+                                    <td style={{ padding: "4px", fontSize: "0.75rem", color: "#6b7280" }}>
+                                      {detail.member_tier || <span style={{ color: "#9ca3af" }}>-</span>}
+                                    </td>
+                                    <td style={{ textAlign: "right", padding: "4px", fontSize: "0.75rem" }}>
+                                      {detail.effective_rate ? Number(detail.effective_rate).toFixed(4) : detail.base_rate}
                                     </td>
                                     <td style={{ textAlign: "right", padding: "4px" }}>
                                       {Number(detail.points).toLocaleString()}

@@ -284,6 +284,19 @@ export default function WalletAdmin() {
     // Ensure we DO NOT send conversion_rate from the admin page
     delete updated.conversion_rate;
 
+    console.log('═══════════════════════════════════════════════════');
+    console.log('[WalletAdmin] SAVING WALLET');
+    console.log('Admin logged in as:', localStorage.getItem('memberId'));
+    console.log('Updating member:', updated.member_id);
+    console.log('Changes being saved:', {
+      member_tier: updated.member_tier,
+      points: updated.points,
+      cash_balance: updated.cash_balance,
+      member_email: updated.member_email,
+      merchant_id: updated.merchant_id
+    });
+    console.log('═══════════════════════════════════════════════════');
+
     try {
       const res = await apiPost("save-wallet.php", updated);
       if (res?.success) {
@@ -550,6 +563,27 @@ export default function WalletAdmin() {
     return result;
   }, [wallets, filterMerchantId, searchTerm, fromDataQuality, affectedMembers, fieldName]);
 
+  // ✨ Auto-load first filtered wallet when search/filter changes
+  useEffect(() => {
+    // Only auto-load if we have filtered results and an active filter
+    const hasActiveFilter = searchTerm.trim() !== '' || filterMerchantId !== '';
+    
+    if (hasActiveFilter && filteredWallets.length > 0) {
+      const firstWallet = filteredWallets[0];
+      
+      // Only auto-load if currently selected wallet is NOT in the filtered results
+      // (this prevents overriding when user clicks a row in the filtered list)
+      const currentlySelectedIsInResults = selected && 
+        filteredWallets.some(w => w.record_id === selected.record_id);
+      
+      if (!currentlySelectedIsInResults) {
+        console.log('[WalletAdmin] Auto-loading first filtered wallet:', firstWallet.member_id);
+        handleEditClick(firstWallet);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, filterMerchantId, filteredWallets.length]); // Track length to avoid comparing array references
+  
   return (
     <div className="app-container app-content">
       <h1 className="page-title">Member Wallet Administration</h1>
@@ -1027,6 +1061,7 @@ export default function WalletAdmin() {
                 <th>Member ID</th>
                 <th>Email</th>
                 <th>Merchant / Broker</th>
+                <th>Tier</th>
                 <th>Points → Cash / Portfolio</th>
               </tr>
             </thead>
@@ -1085,6 +1120,15 @@ export default function WalletAdmin() {
                         )}
                       </div>
                       <div className="subtext">{w.broker || "-"}</div>
+                    </td>
+                    <td>
+                      <span style={{ 
+                        fontSize: '0.85rem',
+                        fontWeight: w.member_tier ? '500' : '400',
+                        color: w.member_tier ? '#059669' : '#9ca3af'
+                      }}>
+                        {w.member_tier || '-'}
+                      </span>
                     </td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>

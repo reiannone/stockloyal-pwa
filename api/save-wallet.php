@@ -1,14 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
-
 require_once __DIR__ . '/_loadenv.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
-// added above lines to support api.stockloyal.com for backend API access
-// api/save-wallet.php
 
-// header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -17,135 +13,108 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-require_once 'config.php'; // $conn is PDO
+require_once 'config.php'; // contains $conn (PDO)
 
-$input = json_decode(file_get_contents("php://input"), true);
-if (!$input) {
-    echo json_encode(["success" => false, "error" => "Invalid JSON input"]);
+$input = json_decode(file_get_contents('php://input'), true);
+
+// ✅ CRITICAL: Use member_id from the input data, NOT from localStorage
+// This is the member being edited by the admin
+$memberIdToUpdate = $input['member_id'] ?? null;
+
+if (!$memberIdToUpdate) {
+    echo json_encode(['success' => false, 'error' => 'member_id is required']);
     exit;
 }
 
+// Log what we're updating for debugging
+error_log("save-wallet.php: Updating member_id = $memberIdToUpdate");
+if (isset($input['member_tier'])) {
+    error_log("save-wallet.php: Setting member_tier = " . $input['member_tier']);
+}
+
 try {
-    if (!empty($input['member_id'])) {
-        // Check if wallet exists
-        $check = $conn->prepare("SELECT member_id FROM wallet WHERE member_id = :member_id LIMIT 1");
-        $check->execute(['member_id' => $input['member_id']]);
-        $exists = $check->fetchColumn();
-
-        // --- normalize + validate fields ---
-        // member_timezone: allow IANA style, or null
-        $memberTimezone = $input['member_timezone'] ?? null;
-        if ($memberTimezone !== null) {
-            $memberTimezone = trim((string)$memberTimezone);
-            if ($memberTimezone === '') {
-                $memberTimezone = null;
-            } elseif (strlen($memberTimezone) > 64 || !preg_match('/^[A-Za-z_\/\-]+$/', $memberTimezone)) {
-                echo json_encode(["success" => false, "error" => "Invalid timezone format"]);
-                exit;
-            }
+    // Build the UPDATE query dynamically based on provided fields
+    $updates = [];
+    $params = ['member_id' => $memberIdToUpdate];
+    
+    // List of allowed fields to update
+    $allowedFields = [
+        'member_email',
+        'member_first_name', 
+        'member_last_name',
+        'member_timezone',
+        'member_tier',  // ✅ IMPORTANT: Include member_tier
+        'merchant_id',
+        'merchant_name',
+        'broker',
+        'broker_url',
+        'points',
+        'cash_balance',
+        'portfolio_value',
+        'sweep_percentage',
+        'election_type'
+    ];
+    
+    foreach ($allowedFields as $field) {
+        if (array_key_exists($field, $input)) {
+            $updates[] = "$field = :$field";
+            $params[$field] = $input[$field];
         }
-
-        // numeric normals
-        $points          = isset($input['points']) ? (int)$input['points'] : 0;
-        $cashBalance     = isset($input['cash_balance']) ? (float)$input['cash_balance'] : 0.00;
-        $portfolioValue  = isset($input['portfolio_value']) ? (float)$input['portfolio_value'] : 0.00;
-        $sweepPercentage = isset($input['sweep_percentage']) ? (float)$input['sweep_percentage'] : 0.00;
-
-        // --- Build params (shared) ---
-        $params = [
-            ':member_id'            => $input['member_id'] ?? null,
-            ':member_email'         => $input['member_email'] ?? null,
-            ':first_name'           => $input['first_name'] ?? null,
-            ':middle_name'          => $input['middle_name'] ?? null,
-            ':last_name'            => $input['last_name'] ?? null,
-            ':member_address_line1' => $input['member_address_line1'] ?? null,
-            ':member_address_line2' => $input['member_address_line2'] ?? null,
-            ':member_town_city'     => $input['member_town_city'] ?? null,
-            ':member_state'         => $input['member_state'] ?? null,
-            ':member_zip'           => $input['member_zip'] ?? null,
-            ':member_country'       => $input['member_country'] ?? null,
-            ':member_timezone'      => $memberTimezone, // ✅ keep timezone
-            ':merchant_id'          => $input['merchant_id'] ?? null,
-            ':merchant_name'        => $input['merchant_name'] ?? null,
-            ':broker'               => $input['broker'] ?? null,
-            ':broker_url'           => $input['broker_url'] ?? null,
-            ':election_type'        => $input['election_type'] ?? null,
-            ':points'               => $points,
-            ':cash_balance'         => $cashBalance,
-            ':portfolio_value'      => $portfolioValue,
-            ':sweep_percentage'     => $sweepPercentage,
-        ];
-
-        // --- Handle password reset securely ---
-        $passwordClause = "";
-        if (!empty($input['new_password'])) {
-            $hashed = password_hash($input['new_password'], PASSWORD_BCRYPT);
-            $params[':member_password_hash'] = $hashed;
-            $passwordClause = ", member_password_hash = :member_password_hash";
-        }
-
-        if ($exists) {
-            // ✅ Update existing (NO conversion_rate)
-            $sql = "
-                UPDATE wallet SET
-                    member_email = :member_email,
-                    first_name = :first_name,
-                    middle_name = :middle_name,
-                    last_name = :last_name,
-                    member_address_line1 = :member_address_line1,
-                    member_address_line2 = :member_address_line2,
-                    member_town_city = :member_town_city,
-                    member_state = :member_state,
-                    member_zip = :member_zip,
-                    member_country = :member_country,
-                    member_timezone = :member_timezone,
-                    merchant_id = :merchant_id,
-                    merchant_name = :merchant_name,
-                    broker = :broker,
-                    broker_url = :broker_url,
-                    election_type = :election_type,
-                    points = :points,
-                    cash_balance = :cash_balance,
-                    portfolio_value = :portfolio_value,
-                    sweep_percentage = :sweep_percentage
-                    $passwordClause
-                WHERE member_id = :member_id
-            ";
-            $stmt = $conn->prepare($sql);
-        } else {
-            // ✅ Insert new (NO conversion_rate)
-            if (empty($input['new_password'])) {
-                echo json_encode(["success" => false, "error" => "New records require a password"]);
-                exit;
-            }
-            $sql = "
-                INSERT INTO wallet (
-                    member_id, member_email, member_password_hash,
-                    first_name, middle_name, last_name,
-                    member_address_line1, member_address_line2,
-                    member_town_city, member_state, member_zip, member_country, member_timezone,
-                    merchant_id, merchant_name,
-                    broker, broker_url, election_type,
-                    points, cash_balance, portfolio_value, sweep_percentage
-                ) VALUES (
-                    :member_id, :member_email, :member_password_hash,
-                    :first_name, :middle_name, :last_name,
-                    :member_address_line1, :member_address_line2,
-                    :member_town_city, :member_state, :member_zip, :member_country, :member_timezone,
-                    :merchant_id, :merchant_name,
-                    :broker, :broker_url, :election_type,
-                    :points, :cash_balance, :portfolio_value, :sweep_percentage
-                )
-            ";
-            $stmt = $conn->prepare($sql);
-        }
-
-        $stmt->execute($params);
-
-        echo json_encode(["success" => true, "wallet" => $input]);
-    } else {
-        echo json_encode(["success" => false, "error" => "Missing member_id"]);
     }
-} catch (Exception $e) {
-    echo json_encode(["success" => false, "error" => $e->getMessage()]);
+    
+    // Handle password update separately if provided
+    if (!empty($input['new_password'])) {
+        $hashedPassword = password_hash($input['new_password'], PASSWORD_DEFAULT);
+        $updates[] = "member_password = :member_password";
+        $params['member_password'] = $hashedPassword;
+        error_log("save-wallet.php: Updating password for $memberIdToUpdate");
+    }
+    
+    if (empty($updates)) {
+        echo json_encode(['success' => false, 'error' => 'No fields to update']);
+        exit;
+    }
+    
+    // Build and execute the UPDATE statement
+    $sql = "UPDATE wallet SET " . implode(', ', $updates) . " WHERE member_id = :member_id";
+    
+    error_log("save-wallet.php SQL: $sql");
+    error_log("save-wallet.php params: " . json_encode($params));
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+    
+    $rowsAffected = $stmt->rowCount();
+    
+    if ($rowsAffected === 0) {
+        error_log("save-wallet.php: WARNING - No rows affected for member_id = $memberIdToUpdate");
+        // Check if the record exists
+        $checkStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_id = :member_id");
+        $checkStmt->execute(['member_id' => $memberIdToUpdate]);
+        $exists = (int) $checkStmt->fetchColumn();
+        
+        if ($exists === 0) {
+            echo json_encode([
+                'success' => false, 
+                'error' => "Member record not found: $memberIdToUpdate"
+            ]);
+            exit;
+        }
+        // If record exists but no rows affected, values might be the same
+    }
+    
+    echo json_encode([
+        'success' => true,
+        'member_id' => $memberIdToUpdate,
+        'rows_affected' => $rowsAffected,
+        'message' => 'Wallet updated successfully'
+    ]);
+    
+} catch (PDOException $e) {
+    error_log("save-wallet.php error: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Database error: ' . $e->getMessage()
+    ]);
 }
