@@ -7,6 +7,9 @@ import { useBasket } from "../context/BasketContext";
 import { Search } from "lucide-react";
 import "../styles/StockPicker.css";
 
+// ✅ Special category label
+const POPULAR_MEMBER_PICKS = "Popular Member Picks";
+
 // ✅ Map categories -> API screener IDs
 const categoryMap = {
   "Most Active": "most_actives",
@@ -22,6 +25,7 @@ const categoryMap = {
 
 // ✅ Map categories -> background images
 const categoryImages = {
+  [POPULAR_MEMBER_PICKS]: "/icons/StockLoyal-icon.png", // ✅ StockLoyal icon
   "Most Active": "/icons/most-active.jpg",
   "Day Gainers": "/icons/day-gainers.jpg",
   "Day Losers": "/icons/day-losers.jpg",
@@ -43,10 +47,11 @@ export default function StockPicker() {
     location.state || {};
 
   // ✅ Get broker name from localStorage
-  const brokerName = localStorage.getItem("broker") || 
-                     localStorage.getItem("selectedBroker") || 
-                     localStorage.getItem("brokerName") || 
-                     "Broker";
+  const brokerName =
+    localStorage.getItem("broker") ||
+    localStorage.getItem("selectedBroker") ||
+    localStorage.getItem("brokerName") ||
+    "Broker";
 
   // --- Wallet / points state ---
   const [wallet, setWallet] = useState(null);
@@ -67,8 +72,8 @@ export default function StockPicker() {
   const [stockError, setStockError] = useState("");
   const [selectedStocks, setSelectedStocks] = useState([]);
   const [loadingCategory, setLoadingCategory] = useState(false);
-  
-  // ✅ Pagination for infinite scroll
+
+  // ✅ Pagination for infinite scroll (Yahoo screener only)
   const [currentOffset, setCurrentOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -92,16 +97,14 @@ export default function StockPicker() {
   const triggerWheelFeedback = () => {
     if (typeof window === "undefined") return;
 
-    // Light haptic bump (where supported)
     try {
       if ("vibrate" in navigator) {
-        navigator.vibrate(8); // super short
+        navigator.vibrate(8);
       }
     } catch {
       // ignore
     }
 
-    // Short click sound using Web Audio
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -114,7 +117,6 @@ export default function StockPicker() {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      // Slightly clicky tone
       osc.type = "square";
       osc.frequency.value = 1400;
 
@@ -134,10 +136,10 @@ export default function StockPicker() {
 
   // Rate-limited tick while dragging
   const maybeTick = () => {
-    const now = (typeof performance !== "undefined" && performance.now())
-      ? performance.now()
-      : Date.now();
-    // every ~80ms max
+    const now =
+      typeof performance !== "undefined" && performance.now()
+        ? performance.now()
+        : Date.now();
     if (now - lastTickTimeRef.current > 80) {
       lastTickTimeRef.current = now;
       triggerWheelFeedback();
@@ -173,7 +175,7 @@ export default function StockPicker() {
     isDragging.current = true;
     startX.current = e.pageX - sliderRef.current.offsetLeft;
     scrollLeft.current = sliderRef.current.scrollLeft;
-    lastTickTimeRef.current = 0; // reset tick cadence
+    lastTickTimeRef.current = 0;
   };
 
   const handleMouseLeave = () => {
@@ -196,7 +198,7 @@ export default function StockPicker() {
     isDragging.current = true;
     startX.current = e.touches[0].pageX - sliderRef.current.offsetLeft;
     scrollLeft.current = sliderRef.current.scrollLeft;
-    lastTickTimeRef.current = 0; // reset on new swipe
+    lastTickTimeRef.current = 0;
   };
 
   const handleTouchMove = (e) => {
@@ -225,7 +227,6 @@ export default function StockPicker() {
         }
         setWallet(data.wallet);
 
-        // 🔢 Broker limits from broker_master join (assumed fields)
         if (data.wallet?.min_order_amount != null) {
           setMinOrderAmount(Number(data.wallet.min_order_amount));
         }
@@ -285,22 +286,19 @@ export default function StockPicker() {
         )} and $${maxOrderAmount.toFixed(2)} for your broker.`
       : "";
 
-  // --- Screener via proxy.php ---
+  // --- Yahoo Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
-    // ❗ Do not allow category selection when cash is out of allowed range
-    if (isCashOutsideLimits) {
-      return;
-    }
+    if (isCashOutsideLimits) return;
 
     try {
       setCategory(cat);
       setStockError("");
       setResults([]);
       setSelectedStocks([]);
-      setIsStockListOpen(true); // 🔥 open the bottom sheet
+      setIsStockListOpen(true);
       setLoadingCategory(true);
-      
-      // ✅ Reset pagination
+
+      // ✅ Reset pagination (Yahoo screener)
       setCurrentOffset(0);
       setHasMore(true);
       setCurrentScrId(scrId);
@@ -309,10 +307,7 @@ export default function StockPicker() {
       if (!data || data.error) throw new Error(data.error || "Failed to load");
 
       const quotes =
-        data.finance?.result?.[0]?.quotes ??
-        data.data ??
-        data.results ??
-        [];
+        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
 
       const fetched = quotes.map((q) => ({
         symbol: q.symbol,
@@ -330,12 +325,10 @@ export default function StockPicker() {
       }));
 
       setResults(fetched);
-      
-      // ✅ Check if there might be more results
+
       // Yahoo typically returns 25 results per page
       setHasMore(fetched.length >= 25);
       setCurrentOffset(25);
-      
     } catch (err) {
       console.error("[StockPicker] proxy error:", err);
       setStockError("Failed to fetch stocks.");
@@ -344,7 +337,104 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ Load more stocks when scrolling (infinite scroll)
+  // ✅ Popular Member Picks (orders aggregation + Yahoo enrichment via proxy.php symbol-mode)
+  const handlePopularMemberPicks = async () => {
+    if (isCashOutsideLimits) return;
+
+    try {
+      setCategory(POPULAR_MEMBER_PICKS);
+      setStockError("");
+      setResults([]);
+      setSelectedStocks([]);
+      setIsStockListOpen(true);
+      setLoadingCategory(true);
+
+      // ✅ Disable Yahoo pagination for this list
+      setCurrentScrId("");
+      setCurrentOffset(0);
+      setHasMore(false);
+
+      // 1) Pull top purchased symbols from backend
+      const data = await apiPost("popular-member-picks.php", { limit: 50 });
+      if (!data?.success) {
+        throw new Error(data?.error || "Failed to load popular member picks");
+      }
+
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const cleaned = rows
+        .map((r) => ({
+          symbol: String(r?.symbol || "").trim().toUpperCase(),
+          purchases: Number(r?.purchases || 0),
+        }))
+        .filter((r) => r.symbol);
+
+      if (cleaned.length === 0) {
+        setResults([]);
+        return;
+      }
+
+      // 2) Enrich with Yahoo quote data via proxy.php { symbol: "AAPL,MSFT,..." }
+      const symbolCsv = cleaned.map((r) => r.symbol).join(",");
+      const quoteResp = await apiPost("proxy.php", { symbol: symbolCsv });
+
+      const quoteArr =
+        quoteResp?.data ??
+        quoteResp?.results ??
+        quoteResp?.finance?.result?.[0]?.quotes ??
+        [];
+
+      // Build map by symbol, handling both "already-normalized" and raw Yahoo quote shapes
+      const quoteBySymbol = new Map();
+      (Array.isArray(quoteArr) ? quoteArr : []).forEach((q) => {
+        const sym = String(q?.symbol || "").toUpperCase();
+        if (!sym) return;
+
+        const name = q?.name || q?.shortName || q?.longName || sym;
+
+        const price =
+          q?.price ??
+          q?.regularMarketPrice ??
+          q?.postMarketPrice ??
+          q?.preMarketPrice ??
+          null;
+
+        const change =
+          q?.change ??
+          q?.regularMarketChangePercent ??
+          q?.postMarketChangePercent ??
+          q?.preMarketChangePercent ??
+          0;
+
+        quoteBySymbol.set(sym, {
+          name,
+          price: price != null ? Number(price) : null,
+          change: change != null ? Number(change) : 0,
+        });
+      });
+
+      // 3) Merge: keep purchases visible under Name column
+      const merged = cleaned.map((r) => {
+        const q = quoteBySymbol.get(r.symbol);
+        const displayName = q?.name || r.symbol;
+
+        return {
+          symbol: r.symbol,
+          name: `${displayName} — Purchased ${r.purchases.toLocaleString()} times`,
+          price: q?.price ?? null,
+          change: q?.change ?? 0,
+        };
+      });
+
+      setResults(merged);
+    } catch (err) {
+      console.error("[StockPicker] popular member picks error:", err);
+      setStockError("Failed to load Popular Member Picks.");
+    } finally {
+      setLoadingCategory(false);
+    }
+  };
+
+  // ✅ Load more stocks when scrolling (infinite scroll) — Yahoo only
   const loadMoreStocks = async () => {
     if (loadingMore || !hasMore || !currentScrId) {
       console.log("🚫 Skipping load more:", { loadingMore, hasMore, currentScrId });
@@ -354,14 +444,14 @@ export default function StockPicker() {
     try {
       console.log("📥 Loading more stocks - offset:", currentOffset);
       setLoadingMore(true);
-      
-      const data = await apiPost("proxy.php", { 
-        scrId: currentScrId, 
-        offset: currentOffset 
+
+      const data = await apiPost("proxy.php", {
+        scrId: currentScrId,
+        offset: currentOffset,
       });
-      
+
       console.log("📦 Received data:", data);
-      
+
       if (!data || data.error) {
         console.error("Failed to load more stocks:", data?.error);
         setHasMore(false);
@@ -369,10 +459,7 @@ export default function StockPicker() {
       }
 
       const quotes =
-        data.finance?.result?.[0]?.quotes ??
-        data.data ??
-        data.results ??
-        [];
+        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
 
       console.log("📊 Quotes received:", quotes.length);
 
@@ -397,30 +484,31 @@ export default function StockPicker() {
           0,
       }));
 
-      console.log("✅ Fetched symbols:", fetched.map(f => f.symbol).join(", "));
+      console.log("✅ Fetched symbols:", fetched.map((f) => f.symbol).join(", "));
 
-      // ✅ Check for duplicates before appending
-      setResults(prev => {
-        const existingSymbols = new Set(prev.map(s => s.symbol));
-        const newStocks = fetched.filter(s => !existingSymbols.has(s.symbol));
-        
-        console.log(`Adding ${newStocks.length} new stocks (filtered ${fetched.length - newStocks.length} duplicates)`);
-        
+      setResults((prev) => {
+        const existingSymbols = new Set(prev.map((s) => s.symbol));
+        const newStocks = fetched.filter((s) => !existingSymbols.has(s.symbol));
+
+        console.log(
+          `Adding ${newStocks.length} new stocks (filtered ${
+            fetched.length - newStocks.length
+          } duplicates)`
+        );
+
         if (newStocks.length === 0) {
           console.log("⚠️ All stocks were duplicates - stopping pagination");
           setHasMore(false);
           return prev;
         }
-        
+
         return [...prev, ...newStocks];
       });
-      
-      // ✅ Update pagination state
+
       const newOffset = currentOffset + 25;
       console.log("➡️ Next offset will be:", newOffset);
       setCurrentOffset(newOffset);
       setHasMore(fetched.length >= 25);
-      
     } catch (err) {
       console.error("[StockPicker] load more error:", err);
       setHasMore(false);
@@ -432,21 +520,19 @@ export default function StockPicker() {
   // ✅ Handle scroll event for infinite scroll
   const handleStockListScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
-    
-    // Load more when user scrolls to bottom (with 100px threshold)
     if (scrollHeight - scrollTop <= clientHeight + 100) {
       loadMoreStocks();
     }
   };
 
-  // --- Symbol lookup (OPTIONAL: also open sheet on symbol search) ---
+  // --- Symbol lookup (also open sheet on symbol search) ---
   const handleSymbolSearch = async () => {
     if (!symbolInput.trim()) return;
     setSearching(true);
     setStockError("");
     setResults([]);
     setSelectedStocks([]);
-    setIsStockListOpen(true); // also use sheet for symbol lookup
+    setIsStockListOpen(true);
 
     try {
       const data = await apiPost("symbol-lookup.php", {
@@ -457,6 +543,10 @@ export default function StockPicker() {
         setStockError(data.error || "Symbol not found.");
         return;
       }
+
+      // Symbol lookup does not use Yahoo screener pagination
+      setCurrentScrId("");
+      setHasMore(false);
 
       setCategory(`Symbol: ${data.symbol}`);
       setResults([
@@ -484,19 +574,20 @@ export default function StockPicker() {
     );
 
   const handleContinueStocks = () => {
-    // ❗ Do not let user continue if cash is out of range
-    if (isCashOutsideLimits) {
-      return;
-    }
+    if (isCashOutsideLimits) return;
+
     if (selectedStocks.length === 0) {
       alert("Please select at least one stock to continue.");
       return;
     }
+
     results
       .filter((stock) => selectedStocks.includes(stock.symbol))
       .forEach((stock) => addToBasket(stock));
+
     localStorage.setItem("basket_amount", String(cashValue));
     localStorage.setItem("basket_pointsUsed", String(selectedPoints));
+
     navigate("/basket", {
       state: { category, amount: cashValue, pointsUsed: selectedPoints, memberId },
     });
@@ -583,10 +674,7 @@ export default function StockPicker() {
       </div>
 
       {/* Points slider */}
-      <div
-        className="card"
-        style={{ marginBottom: "1.25rem", textAlign: "center" }}
-      >
+      <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center" }}>
         <p style={{ fontWeight: "600" }}>Points to Convert</p>
         <input
           id="pointsToConvert"
@@ -626,17 +714,12 @@ export default function StockPicker() {
           </button>
         </div>
 
-        <p
-          className="wallet-intro"
-          style={{ marginBottom: "0.25rem", fontWeight: "600" }}
-        >
+        <p className="wallet-intro" style={{ marginBottom: "0.25rem", fontWeight: "600" }}>
           Cash-Value used for this Buy Order
         </p>
 
         {/* 💰 Editable Cash Input */}
-        <div
-          style={{ display: "flex", justifyContent: "center", alignItems: "center" }}
-        >
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
           <span style={{ fontSize: "1.25rem", marginRight: "6px" }}>$</span>
           <input
             id="cashToConvert"
@@ -676,10 +759,7 @@ export default function StockPicker() {
 
         {/* Broker range validation */}
         {cashLimitError && (
-          <p
-            className="points-error"
-            style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}
-          >
+          <p className="points-error" style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
             {cashLimitError}
           </p>
         )}
@@ -730,6 +810,7 @@ export default function StockPicker() {
       <h2 className="categories-title" style={{ textAlign: "center" }}>
         Select a Category
       </h2>
+
       {hasLimits && (
         <p
           className="caption"
@@ -745,6 +826,7 @@ export default function StockPicker() {
           {maxOrderAmount?.toFixed(2)}
         </p>
       )}
+
       <div
         ref={sliderRef}
         className="categories-slider"
@@ -757,6 +839,47 @@ export default function StockPicker() {
         onTouchEnd={handleTouchEnd}
         style={{ cursor: "grab" }}
       >
+        {/* ✅ NEW: Popular Member Picks button (FIRST) */}
+        <button
+          key={POPULAR_MEMBER_PICKS}
+          type="button"
+          onClick={handlePopularMemberPicks}
+          className="category-btn"
+          disabled={isCashOutsideLimits}
+          style={{
+            minWidth: "160px",
+            height: "100px",
+            marginRight: "10px",
+            borderRadius: "8px",
+            backgroundImage: `url(${categoryImages[POPULAR_MEMBER_PICKS]})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            overflow: "hidden",
+            color: "white",
+            fontWeight: "600",
+            opacity: isCashOutsideLimits ? 0.4 : 1,
+            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
+          }}
+          title="Most purchased securities by StockLoyal members"
+        >
+          <span
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: "6px",
+              background: "rgba(0,0,0,0.5)",
+              textAlign: "center",
+              fontSize: "0.9rem",
+            }}
+          >
+            {POPULAR_MEMBER_PICKS}
+          </span>
+        </button>
+
+        {/* Existing Yahoo screener categories */}
         {Object.entries(categoryMap).map(([cat, scrId]) => (
           <button
             key={cat}
@@ -769,9 +892,7 @@ export default function StockPicker() {
               height: "100px",
               marginRight: "10px",
               borderRadius: "8px",
-              backgroundImage: `url(${
-                categoryImages[cat] || "/icons/default.jpg"
-              })`,
+              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               position: "relative",
@@ -824,7 +945,7 @@ export default function StockPicker() {
           >
             <div
               className="stocklist-sheet"
-              onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+              onClick={(e) => e.stopPropagation()}
               style={{
                 position: "relative",
                 width: "100%",
@@ -865,7 +986,7 @@ export default function StockPicker() {
                 )}
               </div>
 
-              <div 
+              <div
                 className="stocklist-sheet-content"
                 ref={stockListContentRef}
                 onScroll={handleStockListScroll}
@@ -895,13 +1016,10 @@ export default function StockPicker() {
                             <td className="text-center">
                               <input
                                 type="checkbox"
-                                checked={selectedStocks.includes(
-                                  stock.symbol
-                                )}
+                                checked={selectedStocks.includes(stock.symbol)}
                                 onChange={() => toggleSelect(stock.symbol)}
                               />
                             </td>
-                            {/* ✅ Symbol cell links to /symbol-chart/:symbol */}
                             <td
                               className="symbol"
                               style={{
@@ -915,13 +1033,11 @@ export default function StockPicker() {
                             >
                               {stock.symbol}
                             </td>
-                            <td className="text-left">
-                              {stock.name || "-"}
-                            </td>
+                            <td className="text-left">{stock.name || "-"}</td>
                             <td className="price-change">
                               <div className="price">
-                                {stock.price
-                                  ? `$${stock.price.toFixed(2)}`
+                                {stock.price != null
+                                  ? `$${Number(stock.price).toFixed(2)}`
                                   : "N/A"}
                               </div>
                               <div
@@ -943,28 +1059,32 @@ export default function StockPicker() {
                         ))}
                       </tbody>
                     </table>
-                    
-                    {/* ✅ Loading indicator for infinite scroll */}
+
+                    {/* ✅ Loading indicator for infinite scroll (Yahoo only) */}
                     {loadingMore && (
-                      <div style={{ 
-                        textAlign: "center", 
-                        padding: "20px",
-                        color: "#6b7280",
-                        fontSize: "0.9rem"
-                      }}>
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "20px",
+                          color: "#6b7280",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         Loading more stocks...
                       </div>
                     )}
-                    
+
                     {/* ✅ End of results indicator */}
                     {!hasMore && results.length > 0 && !loadingMore && (
-                      <div style={{ 
-                        textAlign: "center", 
-                        padding: "20px",
-                        color: "#9ca3af",
-                        fontSize: "0.85rem",
-                        fontStyle: "italic"
-                      }}>
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "20px",
+                          color: "#9ca3af",
+                          fontSize: "0.85rem",
+                          fontStyle: "italic",
+                        }}
+                      >
                         No more stocks to load
                       </div>
                     )}

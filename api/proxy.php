@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 //  - Screeners (via ?scrId=most_actives)
 //  - Symbol search (via POST {"symbol":"AAPL"})
 //  - Multi-symbol quote lookup (via POST {"symbol":"AAPL,MSFT"})
+//  - ✅ NEW: Multi-symbol quote lookup (via POST {"symbols":["AAPL","MSFT"]})
 // ======================================================================
 
 // header("Access-Control-Allow-Origin: *");
@@ -36,7 +37,25 @@ $scrId = isset($_GET['scrId'])
     ? trim($_GET['scrId'])
     : (is_array($post) && !empty($post['scrId']) ? trim($post['scrId']) : null);
 
-$symbol = is_array($post) && !empty($post['symbol']) ? trim($post['symbol']) : null;
+// Existing: symbol can be "AAPL" or "AAPL,MSFT"
+$symbol = (is_array($post) && !empty($post['symbol'])) ? trim((string)$post['symbol']) : null;
+
+// ✅ NEW: also support symbols array: {"symbols":["AAPL","MSFT"]}
+if ((!$symbol || $symbol === '') && is_array($post) && !empty($post['symbols']) && is_array($post['symbols'])) {
+    $clean = [];
+    foreach ($post['symbols'] as $s) {
+        $s = strtoupper(trim((string)$s));
+        if ($s === '' || strlen($s) > 16) continue;
+        // Allow A-Z, 0-9, dot, dash, caret, equals (covers many Yahoo tickers)
+        if (!preg_match('/^[A-Z0-9\.\-\^\=]+$/', $s)) continue;
+        $clean[] = $s;
+        if (count($clean) >= 100) break; // cap for safety
+    }
+    $clean = array_values(array_unique($clean));
+    if (!empty($clean)) {
+        $symbol = implode(',', $clean);
+    }
+}
 
 // ✅ Add offset parameter for pagination (default 0)
 $offset = isset($_GET['offset'])
@@ -86,7 +105,7 @@ try {
 
             $resp = curl_exec($curl);
             $http = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            
+
             if ($resp === false || $http !== 200) {
                 L("Quote API failed with HTTP {$http}, trying chart fallback");
                 // Fall through to chart-based fallback below
@@ -102,20 +121,20 @@ try {
                             // Calculate change percentage from price and previous close if not directly available
                             $price = $q['regularMarketPrice'] ?? null;
                             $prevClose = $q['regularMarketPreviousClose'] ?? $q['previousClose'] ?? null;
-                            
+
                             // Try to get change percent directly first
                             $changePercent = $q['regularMarketChangePercent'] ?? null;
-                            
+
                             // If not available, calculate it
                             if ($changePercent === null && $price !== null && $prevClose !== null && $prevClose > 0) {
                                 $changePercent = (($price - $prevClose) / $prevClose) * 100;
                             }
-                            
+
                             // Also check for regularMarketChange and calculate from that
                             if ($changePercent === null && isset($q['regularMarketChange']) && $prevClose !== null && $prevClose > 0) {
                                 $changePercent = ($q['regularMarketChange'] / $prevClose) * 100;
                             }
-                            
+
                             return [
                                 "symbol"    => $q['symbol'],
                                 "name"      => $q['shortName'] ?? $q['longName'] ?? $q['symbol'],
@@ -132,11 +151,11 @@ try {
                     exit;
                 }
             }
-            
+
             // --- Fallback: Use chart API for each symbol ---
             L("Using chart API fallback for symbols: {$symbolKey}");
             $chartResults = [];
-            
+
             foreach ($symbols as $sym) {
                 $chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/{$sym}?interval=1d&range=5d";
                 L("chart fetch: {$chartUrl}");
@@ -161,13 +180,13 @@ try {
                         $price = $meta['regularMarketPrice'] ?? null;
                         $prevClose = $meta['chartPreviousClose'] ?? $meta['previousClose'] ?? null;
                         $name = $meta['shortName'] ?? $meta['longName'] ?? $sym;
-                        
+
                         if ($price !== null && $prevClose !== null && $prevClose > 0) {
                             $change = (($price - $prevClose) / $prevClose) * 100;
                         }
                     }
                 }
-                
+
                 $chartResults[] = [
                     "symbol"    => $sym,
                     "name"      => $name ?? $sym,
@@ -177,7 +196,7 @@ try {
                     "prevClose" => $prevClose,
                 ];
             }
-            
+
             $out = [
                 "success" => true,
                 "count"   => count($chartResults),
@@ -194,7 +213,7 @@ try {
     // 🔹 SCREENER FETCH
     // -----------------------------------------------------------
     $scr = $scrId ?: 'most_actives';
-    
+
     // ✅ Include offset in cache key
     $cacheFile = $cacheDir . "/cache_" . preg_replace('/[^a-z0-9_-]/i', '_', $scr) . "_offset{$offset}.json";
     $cacheTime = 300;

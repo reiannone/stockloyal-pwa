@@ -8,3 +8,6 @@
   transform: translateY(0);
   opacity: 1;
 }
+.stocklist-table td.text-left {
+  white-space: pre-line;
+}
