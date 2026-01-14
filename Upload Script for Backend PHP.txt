@@ -5,7 +5,7 @@ FRONTEND: AWS Amplify and GitHub from PowerShell:
 # If you haven't initialized git yet
 git init
 git add .
-git commit -m "Modified payment processing and export of CSV files"
+git commit -m "Added data quality check process as part of admin."
 
 # Create a new repository on GitHub, then:
 git remote add origin https://github.com/reiannone/stockloyal-pwa.git

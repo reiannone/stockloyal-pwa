@@ -20,10 +20,11 @@ export default function WalletAdmin() {
   const [searchTerm, setSearchTerm] = useState("");
   
   // ✅ Check if we're coming from Data Quality Check
-  const affectedMembers = location.state?.affectedMembers || [];
-  const fieldName = location.state?.fieldName || "";
-  const fromDataQuality = location.state?.fromDataQuality || false;
-  const totalAffected = location.state?.totalAffected || 0;
+  // Memoize these to prevent unnecessary re-renders
+  const affectedMembers = useMemo(() => location.state?.affectedMembers || [], [location.state?.affectedMembers]);
+  const fieldName = useMemo(() => location.state?.fieldName || "", [location.state?.fieldName]);
+  const fromDataQuality = useMemo(() => location.state?.fromDataQuality || false, [location.state?.fromDataQuality]);
+  const totalAffected = useMemo(() => location.state?.totalAffected || 0, [location.state?.totalAffected]);
 
   // ---- timezone helpers ----
   const detectedTz = useMemo(() => {
@@ -476,6 +477,15 @@ export default function WalletAdmin() {
 
   // Filter wallets based on merchant and search term
   const filteredWallets = useMemo(() => {
+    console.log('[WalletAdmin] Filtering wallets:', {
+      totalWallets: wallets.length,
+      fromDataQuality,
+      fieldName,
+      affectedMembersCount: affectedMembers.length,
+      filterMerchantId,
+      searchTerm
+    });
+
     let result = wallets;
 
     // ✅ If coming from Data Quality Check, filter by affected members OR by missing field
@@ -483,6 +493,7 @@ export default function WalletAdmin() {
       if (affectedMembers.length > 0) {
         // If we have specific member IDs, use those
         result = result.filter((w) => affectedMembers.includes(w.member_id));
+        console.log('[WalletAdmin] Filtered by affected members:', result.length);
       } else {
         // Otherwise, filter by records where the field is missing/empty
         result = result.filter((w) => {
@@ -504,6 +515,7 @@ export default function WalletAdmin() {
           // Be careful here - 0 might be a valid value for some fields
           return false;
         });
+        console.log('[WalletAdmin] Filtered by missing field:', result.length);
       }
     }
 
@@ -534,6 +546,7 @@ export default function WalletAdmin() {
       });
     }
 
+    console.log('[WalletAdmin] Final filtered result:', result.length);
     return result;
   }, [wallets, filterMerchantId, searchTerm, fromDataQuality, affectedMembers, fieldName]);
 
