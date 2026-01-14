@@ -8,6 +8,7 @@ export default function DataQualityCheck() {
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [error, setError] = useState("");
+  const [selectedTable, setSelectedTable] = useState("wallet"); // ✨ Table selector
 
   const runDataProfile = async () => {
     setLoading(true);
@@ -16,7 +17,7 @@ export default function DataQualityCheck() {
 
     try {
       const data = await apiPost("data-quality-check.php", {
-        table: "wallet",
+        table: selectedTable, // ✨ Send selected table
         check_type: "full_profile"
       });
 
@@ -60,13 +61,19 @@ export default function DataQualityCheck() {
     console.log("Affected data:", affectedData);
     console.log("All affected members:", profileData.affected_members);
     
-    // Navigate even if we don't have member_ids - WalletAdmin will show all records
+    // Navigate even if we don't have record_ids - Admin page will show all records
     // and the banner will explain the issue
-    const memberIds = affectedData?.member_ids || [];
+    const recordIds = affectedData?.record_ids || [];  // ✨ Changed from member_ids to record_ids
     
-    navigate("/wallet-admin", { 
+    // ✨ Route to appropriate admin page based on table
+    const targetPage = 
+      selectedTable === 'transactions_ledger' ? "/ledger-admin" :
+      selectedTable === 'orders' ? "/orders-admin" :
+      "/wallet-admin"; // Default for wallet
+    
+    navigate(targetPage, { 
       state: { 
-        affectedMembers: memberIds,
+        affectedRecords: recordIds,  // ✨ Changed from affectedMembers to affectedRecords
         fieldName: fieldName,
         fromDataQuality: true,
         totalAffected: profileData.field_analysis?.find(f => f.field_name === fieldName)?.missing_count || 0
@@ -78,18 +85,43 @@ export default function DataQualityCheck() {
     <div className="app-container app-content">
       <h1 className="page-title">Data Quality Check</h1>
       <p className="page-deck">
-        Scan the wallet table for data gaps, missing values, and data quality issues.
+        Scan database tables for data gaps, missing values, and data quality issues.
       </p>
 
-      {/* Run Profile Button */}
+      {/* Table Selector & Run Profile Button */}
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          {/* ✨ Table Selector Dropdown */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <label style={{ fontSize: "0.85rem", fontWeight: "600", color: "#4b5563" }}>
+              Select Table:
+            </label>
+            <select
+              value={selectedTable}
+              onChange={(e) => {
+                setSelectedTable(e.target.value);
+                setProfileData(null); // Clear previous results
+              }}
+              className="form-input"
+              style={{ 
+                minWidth: "180px",
+                padding: "0.5rem 0.75rem",
+                fontSize: "0.9rem"
+              }}
+              disabled={loading}
+            >
+              <option value="wallet">Wallet</option>
+              <option value="orders">Orders</option>
+              <option value="transactions_ledger">Transactions Ledger</option>
+            </select>
+          </div>
+          
           <button
             type="button"
             className="btn-primary"
             onClick={runDataProfile}
             disabled={loading}
-            style={{ minWidth: "180px" }}
+            style={{ minWidth: "180px", marginTop: "auto" }}
           >
             {loading ? "Scanning..." : "Run Data Profile"}
           </button>
@@ -164,15 +196,21 @@ export default function DataQualityCheck() {
               
               {profileData.critical_issues.map((issue, idx) => {
                 const affectedData = profileData.affected_members?.[issue.issue_key];
-                const memberIds = affectedData?.member_ids || [];
+                const recordIds = affectedData?.record_ids || [];  // ✨ Changed from member_ids to record_ids
                 const showingCount = affectedData?.showing_count || 0;
                 const totalCount = affectedData?.total_count || issue.count;
                 
-                // Handler to navigate to WalletAdmin with this issue's data
+                // ✨ Handler to navigate to appropriate admin page based on table
                 const handleNavigateToIssue = () => {
-                  navigate("/wallet-admin", {
+                  // Route based on table type
+                  const targetPage = 
+                    selectedTable === 'transactions_ledger' ? "/ledger-admin" :
+                    selectedTable === 'orders' ? "/orders-admin" :
+                    "/wallet-admin"; // Default for wallet
+                  
+                  navigate(targetPage, {
                     state: {
-                      affectedMembers: memberIds,
+                      affectedRecords: recordIds,  // ✨ Changed from affectedMembers to affectedRecords
                       fieldName: issue.field,
                       fromDataQuality: true,
                       totalAffected: totalCount
@@ -219,14 +257,18 @@ export default function DataQualityCheck() {
                         fontSize: "0.85rem",
                         fontWeight: "600"
                       }}>
-                        → Fix in WalletAdmin
+                        → Fix in {
+                          selectedTable === 'transactions_ledger' ? 'LedgerAdmin' :
+                          selectedTable === 'orders' ? 'OrdersAdmin' :
+                          'WalletAdmin'
+                        }
                       </span>
                     </div>
                     
-                    {memberIds.length > 0 && (
+                    {recordIds.length > 0 && (
                       <details 
                         style={{ marginTop: "0.5rem" }}
-                        onClick={(e) => e.stopPropagation()} // Prevent card click when expanding details
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <summary 
                           style={{ 
@@ -237,7 +279,7 @@ export default function DataQualityCheck() {
                             padding: "0.25rem 0"
                           }}
                         >
-                          View Affected Member IDs ({showingCount}{showingCount < totalCount ? ` of ${totalCount}` : ''})
+                          View Affected Record IDs ({showingCount}{showingCount < totalCount ? ` of ${totalCount}` : ''})
                         </summary>
                         
                         <div style={{ 
@@ -394,7 +436,7 @@ export default function DataQualityCheck() {
                               flexWrap: "wrap", 
                               gap: "0.5rem" 
                             }}>
-                              {memberIds.map((memberId, i) => (
+                              {recordIds.map((recordId, i) => (
                                 <code 
                                   key={i}
                                   style={{ 
@@ -404,7 +446,7 @@ export default function DataQualityCheck() {
                                     borderRadius: "3px"
                                   }}
                                 >
-                                  {memberId}
+                                  {recordId}
                                 </code>
                               ))}
                             </div>
@@ -464,10 +506,10 @@ export default function DataQualityCheck() {
                     // Check if this field has missing data
                     const hasMissingData = field.missing_count > 0;
                     
-                    // Check if we have affected member data for this field
+                    // Check if we have affected record data for this field
                     const issueKey = "missing_" + field.field_name;
                     const affectedData = profileData.affected_members?.[issueKey];
-                    const hasAffectedMembers = affectedData?.member_ids?.length > 0;
+                    const hasAffectedRecords = affectedData?.record_ids?.length > 0;  // ✨ Changed from member_ids to record_ids
 
                     return (
                       <tr 
@@ -475,7 +517,7 @@ export default function DataQualityCheck() {
                         onClick={() => {
                           if (hasMissingData) {
                             console.log("Clicked field:", field.field_name);
-                            console.log("Has affected members:", hasAffectedMembers);
+                            console.log("Has affected records:", hasAffectedRecords);
                             console.log("Affected data:", affectedData);
                             goToWalletAdmin(field.field_name);
                           }
@@ -510,7 +552,7 @@ export default function DataQualityCheck() {
                                 color: "#3b82f6",
                                 fontWeight: "600"
                               }}>
-                                {hasAffectedMembers ? "→ View in Admin" : "→ Click to filter"}
+                                {hasAffectedRecords ? "→ View in Admin" : "→ Click to filter"}
                               </span>
                             )}
                           </div>
