@@ -544,7 +544,7 @@ export default function Wallet() {
             </div>
             <div className="caption" style={{ marginTop: 6 }}>
               Points from {" "}
-              <strong style={{ color: "#2563eb" }}>{merchantName}</strong>: {" "}
+              <strong style={{ color: "#2563eb" }}>{merchantName}</strong> {" "}
               <strong>{formatPoints(points)}</strong>
             </div>
             {localStorage.getItem("memberTier") && (
