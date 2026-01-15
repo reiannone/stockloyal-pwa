@@ -1,120 +1,178 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
-
 require_once __DIR__ . '/_loadenv.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
-// added above lines to support api.stockloyal.com for backend API access
-// api/log-ledger.php
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { 
+    http_response_code(204); 
+    exit; 
+}
 
-// header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-  header("Access-Control-Allow-Methods: POST, OPTIONS");
-  header("Access-Control-Allow-Headers: Content-Type");
-  exit;
+    header("Access-Control-Allow-Methods: POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type");
+    exit;
 }
 
-require_once __DIR__ . '/config.php'; // uses your PDO $conn
+require_once 'config.php';
 
-$input = json_decode(file_get_contents("php://input"), true);
+$input = json_decode(file_get_contents("php://input"), true) ?? [];
 
-// ✅ Log incoming request for debugging
-error_log("[log-ledger.php] Incoming request: " . json_encode($input));
+$memberId = $input['member_id'] ?? null;
+$merchantId = $input['merchant_id'] ?? null;
+$broker = $input['broker'] ?? null;
+$orderId = $input['order_id'] ?? null;
+$clientTxId = $input['client_tx_id'] ?? null;
+$externalRef = $input['external_ref'] ?? null;
+$txType = $input['tx_type'] ?? null;
+$amountPoints = $input['points'] ?? null;
+$amountCash = $input['amount_cash'] ?? null;
+$note = $input['note'] ?? null;
+$memberTimezone = $input['member_timezone'] ?? 'America/New_York';
 
-$member_id      = trim($input['member_id']      ?? '');
-$merchant_id    = trim($input['merchant_id']    ?? '');
-$points         = isset($input['points']) ? (float)$input['points'] : null;
-$amount_cash    = isset($input['amount_cash']) ? (float)$input['amount_cash'] : null;
-$action         = strtolower(trim($input['action'] ?? 'earn')); // 'earn' or 'redeem'
-$client_tx_id   = trim($input['client_tx_id']   ?? '');
-$member_timezone = trim($input['member_timezone'] ?? '');
-$note           = trim($input['note'] ?? 'Demo launch');
-
-// ✅ IMPORTANT: Due to ck_amount_exclusive constraint, we can only set ONE of:
-// amount_points OR amount_cash (not both)
-// For points transactions, we use amount_points and set amount_cash to NULL
-if ($points !== null && $points > 0) {
-  $amount_cash = null;  // ✅ Set to NULL to satisfy constraint
-  error_log("[log-ledger.php] Points transaction - setting amount_cash to NULL");
+// Validate required fields
+if (!$memberId) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "error" => "Missing member_id"
+    ]);
+    exit;
 }
 
-// ✅ Detailed validation logging
-if ($member_id === '') {
-  error_log("[log-ledger.php] Validation failed: member_id is empty");
-}
-if ($merchant_id === '') {
-  error_log("[log-ledger.php] Validation failed: merchant_id is empty");
-}
-if ($points === null || $points <= 0) {
-  error_log("[log-ledger.php] Validation failed: points is null or <= 0");
-}
-if ($client_tx_id === '') {
-  error_log("[log-ledger.php] Validation failed: client_tx_id is empty");
-}
-if ($member_timezone === '') {
-  error_log("[log-ledger.php] Validation failed: member_timezone is empty");
-}
-
-if ($member_id === '' || $merchant_id === '' || $points === null || $points <= 0 || $client_tx_id === '' || $member_timezone === '') {
-  http_response_code(400);
-  $errorResponse = [
-    "success" => false, 
-    "error" => "Missing/invalid fields",
-    "details" => [
-      "member_id" => $member_id === '' ? "empty" : "ok",
-      "merchant_id" => $merchant_id === '' ? "empty" : "ok",
-      "points" => ($points === null || $points <= 0) ? "invalid" : "ok",
-      "client_tx_id" => $client_tx_id === '' ? "empty" : "ok",
-      "member_timezone" => $member_timezone === '' ? "empty" : "ok"
-    ]
-  ];
-  error_log("[log-ledger.php] Validation failed: " . json_encode($errorResponse));
-  echo json_encode($errorResponse);
-  exit;
+// Validate tx_type if not provided
+if (!$txType) {
+    // Try to infer from old 'action' field for backwards compatibility
+    $action = $input['action'] ?? null;
+    
+    if ($action) {
+        $actionLower = strtolower(trim($action));
+        
+        // Map common actions to tx_type (using actual database enum values)
+        if (in_array($actionLower, ['earn', 'received', 'refresh', 'refresh points', 'update', 'points_received'])) {
+            $txType = 'points_received';
+        } elseif (in_array($actionLower, ['redeem', 'spend', 'redeem_points'])) {
+            $txType = 'redeem_points';
+        } elseif (in_array($actionLower, ['adjust', 'adjust_points', 'adjustment', 'correction'])) {
+            $txType = 'adjust_points';
+        } else {
+            $txType = 'points_received'; // default
+        }
+    } else {
+        $txType = 'points_received'; // default
+    }
 }
 
-/* Map action -> tx_type + direction */
-$tx_type   = $action === 'redeem' ? 'redeem_points' : 'points_received';
-$direction = $action === 'redeem' ? 'outbound'      : 'inbound';
+// Validate tx_type is one of the allowed enum values
+$validTxTypes = ['points_received', 'redeem_points', 'adjust_points', 'cash_in', 'cash_out', 'cash_fee'];
+if (!in_array($txType, $validTxTypes)) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "error" => "Invalid tx_type. Must be one of: " . implode(", ", $validTxTypes)
+    ]);
+    exit;
+}
+
+// Determine direction based on tx_type
+$direction = 'inbound'; // default
+if (in_array($txType, ['redeem_points', 'cash_out', 'cash_fee'])) {
+    $direction = 'outbound';
+}
+
+// Determine channel
+$channel = 'Merchant API'; // default for merchant-initiated transactions
+if ($broker) {
+    $channel = 'Broker API';
+} elseif ($input['channel']) {
+    $channel = $input['channel'];
+}
+
+// Validate channel is one of the allowed enum values
+$validChannels = ['Plaid', 'ACH', 'Broker API', 'Merchant API', 'Card', 'Wire', 'Internal', 'Other'];
+if (!in_array($channel, $validChannels)) {
+    $channel = 'Other';
+}
+
+// Default status
+$status = $input['status'] ?? 'confirmed';
 
 try {
-  $sql = "
-    INSERT INTO transactions_ledger
-      (member_id, merchant_id, tx_type, direction, channel, status,
-       amount_points, amount_cash, client_tx_id, member_timezone, note)
-    VALUES
-      (:member_id, :merchant_id, :tx_type, :direction, 'merchant', 'confirmed',
-       :amount_points, :amount_cash, :client_tx_id, :member_timezone, :note)
-  ";
+    $stmt = $conn->prepare("
+        INSERT INTO transactions_ledger (
+            member_id,
+            merchant_id,
+            broker,
+            order_id,
+            client_tx_id,
+            external_ref,
+            tx_type,
+            direction,
+            channel,
+            status,
+            amount_points,
+            amount_cash,
+            note,
+            member_timezone
+        ) VALUES (
+            :member_id,
+            :merchant_id,
+            :broker,
+            :order_id,
+            :client_tx_id,
+            :external_ref,
+            :tx_type,
+            :direction,
+            :channel,
+            :status,
+            :amount_points,
+            :amount_cash,
+            :note,
+            :member_timezone
+        )
+    ");
 
-  $stmt = $conn->prepare($sql);
-  $stmt->execute([
-    ':member_id'       => $member_id,
-    ':merchant_id'     => $merchant_id,
-    ':tx_type'         => $tx_type,
-    ':direction'       => $direction,
-    ':amount_points'   => $points,
-    ':amount_cash'     => $amount_cash,
-    ':client_tx_id'    => $client_tx_id,
-    ':member_timezone' => $member_timezone,
-    ':note'            => $note,
-  ]);
+    $stmt->execute([
+        ':member_id' => $memberId,
+        ':merchant_id' => $merchantId,
+        ':broker' => $broker,
+        ':order_id' => $orderId,
+        ':client_tx_id' => $clientTxId,
+        ':external_ref' => $externalRef,
+        ':tx_type' => $txType,
+        ':direction' => $direction,
+        ':channel' => $channel,
+        ':status' => $status,
+        ':amount_points' => $amountPoints,
+        ':amount_cash' => $amountCash,
+        ':note' => $note,
+        ':member_timezone' => $memberTimezone
+    ]);
 
-  $txId = $conn->lastInsertId();
-  error_log("[log-ledger.php] Transaction logged successfully: tx_id=$txId, client_tx_id=$client_tx_id");
-  
-  echo json_encode(["success" => true, "tx_id" => $txId]);
+    $txId = $conn->lastInsertId();
+
+    echo json_encode([
+        "success" => true,
+        "tx_id" => $txId,
+        "message" => "Transaction logged successfully"
+    ]);
+
 } catch (PDOException $e) {
-  // Handle idempotency duplicate gracefully (unique client_tx_id)
-  if (strpos($e->getMessage(), 'uq_client_tx_id') !== false) {
-    error_log("[log-ledger.php] Duplicate client_tx_id detected: $client_tx_id");
-    echo json_encode(["success" => true, "duplicate" => true]);
-  } else {
-    error_log("[log-ledger.php] Database error: " . $e->getMessage());
-    http_response_code(500);
-    echo json_encode(["success" => false, "error" => $e->getMessage()]);
-  }
+    error_log("log-ledger.php error: " . $e->getMessage());
+    
+    // Check for duplicate client_tx_id
+    if ($e->getCode() == 23000 && strpos($e->getMessage(), 'client_tx_id') !== false) {
+        echo json_encode([
+            "success" => false,
+            "error" => "Duplicate transaction ID"
+        ]);
+    } else {
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "error" => "Database error: " . $e->getMessage()
+        ]);
+    }
 }

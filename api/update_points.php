@@ -9,112 +9,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 header("Content-Type: application/json");
-require_once __DIR__ . '/config.php';
 
-$input = json_decode(file_get_contents("php://input"), true);
-$memberId = isset($input['member_id']) ? trim($input['member_id']) : '';
-$points = isset($input['points']) ? (int)$input['points'] : null;
-$cashBalance = isset($input['cash_balance']) ? (float)$input['cash_balance'] : null;
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header("Access-Control-Allow-Methods: POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type");
+    exit;
+}
 
-// ✅ NEW: Action determines whether to add or replace
-$action = isset($input['action']) ? trim($input['action']) : 'add'; // Default: add
+require_once 'config.php';
+
+$input = json_decode(file_get_contents("php://input"), true) ?? [];
+
+$memberId = $input['member_id'] ?? null;
+$points = $input['points'] ?? null;
+$cashBalance = $input['cash_balance'] ?? null;
+$action = strtolower(trim($input['action'] ?? 'replace'));
 
 if (!$memberId) {
     http_response_code(400);
     echo json_encode([
         "success" => false,
-        "error" => "member_id is required"
+        "error" => "Missing member_id"
+    ]);
+    exit;
+}
+
+if ($points === null && $cashBalance === null) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "error" => "Missing points or cash_balance"
     ]);
     exit;
 }
 
 try {
-    // Build UPDATE query based on action
-    if ($action === 'replace' || $action === 'set') {
-        // ✅ REPLACE mode: Set exact values (for URL updates)
-        $updateParts = [];
-        $params = [':member_id' => $memberId];
-        
-        if ($points !== null) {
-            $updateParts[] = "points = :points";
-            $params[':points'] = $points;
-        }
-        
-        if ($cashBalance !== null) {
-            $updateParts[] = "cash_balance = :cash_balance";
-            $params[':cash_balance'] = $cashBalance;
-        }
-        
-        if (empty($updateParts)) {
-            http_response_code(400);
-            echo json_encode([
-                "success" => false,
-                "error" => "No values to update"
-            ]);
-            exit;
-        }
-        
-        $sql = "UPDATE wallet SET " . implode(", ", $updateParts) . ", updated_at = NOW() WHERE member_id = :member_id";
-        
-    } else {
-        // ✅ ADD mode: Increment existing values (for transactions)
-        $updateParts = [];
-        $params = [':member_id' => $memberId];
-        
-        if ($points !== null) {
-            $updateParts[] = "points = points + :points";
-            $params[':points'] = $points;
-        }
-        
-        if ($cashBalance !== null) {
-            $updateParts[] = "cash_balance = cash_balance + :cash_balance";
-            $params[':cash_balance'] = $cashBalance;
-        }
-        
-        if (empty($updateParts)) {
-            http_response_code(400);
-            echo json_encode([
-                "success" => false,
-                "error" => "No values to update"
-            ]);
-            exit;
-        }
-        
-        $sql = "UPDATE wallet SET " . implode(", ", $updateParts) . ", updated_at = NOW() WHERE member_id = :member_id";
-    }
-    
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    
-    if ($stmt->rowCount() === 0) {
+    // First check if wallet exists
+    $checkStmt = $conn->prepare("SELECT points, cash_balance FROM wallet WHERE member_id = :member_id");
+    $checkStmt->execute([':member_id' => $memberId]);
+    $existingWallet = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$existingWallet) {
         http_response_code(404);
         echo json_encode([
             "success" => false,
-            "error" => "Member not found or no changes made"
+            "error" => "Wallet not found for member_id: " . $memberId
         ]);
         exit;
     }
-    
-    // Fetch updated wallet
-    $fetchStmt = $conn->prepare("
-        SELECT points, cash_balance, portfolio_value 
-        FROM wallet 
+
+    $currentPoints = (int)$existingWallet['points'];
+    $currentCash = (float)$existingWallet['cash_balance'];
+
+    // Calculate new values based on action
+    $newPoints = $currentPoints;
+    $newCash = $currentCash;
+
+    switch ($action) {
+        case 'add':
+            // Add to existing values
+            if ($points !== null) $newPoints = $currentPoints + (int)$points;
+            if ($cashBalance !== null) $newCash = $currentCash + (float)$cashBalance;
+            break;
+            
+        case 'subtract':
+            // Subtract from existing values
+            if ($points !== null) $newPoints = max(0, $currentPoints - (int)$points);
+            if ($cashBalance !== null) $newCash = max(0, $currentCash - (float)$cashBalance);
+            break;
+            
+        case 'replace':
+        default:
+            // Replace existing values (default behavior)
+            if ($points !== null) $newPoints = (int)$points;
+            if ($cashBalance !== null) $newCash = (float)$cashBalance;
+            break;
+    }
+
+    // Update the wallet
+    $updateStmt = $conn->prepare("
+        UPDATE wallet 
+        SET points = :points,
+            cash_balance = :cash_balance
         WHERE member_id = :member_id
     ");
-    $fetchStmt->execute([':member_id' => $memberId]);
-    $wallet = $fetchStmt->fetch(PDO::FETCH_ASSOC);
-    
+
+    $updateStmt->execute([
+        ':points' => $newPoints,
+        ':cash_balance' => $newCash,
+        ':member_id' => $memberId
+    ]);
+
     echo json_encode([
         "success" => true,
-        "message" => "Wallet updated successfully",
+        "message" => "Points and cash balance updated successfully",
         "action" => $action,
-        "member_id" => $memberId,
-        "points" => (int)$wallet['points'],
-        "cash_balance" => (float)$wallet['cash_balance'],
-        "portfolio_value" => (float)$wallet['portfolio_value']
+        "previous" => [
+            "points" => $currentPoints,
+            "cash_balance" => $currentCash
+        ],
+        "new" => [
+            "points" => $newPoints,
+            "cash_balance" => $newCash
+        ]
     ]);
-    
+
 } catch (PDOException $e) {
+    error_log("update_points.php error: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         "success" => false,

@@ -81,10 +81,7 @@ export default function Ledger() {
     });
 
   const formatPoints = (val) =>
-    (parseFloat(val) || 0).toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    (parseInt(val, 10) || 0).toLocaleString("en-US");
 
   // Filter entries based on selected filter
   const filteredEntries = useMemo(() => {

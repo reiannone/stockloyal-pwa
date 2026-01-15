@@ -246,19 +246,38 @@ function SplashScreen() {
                                     Intl.DateTimeFormat().resolvedOptions().timeZone || 
                                     "America/New_York";
               
+              // Map action to tx_type for ledger
+              let txType = "points_received"; // default
+              let txAction = action || "refresh points"; // Keep original action for note
+              
+              if (action) {
+                const actionLower = action.toLowerCase().trim();
+                // Map to actual database enum values
+                if (actionLower === "refresh points" || actionLower === "refresh" || actionLower === "update" || actionLower === "received") {
+                  txType = "points_received";
+                } else if (actionLower === "adjust" || actionLower === "adjust_points" || actionLower === "adjustment" || actionLower === "correction") {
+                  txType = "adjust_points";
+                } else if (actionLower === "redeem" || actionLower === "redeem_points" || actionLower === "spend") {
+                  txType = "redeem_points";
+                } else {
+                  // Default to points_received for unknown actions
+                  txType = "points_received";
+                }
+              }
+              
               await apiPost("log-ledger.php", {
                 member_id: memberId,
                 merchant_id: merchantId,
                 points: points,
-                // ✅ DON'T send amount_cash - constraint requires only ONE amount field
-                action: "earn",
+                tx_type: txType, // ✅ Pass tx_type with correct enum value
+                action: txAction, // Keep original action for reference
                 client_tx_id: clientTxId,
                 member_timezone: memberTimezone,
-                note: `Points update from merchant referral link${memberTier ? ` - Tier: ${memberTier}` : ''}`
+                note: `${txAction}${memberTier ? ` - Tier: ${memberTier}` : ''}`
               });
               
               console.log("[Splash] Points updated - points:", points, "cashBalance:", cashBalance);
-              console.log("[Splash] Transaction logged:", clientTxId);
+              console.log("[Splash] Transaction logged:", clientTxId, "tx_type:", txType);
               
               // Update localStorage
               localStorage.setItem("points", String(points));
