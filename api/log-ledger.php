@@ -86,7 +86,7 @@ try {
       (member_id, merchant_id, tx_type, direction, channel, status,
        amount_points, amount_cash, client_tx_id, member_timezone, note)
     VALUES
-      (:member_id, :merchant_id, :tx_type, :direction, 'Internal', 'confirmed',
+      (:member_id, :merchant_id, :tx_type, :direction, 'merchant', 'confirmed',
        :amount_points, :amount_cash, :client_tx_id, :member_timezone, :note)
   ";
 

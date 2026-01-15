@@ -1,6 +1,6 @@
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-FRONTEND: AWS Amplify and GitHub from PowerShell:
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FRONTEND: FULL RELOAD (one-time) AWS Amplify and GitHub from PowerShell:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # If you haven't initialized git yet
 git init
@@ -11,6 +11,16 @@ git commit -m "Added data quality check process as part of admin."
 git remote add origin https://github.com/reiannone/stockloyal-pwa.git
 git branch -M main
 git push -u origin main
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FRONTEND: CHANGES AWS Amplify and GitHub from PowerShell:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+git add .
+git commit -m "Wallet: merchant highlight, hide sweep for one-time, rename portfolio button"
+git push
+
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
