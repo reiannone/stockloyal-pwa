@@ -12,6 +12,30 @@ import {
 } from "lucide-react";
 import SharePointsSheet from "../components/SharePointsSheet.jsx";
 
+// Add slide-down animation
+const slideDownAnimation = `
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+`;
+
+// Inject animation styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = slideDownAnimation;
+  if (!document.head.querySelector('style[data-wallet-animations]')) {
+    styleSheet.setAttribute('data-wallet-animations', 'true');
+    document.head.appendChild(styleSheet);
+  }
+}
+
 export default function Wallet() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
@@ -19,6 +43,10 @@ export default function Wallet() {
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Portfolio update notification
+  const [portfolioUpdated, setPortfolioUpdated] = useState(false);
+  const [newPortfolioValue, setNewPortfolioValue] = useState(null);
 
   // Merchant program blocking popup
   const [merchantProgramError, setMerchantProgramError] = useState(false);
@@ -167,6 +195,34 @@ export default function Wallet() {
 
         // ✅ checks AFTER load
         runPostLoadChecks(w);
+
+        // ✅ Background: Update portfolio value with real-time prices
+        (async () => {
+          try {
+            const portfolioData = await apiPost("update-portfolio-value.php", { member_id: memberId });
+            if (portfolioData?.success && portfolioData.value_changed) {
+              // Value changed - show notification and update
+              setNewPortfolioValue(portfolioData.portfolio_value);
+              setPortfolioUpdated(true);
+              
+              // Update wallet state with new value
+              setWallet(prev => ({
+                ...prev,
+                portfolio_value: portfolioData.portfolio_value
+              }));
+              
+              // Update localStorage
+              localStorage.setItem("portfolio_value", Number(portfolioData.portfolio_value || 0).toFixed(2));
+              window.dispatchEvent(new Event("member-updated"));
+              
+              // Auto-hide notification after 5 seconds
+              setTimeout(() => setPortfolioUpdated(false), 5000);
+            }
+          } catch (err) {
+            console.warn("[Wallet] Background portfolio update failed:", err);
+            // Silently fail - user still sees cached value
+          }
+        })();
       } catch (err) {
         console.error("[Wallet] wallet fetch error:", err);
         if (!mounted) return;
@@ -198,6 +254,7 @@ export default function Wallet() {
         try {
           if (w?.points != null) localStorage.setItem("points", String(parseInt(w.points, 10) || 0));
           if (w?.cash_balance != null) localStorage.setItem("cashBalance", Number(w.cash_balance || 0).toFixed(2));
+          if (typeof w?.portfolio_value !== "undefined") localStorage.setItem("portfolio_value", Number(w.portfolio_value || 0).toFixed(2));
           if (typeof w?.broker !== "undefined") localStorage.setItem("broker", String(w.broker || ""));
           if (typeof w?.member_timezone !== "undefined") localStorage.setItem("memberTimezone", String(w.member_timezone || ""));
           if (typeof w?.merchant_name !== "undefined") localStorage.setItem("merchantName", String(w.merchant_name || ""));
@@ -369,6 +426,50 @@ export default function Wallet() {
         </div>
       )}
 
+      {/* Portfolio Update Notification */}
+      {portfolioUpdated && (
+        <div
+          style={{
+            position: "fixed",
+            top: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: "#10b981",
+            color: "white",
+            padding: "12px 24px",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            maxWidth: "90%",
+            animation: "slideDown 0.3s ease-out"
+          }}
+        >
+          <RefreshCw size={20} />
+          <div>
+            <div style={{ fontWeight: 600 }}>Portfolio Value Updated</div>
+            <div style={{ fontSize: "0.9rem", opacity: 0.9 }}>
+              New value: {formatDollars(newPortfolioValue)}
+            </div>
+          </div>
+          <button
+            onClick={() => setPortfolioUpdated(false)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              padding: 4,
+              marginLeft: 8
+            }}
+          >
+            <XCircle size={20} />
+          </button>
+        </div>
+      )}
+
       <h2 className="page-title" style={{ margin: 0 }}>
         Stock-Backed Rewards
       </h2>
@@ -531,7 +632,7 @@ export default function Wallet() {
       </div>
 
       <p className="wallet-note" style={{ marginTop: 12 }}>
-        Investment portfolio reflects shares purchased through the StockLoyal app only.{" "}
+        Market prices are delayed 15 minutes. Investment portfolio reflects shares purchased through the StockLoyal app only.{" "}
         {wallet.broker && wallet.broker_url && (
           <>
             To see your full portfolio at {wallet.broker}, click{" "}

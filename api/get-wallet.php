@@ -65,6 +65,9 @@ try {
         exit;
     }
 
+    // Portfolio value is already stored in wallet table
+    // Background update happens via update-portfolio-value.php
+
     // ✅ Normalize numeric fields
     foreach ([
         'points',
