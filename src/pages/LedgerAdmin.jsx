@@ -1,8 +1,10 @@
 // src/pages/TransactionsLedgerAdmin.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 
 export default function TransactionsLedgerAdmin() {
+  const location = useLocation();
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -11,6 +13,9 @@ export default function TransactionsLedgerAdmin() {
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filterField, setFilterField] = useState("member_id"); // member_id | date | tx_type | inbound | outbound
   const [filterValue, setFilterValue] = useState("");
+
+  // ✅ Data Quality banner state
+  const [dataQualityState, setDataQualityState] = useState(null);
 
   const editPanelRef = useRef(null);
 
@@ -49,13 +54,28 @@ export default function TransactionsLedgerAdmin() {
 
   // --- initial load (prefill member filter if available) ---
   useEffect(() => {
-    const myId = localStorage.getItem("memberId") || "";
-    if (myId) {
-      setFilterField("member_id");
-      setFilterValue(myId);
-      fetchRows({ member_id: myId });
+    // ✅ Check if coming from DataQualityCheck
+    if (location.state?.fromDataQuality && location.state?.affectedRecords) {
+      setDataQualityState(location.state);
+      
+      // Filter by tx_id if we have affected records
+      const affectedIds = location.state.affectedRecords || [];
+      if (affectedIds.length > 0) {
+        // Fetch all records and we'll filter in the UI
+        fetchRows({});
+      } else {
+        fetchRows({});
+      }
     } else {
-      fetchRows({});
+      // Normal flow - prefill with current member
+      const myId = localStorage.getItem("memberId") || "";
+      if (myId) {
+        setFilterField("member_id");
+        setFilterValue(myId);
+        fetchRows({ member_id: myId });
+      } else {
+        fetchRows({});
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -148,6 +168,17 @@ export default function TransactionsLedgerAdmin() {
     // get-ledger.php aliases tx_id as id
     return row.id ?? row.tx_id ?? row.record_id ?? row.ledger_id ?? null;
   };
+
+  // ✅ Filter rows based on data quality state
+  const displayRows = useMemo(() => {
+    if (!dataQualityState?.affectedRecords || dataQualityState.affectedRecords.length === 0) {
+      return rows; // Show all rows if no filter
+    }
+    
+    // Filter to show only affected records
+    const affectedIds = new Set(dataQualityState.affectedRecords.map(id => String(id)));
+    return rows.filter(r => affectedIds.has(String(primaryKey(r))));
+  }, [rows, dataQualityState]);
 
   const toLocalZonedString = (ts, tz) => {
     if (!ts) return "-";
@@ -271,6 +302,43 @@ export default function TransactionsLedgerAdmin() {
         Review and edit entries in <code>transactions_ledger</code>. Timestamps are stored in UTC;
         the local preview renders using <code>member_timezone</code>.
       </p>
+
+      {/* ✅ Data Quality Banner */}
+      {dataQualityState?.fromDataQuality && (
+        <div className="card" style={{ 
+          marginBottom: "1rem", 
+          backgroundColor: "#fef3c7", 
+          borderLeft: "4px solid #f59e0b",
+          padding: "1rem"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+            <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+            <strong style={{ color: "#92400e" }}>Data Quality Issue Detected</strong>
+          </div>
+          <p style={{ margin: 0, color: "#78350f" }}>
+            Showing <strong>{dataQualityState.totalAffected}</strong> records with missing or invalid{" "}
+            <code>{dataQualityState.fieldName}</code>. 
+            {dataQualityState.affectedRecords?.length > 0 ? (
+              <> Currently displaying <strong>{displayRows.length}</strong> affected records.</>
+            ) : (
+              <> Use filters to locate affected records.</>
+            )}
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ marginTop: "0.5rem" }}
+            onClick={() => {
+              setDataQualityState(null);
+              setFilterField("member_id");
+              setFilterValue("");
+              fetchRows({});
+            }}
+          >
+            Clear Filter & Show All Records
+          </button>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -572,7 +640,7 @@ export default function TransactionsLedgerAdmin() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {displayRows.map((r) => {
                 const pk = primaryKey(r);
                 const localTime = toLocalZonedString(r?.event_at, r?.member_timezone || detectedTz);
                 return (
@@ -606,7 +674,7 @@ export default function TransactionsLedgerAdmin() {
                   </tr>
                 );
               })}
-              {rows.length === 0 && (
+              {displayRows.length === 0 && (
                 <tr>
                   <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
                     No ledger records found.

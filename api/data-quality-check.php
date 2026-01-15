@@ -119,13 +119,34 @@ try {
                     FROM $table
                 ");
             } else {
-                $stmt = $conn->prepare("
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN $fieldName IS NULL OR $fieldName = '' THEN 1 ELSE 0 END) as missing_count,
-                        SUM(CASE WHEN $fieldName IS NOT NULL AND $fieldName != '' THEN 1 ELSE 0 END) as populated_count
-                    FROM $table
-                ");
+                // ✅ CRITICAL FIX: Check if field is integer type
+                $isIntegerField = (
+                    stripos($fieldType, 'INT') !== false ||
+                    stripos($fieldType, 'TINYINT') !== false ||
+                    stripos($fieldType, 'SMALLINT') !== false ||
+                    stripos($fieldType, 'MEDIUMINT') !== false ||
+                    stripos($fieldType, 'BIGINT') !== false
+                );
+                
+                if ($isIntegerField) {
+                    // For INTEGER fields: Only NULL is missing, 0 is valid
+                    $stmt = $conn->prepare("
+                        SELECT 
+                            COUNT(*) as total,
+                            SUM(CASE WHEN $fieldName IS NULL THEN 1 ELSE 0 END) as missing_count,
+                            SUM(CASE WHEN $fieldName IS NOT NULL THEN 1 ELSE 0 END) as populated_count
+                        FROM $table
+                    ");
+                } else {
+                    // For STRING/DECIMAL fields: NULL or empty string is missing
+                    $stmt = $conn->prepare("
+                        SELECT 
+                            COUNT(*) as total,
+                            SUM(CASE WHEN $fieldName IS NULL OR $fieldName = '' THEN 1 ELSE 0 END) as missing_count,
+                            SUM(CASE WHEN $fieldName IS NOT NULL AND $fieldName != '' THEN 1 ELSE 0 END) as populated_count
+                        FROM $table
+                    ");
+                }
             }
             
             $stmt->execute();
@@ -168,12 +189,32 @@ try {
                         LIMIT 100
                     ");
                 } else {
-                    $affectedStmt = $conn->prepare("
-                        SELECT $idField 
-                        FROM $table 
-                        WHERE $fieldName IS NULL OR $fieldName = ''
-                        LIMIT 100
-                    ");
+                    // ✅ CRITICAL FIX: Check if field is integer type for affected records
+                    $isIntegerField = (
+                        stripos($fieldType, 'INT') !== false ||
+                        stripos($fieldType, 'TINYINT') !== false ||
+                        stripos($fieldType, 'SMALLINT') !== false ||
+                        stripos($fieldType, 'MEDIUMINT') !== false ||
+                        stripos($fieldType, 'BIGINT') !== false
+                    );
+                    
+                    if ($isIntegerField) {
+                        // For INTEGER fields: Only NULL is missing
+                        $affectedStmt = $conn->prepare("
+                            SELECT $idField 
+                            FROM $table 
+                            WHERE $fieldName IS NULL
+                            LIMIT 100
+                        ");
+                    } else {
+                        // For STRING/DECIMAL fields: NULL or empty string is missing
+                        $affectedStmt = $conn->prepare("
+                            SELECT $idField 
+                            FROM $table 
+                            WHERE $fieldName IS NULL OR $fieldName = ''
+                            LIMIT 100
+                        ");
+                    }
                 }
                 
                 $affectedStmt->execute();
