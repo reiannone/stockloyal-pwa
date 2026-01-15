@@ -274,7 +274,7 @@ export default function Ledger() {
           >
             <thead>
               <tr>
-                <th>Created (Local)</th>
+                <th>Created</th>
                 <th>Type</th>
                 <th>Direction</th>
                 <th>Channel</th>
@@ -379,7 +379,7 @@ export default function Ledger() {
                     </DetailField>
                   </div>
 
-                  <DetailField label="Created (Local)">
+                  <DetailField label="Created">
                     {selectedEntry.created_at
                       ? toLocalZonedString(selectedEntry.created_at)
                       : "-"}

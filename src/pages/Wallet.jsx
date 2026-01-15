@@ -543,7 +543,8 @@ export default function Wallet() {
               {formatDollars(effectiveCashBalance)}
             </div>
             <div className="caption" style={{ marginTop: 6 }}>
-              Points from <strong>{merchantName}</strong>:{" "}
+              Points from {" "}
+              <strong style={{ color: "#2563eb" }}>{merchantName}</strong>: {" "}
               <strong>{formatPoints(points)}</strong>
             </div>
             {localStorage.getItem("memberTier") && (
@@ -551,7 +552,7 @@ export default function Wallet() {
                 Tier: <strong>{localStorage.getItem("memberTier")}</strong>
               </div>
             )}
-            {sweepPct !== null && (
+            {wallet.election_type === "monthly" && sweepPct !== null && (
               <div className="caption" style={{ marginTop: 4 }}>Sweep: {Number(sweepPct)}%</div>
             )}
           </div>
@@ -611,7 +612,7 @@ export default function Wallet() {
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
-          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>View Portfolio</button>
+          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>StockLoyal Portfolio</button>
           <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Transactions</button>
         </div>
       </div>
