@@ -47,6 +47,7 @@ export default function Wallet() {
   // Portfolio update notification
   const [portfolioUpdated, setPortfolioUpdated] = useState(false);
   const [newPortfolioValue, setNewPortfolioValue] = useState(null);
+  const [portfolioLastUpdated, setPortfolioLastUpdated] = useState(null);
 
   // Merchant program blocking popup
   const [merchantProgramError, setMerchantProgramError] = useState(false);
@@ -176,6 +177,11 @@ export default function Wallet() {
         setWallet(w);
         setLoading(false);
 
+        // Set portfolio last updated time
+        if (w?.updated_at) {
+          setPortfolioLastUpdated(w.updated_at);
+        }
+
         // Sync key values to localStorage
         try {
           if (w?.points != null) localStorage.setItem("points", String(parseInt(w.points, 10) || 0));
@@ -214,6 +220,9 @@ export default function Wallet() {
               // Update localStorage
               localStorage.setItem("portfolio_value", Number(portfolioData.portfolio_value || 0).toFixed(2));
               window.dispatchEvent(new Event("member-updated"));
+              
+              // Update last updated timestamp
+              setPortfolioLastUpdated(new Date().toISOString());
               
               // Auto-hide notification after 5 seconds
               setTimeout(() => setPortfolioUpdated(false), 5000);
@@ -283,6 +292,35 @@ export default function Wallet() {
     });
 
   const formatPoints = (val) => (parseInt(val, 10) || 0).toLocaleString("en-US");
+
+  const formatLastUpdated = (timestamp) => {
+    if (!timestamp) return "Not yet updated";
+    
+    try {
+      const date = new Date(timestamp);
+      const memberTimezone = wallet?.member_timezone || localStorage.getItem("memberTimezone") || "America/New_York";
+      
+      // Format: "Jan 14, 2:30 PM EST"
+      const formatted = date.toLocaleString("en-US", {
+        timeZone: memberTimezone,
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      });
+      
+      // Get timezone abbreviation
+      const tzAbbr = date.toLocaleString("en-US", {
+        timeZone: memberTimezone,
+        timeZoneName: "short"
+      }).split(' ').pop(); // Extract abbreviation like "EST", "PST", etc.
+      
+      return `Updated ${formatted} ${tzAbbr}`;
+    } catch (e) {
+      return "Recently updated";
+    }
+  };
 
   // --- Render states ---
   if (loading) {
@@ -566,7 +604,9 @@ export default function Wallet() {
             <div className="wallet-portfolio" style={{ margin: 0 }}>
               {formatDollars(portfolioValue)}
             </div>
-            <div className="caption" style={{ marginTop: 6 }}>Updated when trades settle</div>
+            <div className="caption" style={{ marginTop: 6 }}>
+              {formatLastUpdated(portfolioLastUpdated)}
+            </div>
           </div>
         </div>
 
