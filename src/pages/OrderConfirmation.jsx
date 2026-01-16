@@ -29,6 +29,8 @@ export default function OrderConfirmation() {
   const totalAmount = Number(location.state?.amount || 0); // keep if referenced elsewhere
   const basketId =
     location.state?.basketId || localStorage.getItem("basketId") || "";
+  const merchantNotified = location.state?.merchantNotified || false;
+  const pointsUsed = location.state?.pointsUsed || 0;
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -214,6 +216,32 @@ export default function OrderConfirmation() {
             </span>
           </div>
         </>
+      )}
+
+      {/* ✅ Merchant Notification Banner */}
+      {showSuccess && merchantNotified && pointsUsed > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            background: "#fef3c7",
+            border: "2px solid #f59e0b",
+            color: "#78350f",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            textAlign: "center",
+          }}
+        >
+          <CheckCircle size={24} color="#f59e0b" />
+          <span>
+            ✅ Merchant Notified: {pointsUsed.toLocaleString()} points redeemed from your loyalty account
+          </span>
+        </div>
       )}
 
       {orders.length === 0 ? (

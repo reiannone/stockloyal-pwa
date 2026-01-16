@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import MerchantNotifications from "./pages/MerchantNotifications.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DataQualityCheck from "./pages/DataQualityCheck.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
@@ -329,6 +330,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <OrdersAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/merchant-notifications"
+                element={
+                  <PageWrapper>
+                    <MerchantNotifications />
                   </PageWrapper>
                 }
               />

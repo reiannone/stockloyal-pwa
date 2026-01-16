@@ -26,6 +26,8 @@ try {
             contact_email,
             contact_phone,
             website_url,
+            webhook_url,
+            api_key,
             conversion_rate,
             active_status,
             created_at,

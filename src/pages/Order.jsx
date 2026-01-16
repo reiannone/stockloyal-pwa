@@ -147,6 +147,66 @@ export default function Order() {
         localStorage.setItem("portfolio_value", newPortfolio.toFixed(2));
       } catch (_) {}
 
+      // ✅ Log points redemption in transactions ledger
+      let ledgerSuccess = false;
+      try {
+        const clientTxId = `redeem_${memberId}_${basketId}_${Date.now()}`;
+        const memberTimezone = localStorage.getItem("memberTimezone") || 
+                              Intl.DateTimeFormat().resolvedOptions().timeZone || 
+                              "America/New_York";
+        
+        const ledgerPayload = {
+          member_id: memberId,
+          merchant_id: merchantId,
+          broker: broker,
+          client_tx_id: clientTxId,
+          tx_type: "redeem_points",
+          points: Math.round(pointsUsed), // ✅ Only send points for redeem_points
+          // amount_cash: totalAmount, // ❌ Don't send cash - violates ck_amount_exclusive constraint
+          note: `Points redeemed for stock purchase - Basket: ${basketId} - Cash value: $${totalAmount.toFixed(2)}`,
+          member_timezone: memberTimezone
+        };
+        
+        console.log("[Order] Logging ledger transaction:", ledgerPayload);
+        
+        const ledgerRes = await apiPost("log-ledger.php", ledgerPayload);
+        
+        console.log("[Order] Ledger response:", ledgerRes);
+        
+        if (!ledgerRes?.success) {
+          console.error("[Order] Ledger transaction FAILED:", ledgerRes?.error);
+          // Show warning to user but don't fail the order
+          alert("Warning: Transaction logging failed. Your order was placed successfully, but the transaction may not appear in your ledger immediately.");
+        } else {
+          ledgerSuccess = true;
+          console.log("[Order] Ledger transaction logged successfully:", clientTxId);
+        }
+      } catch (err) {
+        console.error("[Order] Failed to log ledger transaction - EXCEPTION:", err);
+        alert("Warning: Transaction logging error. Your order was placed successfully.");
+      }
+
+      // ✅ Notify merchant of points redemption
+      let merchantNotified = false;
+      try {
+        const merchantPayload = {
+          member_id: memberId,
+          merchant_id: merchantId,
+          points_redeemed: Math.round(pointsUsed), // ✅ Send as integer
+          cash_value: totalAmount,
+          basket_id: basketId,
+          transaction_type: "redeem",
+          timestamp: new Date().toISOString()
+        };
+        
+        const notifyRes = await apiPost("notify_merchant.php", merchantPayload);
+        merchantNotified = notifyRes?.notified || notifyRes?.success;
+        console.log("[Order] Merchant notified:", merchantNotified);
+      } catch (err) {
+        console.error("[Order] Failed to notify merchant:", err);
+        // Don't fail the order if merchant notification fails
+      }
+
       // broker confirm stub
       setTimeout(async () => {
         try {
@@ -160,7 +220,14 @@ export default function Order() {
       // nav + clear basket
       clearBasket();
       navigate("/order-confirmation", {
-        state: { refreshWallet: true, placed: true, amount: totalAmount, basketId },
+        state: { 
+          refreshWallet: true, 
+          placed: true, 
+          amount: totalAmount, 
+          basketId,
+          merchantNotified, // ✅ Pass notification status
+          pointsUsed: Math.round(pointsUsed) // ✅ Pass points used
+        },
       });
     } catch (err) {
       alert("Error placing order: " + (err.message || String(err)));

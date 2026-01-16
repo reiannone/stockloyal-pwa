@@ -95,6 +95,11 @@ try {
             strpos($fieldType, 'DATETIME') !== false
         );
         
+        // ✅ Determine if field is an integer type (handles: int, tinyint, smallint, mediumint, bigint, int(11), etc.)
+        $isIntegerField = (
+            preg_match('/^(TINY|SMALL|MEDIUM|BIG)?INT(\(\d+\))?(\s+UNSIGNED)?$/i', $fieldType) === 1
+        );
+        
         try {
             if ($isTimestampField) {
                 $stmt = $conn->prepare("
@@ -119,15 +124,6 @@ try {
                     FROM $table
                 ");
             } else {
-                // ✅ CRITICAL FIX: Check if field is integer type
-                $isIntegerField = (
-                    stripos($fieldType, 'INT') !== false ||
-                    stripos($fieldType, 'TINYINT') !== false ||
-                    stripos($fieldType, 'SMALLINT') !== false ||
-                    stripos($fieldType, 'MEDIUMINT') !== false ||
-                    stripos($fieldType, 'BIGINT') !== false
-                );
-                
                 if ($isIntegerField) {
                     // For INTEGER fields: Only NULL is missing, 0 is valid
                     $stmt = $conn->prepare("
@@ -164,6 +160,8 @@ try {
         
         $fieldAnalysis[] = [
             'field_name' => $fieldName,
+            'field_type' => $fieldType, // ✅ Added for debugging
+            'is_integer' => $isIntegerField, // ✅ Added for debugging
             'populated_count' => $populatedCount,
             'missing_count' => $missingCount,
             'completeness_percent' => round($completenessPercent, 2)
@@ -189,15 +187,6 @@ try {
                         LIMIT 100
                     ");
                 } else {
-                    // ✅ CRITICAL FIX: Check if field is integer type for affected records
-                    $isIntegerField = (
-                        stripos($fieldType, 'INT') !== false ||
-                        stripos($fieldType, 'TINYINT') !== false ||
-                        stripos($fieldType, 'SMALLINT') !== false ||
-                        stripos($fieldType, 'MEDIUMINT') !== false ||
-                        stripos($fieldType, 'BIGINT') !== false
-                    );
-                    
                     if ($isIntegerField) {
                         // For INTEGER fields: Only NULL is missing
                         $affectedStmt = $conn->prepare("

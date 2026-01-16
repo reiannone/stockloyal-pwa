@@ -19,6 +19,8 @@ $program_name     = $input["program_name"]     ?? "";
 $contact_email    = $input["contact_email"]    ?? "";
 $contact_phone    = $input["contact_phone"]    ?? "";
 $website_url      = $input["website_url"]      ?? "";
+$webhook_url      = $input["webhook_url"]      ?? null;
+$api_key          = $input["api_key"]          ?? null;
 $conversion_rate  = $input["conversion_rate"]  ?? 1.0;
 $active_status    = $input["active_status"]    ?? 1;
 $promotion_text   = $input["promotion_text"]   ?? "";
@@ -64,6 +66,8 @@ try {
                 contact_email   = :contact_email,
                 contact_phone   = :contact_phone,
                 website_url     = :website_url,
+                webhook_url     = :webhook_url,
+                api_key         = :api_key,
                 conversion_rate = :conversion_rate,
                 active_status   = :active_status,
                 promotion_text  = :promotion_text,
@@ -94,6 +98,7 @@ try {
             INSERT INTO merchant (
                 merchant_id, merchant_name, program_name, 
                 contact_email, contact_phone, website_url,
+                webhook_url, api_key,
                 conversion_rate, active_status, promotion_text, promotion_active,
                 tier1_name, tier1_min_points, tier1_conversion_rate,
                 tier2_name, tier2_min_points, tier2_conversion_rate,
@@ -104,6 +109,7 @@ try {
             ) VALUES (
                 :merchant_id, :merchant_name, :program_name,
                 :contact_email, :contact_phone, :website_url,
+                :webhook_url, :api_key,
                 :conversion_rate, :active_status, :promotion_text, :promotion_active,
                 :tier1_name, :tier1_min_points, :tier1_conversion_rate,
                 :tier2_name, :tier2_min_points, :tier2_conversion_rate,
@@ -122,6 +128,8 @@ try {
         "contact_email"    => $contact_email,
         "contact_phone"    => $contact_phone,
         "website_url"      => $website_url,
+        "webhook_url"      => $webhook_url,
+        "api_key"          => $api_key,
         "conversion_rate"  => $conversion_rate,
         "active_status"    => $active_status,
         "promotion_text"   => $promotion_text,
