@@ -30,6 +30,10 @@ export default function OrderConfirmation() {
   const basketId =
     location.state?.basketId || localStorage.getItem("basketId") || "";
   const merchantNotified = location.state?.merchantNotified || false;
+
+  // ✅ NEW: broker notification status (passed from Order.jsx)
+  const brokerNotified = location.state?.brokerNotified || false;
+
   const pointsUsed = location.state?.pointsUsed || 0;
 
   // Browser-detected fallback
@@ -67,23 +71,30 @@ export default function OrderConfirmation() {
           );
 
           console.log("📦 Fetched orders:", fetchedOrders);
-          console.log("📦 Orders with status:", fetchedOrders.map(o => ({ symbol: o.symbol, status: o.status })));
+          console.log(
+            "📦 Orders with status:",
+            fetchedOrders.map((o) => ({ symbol: o.symbol, status: o.status }))
+          );
 
           // ✅ Show success banner if ANY orders exist for this basket
           const hasSuccess = fetchedOrders.length > 0;
 
-          console.log("✅ Has success?", hasSuccess, `(${fetchedOrders.length} orders found)`);
+          console.log(
+            "✅ Has success?",
+            hasSuccess,
+            `(${fetchedOrders.length} orders found)`
+          );
 
           // Set orders AND success state together
           setOrders(fetchedOrders);
-          
+
           if (hasSuccess) {
             console.log("🎉 Setting showSuccess to TRUE");
             setShowSuccess(true);
 
             // Update portfolio value from all orders in this basket
             const portfolioValue = fetchedOrders.reduce(
-              (sum, o) => sum + (parseFloat(o.amount) || 0), 
+              (sum, o) => sum + (parseFloat(o.amount) || 0),
               0
             );
 
@@ -218,6 +229,55 @@ export default function OrderConfirmation() {
         </>
       )}
 
+      {/* ✅ Broker Notification Banner */}
+      {showSuccess && (
+        brokerNotified ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              background: "#e0f2fe",
+              border: "2px solid #0284c7",
+              color: "#0c4a6e",
+              borderRadius: 12,
+              padding: "12px 16px",
+              marginBottom: 16,
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              textAlign: "center",
+            }}
+          >
+            <CheckCircle size={24} color="#0284c7" />
+            <span>✅ Broker Notified: {brokerName} received your order details</span>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              background: "#f3f4f6",
+              border: "2px solid #9ca3af",
+              color: "#374151",
+              borderRadius: 12,
+              padding: "12px 16px",
+              marginBottom: 16,
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              textAlign: "center",
+            }}
+          >
+            <CheckCircle size={24} color="#6b7280" />
+            <span>
+              Broker Notification Pending: {brokerName} webhook is processing (you can still view your orders below)
+            </span>
+          </div>
+        )
+      )}
+
       {/* ✅ Merchant Notification Banner */}
       {showSuccess && merchantNotified && pointsUsed > 0 && (
         <div
@@ -264,16 +324,10 @@ export default function OrderConfirmation() {
                 <tr key={idx}>
                   <td className="symbol">{order.symbol}</td>
                   <td className="shares">{order.shares}</td>
-                  <td className="order-type">
-                    {`buy ${order.order_type || "buy"}`}
-                  </td>
+                  <td className="order-type">{`buy ${order.order_type || "buy"}`}</td>
                   <td className="status">{order.status || "Pending"}</td>
-                  <td className="amount">
-                    {order.amount ? formatDollars(order.amount) : "-"}
-                  </td>
-                  <td className="date">
-                    {order.placed_at ? toLocalZonedString(order.placed_at) : "-"}
-                  </td>
+                  <td className="amount">{order.amount ? formatDollars(order.amount) : "-"}</td>
+                  <td className="date">{order.placed_at ? toLocalZonedString(order.placed_at) : "-"}</td>
                 </tr>
               ))}
             </tbody>

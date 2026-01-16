@@ -151,10 +151,11 @@ export default function Order() {
       let ledgerSuccess = false;
       try {
         const clientTxId = `redeem_${memberId}_${basketId}_${Date.now()}`;
-        const memberTimezone = localStorage.getItem("memberTimezone") || 
-                              Intl.DateTimeFormat().resolvedOptions().timeZone || 
-                              "America/New_York";
-        
+        const memberTimezone =
+          localStorage.getItem("memberTimezone") ||
+          Intl.DateTimeFormat().resolvedOptions().timeZone ||
+          "America/New_York";
+
         const ledgerPayload = {
           member_id: memberId,
           merchant_id: merchantId,
@@ -163,20 +164,24 @@ export default function Order() {
           tx_type: "redeem_points",
           points: Math.round(pointsUsed), // ✅ Only send points for redeem_points
           // amount_cash: totalAmount, // ❌ Don't send cash - violates ck_amount_exclusive constraint
-          note: `Points redeemed for stock purchase - Basket: ${basketId} - Cash value: $${totalAmount.toFixed(2)}`,
-          member_timezone: memberTimezone
+          note: `Points redeemed for stock purchase - Basket: ${basketId} - Cash value: $${totalAmount.toFixed(
+            2
+          )}`,
+          member_timezone: memberTimezone,
         };
-        
+
         console.log("[Order] Logging ledger transaction:", ledgerPayload);
-        
+
         const ledgerRes = await apiPost("log-ledger.php", ledgerPayload);
-        
+
         console.log("[Order] Ledger response:", ledgerRes);
-        
+
         if (!ledgerRes?.success) {
           console.error("[Order] Ledger transaction FAILED:", ledgerRes?.error);
           // Show warning to user but don't fail the order
-          alert("Warning: Transaction logging failed. Your order was placed successfully, but the transaction may not appear in your ledger immediately.");
+          alert(
+            "Warning: Transaction logging failed. Your order was placed successfully, but the transaction may not appear in your ledger immediately."
+          );
         } else {
           ledgerSuccess = true;
           console.log("[Order] Ledger transaction logged successfully:", clientTxId);
@@ -196,15 +201,45 @@ export default function Order() {
           cash_value: totalAmount,
           basket_id: basketId,
           transaction_type: "redeem",
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
-        
+
         const notifyRes = await apiPost("notify_merchant.php", merchantPayload);
         merchantNotified = notifyRes?.notified || notifyRes?.success;
         console.log("[Order] Merchant notified:", merchantNotified);
       } catch (err) {
         console.error("[Order] Failed to notify merchant:", err);
         // Don't fail the order if merchant notification fails
+      }
+
+      // ✅ Notify broker (server-side uses broker_master.webhook_url + api_key)
+      // Modeled after merchant_notifications approach: try/catch, log on server, do NOT fail order
+      let brokerNotified = false;
+      try {
+        const brokerPayload = {
+          event_type: "order_placed",
+          member_id: memberId,
+          merchant_id: merchantId,
+          broker: broker || "Not linked", // matches broker_master.broker_name OR broker_id (backend supports both)
+          basket_id: basketId,
+          amount: totalAmount,
+          points_used: Math.round(pointsUsed),
+          orders: enrichedBasket.map((s, idx) => ({
+            symbol: s.symbol,
+            shares: s.shares || 0,
+            points_used: pointsAlloc[idx] || 0,
+            amount: perOrderAmount,
+            order_type: "market",
+          })),
+          timestamp: new Date().toISOString(),
+        };
+
+        const brokerRes = await apiPost("notify_broker.php", brokerPayload);
+        brokerNotified = brokerRes?.notified || brokerRes?.success;
+        console.log("[Order] Broker notified:", brokerNotified, brokerRes);
+      } catch (err) {
+        console.error("[Order] Failed to notify broker:", err);
+        // Don't fail the order if broker notification fails
       }
 
       // broker confirm stub
@@ -220,13 +255,15 @@ export default function Order() {
       // nav + clear basket
       clearBasket();
       navigate("/order-confirmation", {
-        state: { 
-          refreshWallet: true, 
-          placed: true, 
-          amount: totalAmount, 
+        state: {
+          refreshWallet: true,
+          placed: true,
+          amount: totalAmount,
           basketId,
           merchantNotified, // ✅ Pass notification status
-          pointsUsed: Math.round(pointsUsed) // ✅ Pass points used
+          brokerNotified, // ✅ Pass broker notification status
+          pointsUsed: Math.round(pointsUsed), // ✅ Pass points used
+          // ledgerSuccess, // optional if you want to show status on confirmation page
         },
       });
     } catch (err) {
@@ -247,9 +284,7 @@ export default function Order() {
         <p className="basket-empty">Your basket is empty.</p>
       ) : (
         <div className="basket-table-wrapper">
-          <p className="basket-intro">
-            Total Investment: ${Number(totalAmount).toFixed(2)}
-          </p>
+          <p className="basket-intro">Total Investment: ${Number(totalAmount).toFixed(2)}</p>
           <p className="basket-intro">Points Used: {pointsUsed}</p>
 
           <table className="basket-table">
@@ -301,7 +336,11 @@ export default function Order() {
         next trading day. For sell orders, please contact your broker directly.
       </p>
 
-      {error && <p className="form-error" style={{ marginTop: 12 }}>{error}</p>}
+      {error && (
+        <p className="form-error" style={{ marginTop: 12 }}>
+          {error}
+        </p>
+      )}
     </div>
   );
 }

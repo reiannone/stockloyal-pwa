@@ -35,6 +35,7 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
 import MerchantNotifications from "./pages/MerchantNotifications.jsx";
+import BrokerNotifications from "./pages/BrokerNotifications.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DataQualityCheck from "./pages/DataQualityCheck.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
@@ -338,6 +339,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <MerchantNotifications />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/broker-notifications"
+                element={
+                  <PageWrapper>
+                    <BrokerNotifications />
                   </PageWrapper>
                 }
               />

@@ -7,9 +7,9 @@ require_once __DIR__ . '/config.php';
 
 header("Content-Type: application/json");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { 
-    http_response_code(204); 
-    exit; 
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
 }
 
 // api/get-brokers.php
@@ -36,6 +36,8 @@ try {
                 support_phone,
                 support_email,
                 contact_name,
+                webhook_url,
+                api_key,
                 broker_created_at,
                 broker_modified_at,
                 created_at,

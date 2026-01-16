@@ -25,6 +25,9 @@ const BROKER_TEMPLATE = {
   support_phone: "",
   support_email: "",
   contact_name: "",
+  
+  webhook_url: "",
+  api_key: "",
 
   broker_created_at: null,
   broker_modified_at: null,
@@ -308,6 +311,61 @@ export default function AdminBroker() {
                 name="contact_name"
                 value={selected?.contact_name || ""}
                 onChange={handleChange}
+              />
+            </FormRow>
+
+            {/* ✅ Webhook Configuration Section */}
+            <div style={{ 
+              gridColumn: '1 / -1', 
+              marginTop: '1rem', 
+              marginBottom: '0.5rem',
+              padding: '0.75rem 1rem',
+              background: '#fffbeb',
+              borderRadius: '6px',
+              border: '1px solid #fbbf24'
+            }}>
+              <h4 style={{ 
+                margin: '0 0 0.5rem 0', 
+                fontSize: '0.875rem', 
+                fontWeight: '600',
+                color: '#92400e',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                🔔 Webhook Configuration
+              </h4>
+              <p style={{ 
+                margin: 0, 
+                fontSize: '0.75rem', 
+                color: '#78350f',
+                lineHeight: 1.4
+              }}>
+                Configure webhook endpoint to receive real-time notifications for order status updates and settlement confirmations.
+              </p>
+            </div>
+
+            <FormRow label="Webhook URL">
+              <input
+                className="form-input"
+                type="url"
+                name="webhook_url"
+                value={selected?.webhook_url || ""}
+                onChange={handleChange}
+                placeholder="https://broker.com/api/stockloyal/webhook"
+                style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+              />
+            </FormRow>
+
+            <FormRow label="API Key">
+              <input
+                className="form-input"
+                type="text"
+                name="api_key"
+                value={selected?.api_key || ""}
+                onChange={handleChange}
+                placeholder="sk_live_..."
+                style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
               />
             </FormRow>
 
