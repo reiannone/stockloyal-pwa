@@ -99,6 +99,7 @@ export default function Footer() {
     { to: "/wallet-admin", label: "Member Wallet Admin" },
     { to: "/ledger-admin", label: "Ledger Admin" },
     { to: "/orders-admin", label: "Orders Admin" },
+    { to: "/webhook-admin", label: "Webhook API Admin" },
     { to: "/merchant-notifications", label: "Merchant API Notifications" },
     { to: "/broker-notifications", label: "Broker API Notifications" },
     { to: "/admin-faq", label: "FAQ Admin" },

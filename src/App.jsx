@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import WebhookAdmin from "./pages/WebhookAdmin.jsx";
 import MerchantNotifications from "./pages/MerchantNotifications.jsx";
 import BrokerNotifications from "./pages/BrokerNotifications.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
@@ -331,6 +332,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <OrdersAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/webhook-admin"
+                element={
+                  <PageWrapper>
+                    <WebhookAdmin />
                   </PageWrapper>
                 }
               />
