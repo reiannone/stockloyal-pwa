@@ -413,7 +413,7 @@ export default function SocialFeed() {
                   marginBottom: "0.75rem",
                   color: "#ec4899"
                 }}>
-                  ❤️ Most Likes
+                  👍 Most Likes
                 </h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   {influencers.most_likes.slice(0, 10).map((inf, idx) => {
