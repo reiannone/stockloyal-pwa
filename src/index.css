@@ -5,21 +5,22 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;   /* prevent horizontal scroll */
+  overflow-x: hidden;
 }
 
 body {
-  -webkit-overflow-scrolling: touch; /* smooth iOS scroll */
+  -webkit-overflow-scrolling: touch;
   font-family: system-ui, sans-serif;
-}
-.body-text {
-  font-size: 1rem;
-  color: #9ca3af; /* gray-400 */
+  /* Add safe area padding for iPhone notch/status bar */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
-/* Add to src/index.css or App.css */
-body:has(.nav-bar + aside[role="dialog"]) .fixed.bottom-0 {
-  display: none !important;
+.body-text {
+  font-size: 1rem;
+  color: #9ca3af;
 }
 
 /* -----------------------------
@@ -84,6 +85,9 @@ body:has(.nav-bar + aside[role="dialog"]) .fixed.bottom-0 {
   margin: 0 auto;
   overflow: hidden;               /* no double scrollbars */
   transition: box-shadow 220ms ease, border-color 220ms ease;
+
+  /* Add this line for PWA mode */
+  min-height: -webkit-fill-available;
 }
 
 /* Frame OFF (normal responsive app) */
