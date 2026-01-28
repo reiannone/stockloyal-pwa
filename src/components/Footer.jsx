@@ -1,5 +1,5 @@
 // src/components/Footer.jsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Wallet as WalletIcon,
@@ -31,6 +31,38 @@ export default function Footer() {
 
   // ✅ Admin password (in production, this should be handled server-side)
   const ADMIN_PASSWORD = "StockLoyal2024!";
+
+  // ✅ Hide PWA install banner when admin menu is open - More robust version
+  useEffect(() => {
+    // Try multiple selectors to find the PWA banner
+    const selectors = [
+      '.fixed.bottom-0.z-50',
+      '.fixed.bottom-0[class*="z-"]',
+      'div[class*="bg-gradient-to-r"][class*="from-blue-"]',
+      '.animate-slide-up',
+      'div.fixed.bottom-0'
+    ];
+    
+    let banner = null;
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        if (el.textContent.includes('Install') || el.textContent.includes('StockLoyal')) {
+          banner = el;
+          break;
+        }
+      }
+      if (banner) break;
+    }
+    
+    if (banner) {
+      if (showMenu) {
+        banner.style.display = 'none';
+      } else {
+        banner.style.display = 'block';
+      }
+    }
+  }, [showMenu]);
 
   // ✅ Handle admin authentication
   const handleAdminAuth = () => {

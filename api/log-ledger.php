@@ -100,6 +100,32 @@ if (!in_array($channel, $validChannels)) {
 $status = $input['status'] ?? 'confirmed';
 
 try {
+    // ✅ CRITICAL FIX: Check for duplicate client_tx_id BEFORE attempting insert
+    if ($clientTxId) {
+        $checkStmt = $conn->prepare("
+            SELECT tx_id, client_tx_id, created_at 
+            FROM transactions_ledger 
+            WHERE client_tx_id = ?
+            LIMIT 1
+        ");
+        $checkStmt->execute([$clientTxId]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existing) {
+            // Transaction already exists - return success (idempotent behavior)
+            echo json_encode([
+                "success" => true,
+                "duplicate" => true,
+                "tx_id" => $existing['tx_id'],
+                "client_tx_id" => $clientTxId,
+                "message" => "Transaction already logged (duplicate prevented)",
+                "original_created_at" => $existing['created_at']
+            ]);
+            exit;
+        }
+    }
+    
+    // No duplicate found - proceed with insert
     $stmt = $conn->prepare("
         INSERT INTO transactions_ledger (
             member_id,
@@ -155,18 +181,48 @@ try {
 
     echo json_encode([
         "success" => true,
+        "duplicate" => false,
         "tx_id" => $txId,
+        "client_tx_id" => $clientTxId,
         "message" => "Transaction logged successfully"
     ]);
 
 } catch (PDOException $e) {
     error_log("log-ledger.php error: " . $e->getMessage());
     
-    // Check for duplicate client_tx_id
+    // ✅ IMPROVED: Even with pre-check, handle race conditions at DB level
     if ($e->getCode() == 23000 && strpos($e->getMessage(), 'client_tx_id') !== false) {
+        // Race condition - another request inserted between our check and insert
+        // Fetch the winning transaction
+        if ($clientTxId) {
+            $checkStmt = $conn->prepare("
+                SELECT tx_id, client_tx_id, created_at 
+                FROM transactions_ledger 
+                WHERE client_tx_id = ?
+                LIMIT 1
+            ");
+            $checkStmt->execute([$clientTxId]);
+            $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existing) {
+                // Return success with duplicate flag
+                echo json_encode([
+                    "success" => true,
+                    "duplicate" => true,
+                    "race_condition" => true,
+                    "tx_id" => $existing['tx_id'],
+                    "client_tx_id" => $clientTxId,
+                    "message" => "Transaction already logged (duplicate prevented via race condition handling)",
+                    "original_created_at" => $existing['created_at']
+                ]);
+                exit;
+            }
+        }
+        
+        // Couldn't find existing transaction - return generic duplicate error
         echo json_encode([
             "success" => false,
-            "error" => "Duplicate transaction ID"
+            "error" => "Duplicate transaction ID (race condition)"
         ]);
     } else {
         http_response_code(500);

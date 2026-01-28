@@ -13,14 +13,13 @@ git branch -M main
 git push -u origin main
 
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-FRONTEND: CHANGES AWS Amplify and GitHub from PowerShell:
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FRONTEND: CHANGES to AWS Amplify and GitHub from PowerShell:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 git add .
-git commit -m "Wallet: merchant highlight, hide sweep for one-time, rename portfolio button"
+git commit -m "Modified the process of handling merchant RESTful API call"
 git push
-
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -77,6 +76,12 @@ ls -la /var/www/html/api/delete-broker.php
 
 # Test the endpoint
 curl https://api.stockloyal.com/api/get-payments.php
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+RestFUL URL: from Merchant
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+http://localhost:5173/#/?member_id=stockloyal&tier=World%20Traveler&merchant_id=merchant001&points=260115&action=refresh%20points
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

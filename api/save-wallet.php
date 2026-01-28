@@ -37,13 +37,15 @@ try {
     $updates = [];
     $params = ['member_id' => $memberIdToUpdate];
     
-    // List of allowed fields to update
-    $allowedFields = [
+    // ✅ FIXED: Separate fields for wallet vs members tables
+    // Fields in wallet table
+    $walletFields = [
         'member_email',
-        'member_first_name', 
-        'member_last_name',
+        'first_name',
+        'middle_name',
+        'last_name',
         'member_timezone',
-        'member_tier',  // ✅ IMPORTANT: Include member_tier
+        'member_tier',
         'merchant_id',
         'merchant_name',
         'broker',
@@ -55,59 +57,79 @@ try {
         'election_type'
     ];
     
-    foreach ($allowedFields as $field) {
+    foreach ($walletFields as $field) {
         if (array_key_exists($field, $input)) {
             $updates[] = "$field = :$field";
             $params[$field] = $input[$field];
         }
     }
     
-    // Handle password update separately if provided
+    // ✅ FIXED: Update wallet table
+    if (!empty($updates)) {
+        $sql = "UPDATE wallet SET " . implode(', ', $updates) . " WHERE member_id = :member_id";
+        
+        error_log("save-wallet.php SQL: $sql");
+        error_log("save-wallet.php params: " . json_encode($params));
+        
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        
+        $rowsAffected = $stmt->rowCount();
+        
+        if ($rowsAffected === 0) {
+            error_log("save-wallet.php: WARNING - No rows affected for member_id = $memberIdToUpdate");
+            // Check if the record exists
+            $checkStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_id = :member_id");
+            $checkStmt->execute(['member_id' => $memberIdToUpdate]);
+            $exists = (int) $checkStmt->fetchColumn();
+            
+            if ($exists === 0) {
+                echo json_encode([
+                    'success' => false, 
+                    'error' => "Member record not found: $memberIdToUpdate"
+                ]);
+                exit;
+            }
+            // If record exists but no rows affected, values might be the same
+        }
+    }
+    
+    // ✅ Handle password update in wallet table
+    $passwordUpdated = false;
     if (!empty($input['new_password'])) {
         $hashedPassword = password_hash($input['new_password'], PASSWORD_DEFAULT);
-        $updates[] = "member_password = :member_password";
-        $params['member_password'] = $hashedPassword;
-        error_log("save-wallet.php: Updating password for $memberIdToUpdate");
-    }
-    
-    if (empty($updates)) {
-        echo json_encode(['success' => false, 'error' => 'No fields to update']);
-        exit;
-    }
-    
-    // Build and execute the UPDATE statement
-    $sql = "UPDATE wallet SET " . implode(', ', $updates) . " WHERE member_id = :member_id";
-    
-    error_log("save-wallet.php SQL: $sql");
-    error_log("save-wallet.php params: " . json_encode($params));
-    
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    
-    $rowsAffected = $stmt->rowCount();
-    
-    if ($rowsAffected === 0) {
-        error_log("save-wallet.php: WARNING - No rows affected for member_id = $memberIdToUpdate");
-        // Check if the record exists
-        $checkStmt = $conn->prepare("SELECT COUNT(*) FROM wallet WHERE member_id = :member_id");
-        $checkStmt->execute(['member_id' => $memberIdToUpdate]);
-        $exists = (int) $checkStmt->fetchColumn();
         
-        if ($exists === 0) {
-            echo json_encode([
-                'success' => false, 
-                'error' => "Member record not found: $memberIdToUpdate"
+        // Update password in wallet table
+        $pwdSql = "UPDATE wallet SET member_password_hash = :password WHERE member_id = :member_id";
+        $pwdStmt = $conn->prepare($pwdSql);
+        $pwdStmt->execute([
+            'password' => $hashedPassword,
+            'member_id' => $memberIdToUpdate
+        ]);
+        
+        // Also update in members table for consistency
+        try {
+            $pwdSql2 = "UPDATE members SET password = :password WHERE member_id = :member_id";
+            $pwdStmt2 = $conn->prepare($pwdSql2);
+            $pwdStmt2->execute([
+                'password' => $hashedPassword,
+                'member_id' => $memberIdToUpdate
             ]);
-            exit;
+        } catch (PDOException $e) {
+            // Members table might not exist or have different structure
+            error_log("save-wallet.php: Could not update members table: " . $e->getMessage());
         }
-        // If record exists but no rows affected, values might be the same
+        
+        $passwordUpdated = true;
+        error_log("save-wallet.php: Updated password for $memberIdToUpdate");
     }
     
     echo json_encode([
         'success' => true,
         'member_id' => $memberIdToUpdate,
-        'rows_affected' => $rowsAffected,
-        'message' => 'Wallet updated successfully'
+        'wallet_updated' => !empty($updates),
+        'password_updated' => $passwordUpdated,
+        'message' => 'Member data updated successfully'
     ]);
     
 } catch (PDOException $e) {

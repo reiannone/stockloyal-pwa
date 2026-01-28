@@ -17,6 +17,11 @@ body {
   color: #9ca3af; /* gray-400 */
 }
 
+/* Add to src/index.css or App.css */
+body:has(.nav-bar + aside[role="dialog"]) .fixed.bottom-0 {
+  display: none !important;
+}
+
 /* -----------------------------
    Responsive app shell
 ------------------------------ */
