@@ -245,8 +245,11 @@ export default function Order() {
       // broker confirm stub
       setTimeout(async () => {
         try {
-          await apiPost("broker_confirm.php", { member_id: memberId });
-        } catch (_) {}
+          const confirmRes = await apiPost("broker_confirm.php", { member_id: memberId });
+          console.log("[Order] Broker confirm response:", confirmRes);
+        } catch (err) {
+          console.error("[Order] Broker confirm error:", err);
+        }
       }, 1000);
 
       // 🔊 success ping here
