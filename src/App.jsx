@@ -44,19 +44,16 @@ import SocialFeed from "./pages/SocialFeed.jsx";
 import PostDetail from "./pages/PostDetail.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
 import SymbolChart from "./pages/SymbolChart.jsx";
-import CSVFilesBrowser from "./pages/CSVFilesBrowser.jsx"; // ✅ NEW
-import PageWrapper from "./components/PageWrapper.jsx"; // ✅ page transition wrapper
+import CSVFilesBrowser from "./pages/CSVFilesBrowser.jsx";
+import PageWrapper from "./components/PageWrapper.jsx";
 
-// ⭐ NEW: global share sheet
+// Global share sheet
 import SharePointsSheet from "./components/SharePointsSheet.jsx";
-
-// ⭐ NEW: PWA install prompt
-import InstallPrompt from "./components/InstallPrompt.jsx";
 
 function App() {
   const location = useLocation();
 
-  // ⭐ Global share sheet state
+  // Global share sheet state
   const [shareOpen, setShareOpen] = useState(false);
   const [shareProps, setShareProps] = useState({
     memberId: "",
@@ -66,7 +63,7 @@ function App() {
     tickers: [],
   });
 
-  // ⭐ Listen globally for "open-share-sheet" from Footer / Wallet / anywhere
+  // Listen globally for "open-share-sheet" from Footer / Wallet / anywhere
   useEffect(() => {
     function handleOpenShareSheet(event) {
       const detail = event.detail || {};
@@ -157,7 +154,7 @@ function App() {
               />
             </Route>
 
-            {/* Pages WITH layout (Header hidden in prod, Footer always visible) */}
+            {/* Pages WITH layout (Header + Footer) */}
             <Route element={<Layout />}>
               <Route
                 path="/about"
@@ -383,8 +380,6 @@ function App() {
                   </PageWrapper>
                 }
               />
-
-              {/* ✅ NEW: CSV Files Browser */}
               <Route
                 path="/csv-files"
                 element={
@@ -393,8 +388,6 @@ function App() {
                   </PageWrapper>
                 }
               />
-
-              {/* ⭐ NEW: social / community feed route */}
               <Route
                 path="/social"
                 element={
@@ -411,8 +404,6 @@ function App() {
                   </PageWrapper>
                 }
               />
-
-              {/* ⭐ NEW: single post + full thread view */}
               <Route
                 path="/social/post/:postId"
                 element={
@@ -425,7 +416,7 @@ function App() {
           </Routes>
         </AnimatePresence>
 
-        {/* ⭐ Global share sheet, available from any route */}
+        {/* Global share sheet, available from any route */}
         <SharePointsSheet
           open={shareOpen}
           onClose={() => setShareOpen(false)}
@@ -435,9 +426,6 @@ function App() {
           primaryTicker={shareProps.primaryTicker}
           tickers={shareProps.tickers}
         />
-
-        {/* ⭐ PWA install prompt - auto-appears for users who haven't installed */}
-        <InstallPrompt />
       </>
     </ErrorBoundary>
   );
