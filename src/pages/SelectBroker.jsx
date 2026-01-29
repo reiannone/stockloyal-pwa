@@ -7,7 +7,8 @@ import { AlertTriangle, ExternalLink } from "lucide-react";
 
 const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
 
-const brokers = [
+// ✅ All available brokers (master list)
+const ALL_BROKERS = [
   {
     id: "Public.com",
     name: "Public.com",
@@ -58,6 +59,10 @@ export default function SelectBroker() {
   const [hasExistingPassword, setHasExistingPassword] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
 
+  // ✅ NEW: Merchant-filtered brokers
+  const [allowedBrokerIds, setAllowedBrokerIds] = useState(null); // null = not loaded yet
+  const [merchantId, setMerchantId] = useState(null);
+
   // ✅ warning popup for redirect to broker site
   const [redirectModal, setRedirectModal] = useState({
     open: false,
@@ -68,6 +73,20 @@ export default function SelectBroker() {
   const navigate = useNavigate();
   const { updateBroker } = useBroker();
   const memberId = localStorage.getItem("memberId");
+
+  // ✅ Filtered brokers based on merchant relationship
+  const brokers = useMemo(() => {
+    // If still loading or no restrictions set, show all brokers
+    if (allowedBrokerIds === null) {
+      return ALL_BROKERS;
+    }
+    // If merchant has no brokers configured, show all (fallback)
+    if (allowedBrokerIds.length === 0) {
+      return ALL_BROKERS;
+    }
+    // Filter to only allowed brokers
+    return ALL_BROKERS.filter((b) => allowedBrokerIds.includes(b.id));
+  }, [allowedBrokerIds]);
 
   const canSubmit = useMemo(
     () =>
@@ -82,7 +101,7 @@ export default function SelectBroker() {
     [selected, username, password, confirmPassword, submitting]
   );
 
-  // ✅ Load existing broker info from wallet
+  // ✅ Load existing broker info from wallet AND merchant broker restrictions
   useEffect(() => {
     (async () => {
       try {
@@ -90,7 +109,11 @@ export default function SelectBroker() {
         const data = await apiPost("get-wallet.php", { member_id: memberId });
         if (data?.success && data.wallet) {
           const currentBroker = data.wallet.broker || "";
+          const currentMerchantId = data.wallet.merchant_id || localStorage.getItem("merchantId");
           const creds = data.broker_credentials || {};
+          
+          setMerchantId(currentMerchantId);
+          
           if (currentBroker) {
             setSelected(currentBroker);
             setUsername(creds.username || "");
@@ -101,6 +124,26 @@ export default function SelectBroker() {
               setConfirmPassword("");
             }
           }
+
+          // ✅ Load merchant's allowed brokers
+          if (currentMerchantId) {
+            try {
+              const brokerData = await apiPost("get-merchant-brokers.php", {
+                merchant_id: currentMerchantId,
+              });
+              if (brokerData?.success) {
+                setAllowedBrokerIds(brokerData.broker_ids || []);
+                console.log("[SelectBroker] Allowed brokers for merchant", currentMerchantId, ":", brokerData.broker_ids);
+              }
+            } catch (brokerErr) {
+              console.warn("[SelectBroker] Could not load merchant brokers:", brokerErr);
+              // On error, allow all brokers
+              setAllowedBrokerIds([]);
+            }
+          } else {
+            // No merchant, allow all brokers
+            setAllowedBrokerIds([]);
+          }
         }
       } catch (err) {
         console.error("Failed to fetch current broker:", err);
@@ -109,6 +152,16 @@ export default function SelectBroker() {
       }
     })();
   }, [memberId]);
+
+  // ✅ If selected broker is no longer in the allowed list, clear selection
+  useEffect(() => {
+    if (allowedBrokerIds !== null && allowedBrokerIds.length > 0 && selected) {
+      if (!allowedBrokerIds.includes(selected)) {
+        console.log("[SelectBroker] Clearing selection - broker not allowed for this merchant");
+        setSelected("");
+      }
+    }
+  }, [allowedBrokerIds, selected]);
 
   const handleBrokerSelect = (brokerId) => {
     setSelected(brokerId);
@@ -190,8 +243,9 @@ export default function SelectBroker() {
 
   // ✅ Open Account behavior
   const getDefaultBrokerForOpenAccount = () => {
-    // If none selected, default to Public.com (per requirement)
-    const fallback = brokers.find((b) => b.id === "Public.com") || brokers[0];
+    // If none selected, default to Public.com (per requirement) if it's in the allowed list
+    const publicBroker = brokers.find((b) => b.id === "Public.com");
+    const fallback = publicBroker || brokers[0];
     return selectedBroker || fallback;
   };
 
@@ -240,7 +294,7 @@ export default function SelectBroker() {
               <AlertTriangle size={34} color="#f59e0b" style={{ marginTop: 2 }} />
               <div>
                 <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>
-                  You’re being redirected
+                  You're being redirected
                 </div>
                 <div style={{ marginTop: 6, color: "#7c2d12", fontWeight: 600 }}>
                   You are about to leave StockLoyal and go to{" "}
@@ -284,49 +338,68 @@ export default function SelectBroker() {
         account to your rewards program.
       </p>
 
+      {/* ✅ Show merchant context if available */}
+      {merchantId && allowedBrokerIds && allowedBrokerIds.length > 0 && (
+        <p className="caption" style={{ textAlign: "center", marginBottom: 12, color: "#6b7280" }}>
+          Showing {brokers.length} broker{brokers.length !== 1 ? "s" : ""} available for your program
+        </p>
+      )}
+
       {/* --- Broker logos --- */}
-      <div className="broker-list">
-        {brokers.map((b) => {
-          const active = selected === b.id;
-          return (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => handleBrokerSelect(b.id)}
-              disabled={submitting}
-              className={`broker-card ${active ? "active" : ""} ${
-                submitting ? "disabled" : ""
-              }`}
-              style={{
-                border: active ? "3px solid #007bff" : undefined,
-                boxShadow: active ? "0 0 8px rgba(0,123,255,0.3)" : undefined,
-                transition: "border 0.2s, box-shadow 0.2s",
-              }}
-            >
-              <img src={b.logo} alt={b.name} className="broker-logo" />
-            </button>
-          );
-        })}
-      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+          Loading available brokers...
+        </div>
+      ) : brokers.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "2rem", color: "#dc2626" }}>
+          No brokers are currently available for your program. Please contact support.
+        </div>
+      ) : (
+        <div className="broker-list">
+          {brokers.map((b) => {
+            const active = selected === b.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => handleBrokerSelect(b.id)}
+                disabled={submitting}
+                className={`broker-card ${active ? "active" : ""} ${
+                  submitting ? "disabled" : ""
+                }`}
+                style={{
+                  border: active ? "3px solid #007bff" : undefined,
+                  boxShadow: active ? "0 0 8px rgba(0,123,255,0.3)" : undefined,
+                  transition: "border 0.2s, box-shadow 0.2s",
+                }}
+              >
+                <img src={b.logo} alt={b.name} className="broker-logo" />
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ✅ NEW: Open a Brokerage Account button */}
-      <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={handleOpenBrokerAccount}
-          disabled={submitting || loading}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-          title="Open an account at your selected broker (defaults to Public.com)"
-        >
-          <ExternalLink size={18} />
-          Open a Brokerage Account
-        </button>
-      </div>
+      {brokers.length > 0 && (
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleOpenBrokerAccount}
+            disabled={submitting || loading}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+            title="Open an account at your selected broker (defaults to Public.com)"
+          >
+            <ExternalLink size={18} />
+            Open a Brokerage Account
+          </button>
+        </div>
+      )}
 
       {/* --- Security Notice --- */}
       <p className="form-disclosure mt-4">

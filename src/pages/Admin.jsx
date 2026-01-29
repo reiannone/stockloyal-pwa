@@ -49,6 +49,11 @@ export default function Admin() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ Broker management state
+  const [allBrokers, setAllBrokers] = useState([]);
+  const [assignedBrokers, setAssignedBrokers] = useState([]);
+  const [brokersLoading, setBrokersLoading] = useState(false);
+
   // Track the original (pre-edit) conversion rate to detect changes on save
   const originalRateRef = useRef(null);
 
@@ -85,10 +90,94 @@ export default function Admin() {
     }
   };
 
+  // ✅ Load all available brokers (once on mount)
+  const fetchAllBrokers = async () => {
+    try {
+      const data = await apiGet("get-brokers.php");
+      if (data?.success) {
+        setAllBrokers(data.brokers || []);
+      }
+    } catch (e) {
+      console.error("[Admin] get-brokers failed:", e);
+    }
+  };
+
+  // ✅ Load brokers assigned to selected merchant
+  const fetchMerchantBrokers = async (merchantId) => {
+    if (!merchantId) {
+      setAssignedBrokers([]);
+      return;
+    }
+    setBrokersLoading(true);
+    try {
+      const data = await apiPost("get-merchant-brokers.php", { merchant_id: merchantId });
+      if (data?.success) {
+        setAssignedBrokers(data.broker_ids || []);
+      } else {
+        setAssignedBrokers([]);
+      }
+    } catch (e) {
+      console.error("[Admin] get-merchant-brokers failed:", e);
+      setAssignedBrokers([]);
+    } finally {
+      setBrokersLoading(false);
+    }
+  };
+
+  // ✅ Save broker assignments for merchant
+  const saveMerchantBrokers = async () => {
+    if (!selected?.merchant_id) return;
+    
+    try {
+      const res = await apiPost("save-merchant-brokers.php", {
+        merchant_id: selected.merchant_id,
+        broker_ids: assignedBrokers,
+      });
+      if (res?.success) {
+        alert(`Broker assignments saved for ${selected.merchant_name}!`);
+      } else {
+        alert("Failed to save broker assignments: " + (res?.error || "Unknown error"));
+      }
+    } catch (e) {
+      console.error("[Admin] save-merchant-brokers failed:", e);
+      alert("Failed to save broker assignments: network error");
+    }
+  };
+
+  // ✅ Toggle broker assignment
+  const toggleBroker = (brokerId) => {
+    setAssignedBrokers((prev) => {
+      if (prev.includes(brokerId)) {
+        return prev.filter((id) => id !== brokerId);
+      } else {
+        return [...prev, brokerId];
+      }
+    });
+  };
+
+  // ✅ Select/deselect all brokers
+  const selectAllBrokers = () => {
+    setAssignedBrokers(allBrokers.map((b) => b.broker_id));
+  };
+
+  const deselectAllBrokers = () => {
+    setAssignedBrokers([]);
+  };
+
   useEffect(() => {
     fetchMerchants();
+    fetchAllBrokers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ Load broker assignments when merchant selection changes
+  useEffect(() => {
+    if (selected?.merchant_id) {
+      fetchMerchantBrokers(selected.merchant_id);
+    } else {
+      setAssignedBrokers([]);
+    }
+  }, [selected?.merchant_id]);
 
   // Save merchant (upsert by merchant_id)
   const saveMerchant = async (e) => {
@@ -130,7 +219,7 @@ export default function Admin() {
         try {
           const j = await apiPost("bulk-refresh-points.php", {
             merchant_id: selected.merchant_id,
-            // We’re NOT overlaying points here; we’re changing the rate & cash only
+            // We're NOT overlaying points here; we're changing the rate & cash only
             conversion_rate: newRate,
             recalc_cash: true,
             requested_by: "AdminRateChange",
@@ -323,6 +412,167 @@ export default function Admin() {
                 onChange={handleChange}
               />
             </FormRow>
+
+            {/* ✅ NEW: Broker Relationships Section */}
+            <div style={{ 
+              gridColumn: '1 / -1', 
+              marginTop: '1.5rem', 
+              marginBottom: '1rem',
+              padding: '1rem',
+              background: '#f0fdf4',
+              borderRadius: '8px',
+              border: '1px solid #22c55e'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '0.75rem'
+              }}>
+                <h3 style={{ 
+                  fontSize: '1.1rem', 
+                  fontWeight: '600', 
+                  margin: 0,
+                  color: '#166534',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  🏦 Broker Relationships
+                </h3>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={selectAllBrokers}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.75rem',
+                      background: '#dcfce7',
+                      border: '1px solid #22c55e',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      color: '#166534'
+                    }}
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deselectAllBrokers}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '0.75rem',
+                      background: '#fee2e2',
+                      border: '1px solid #ef4444',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      color: '#991b1b'
+                    }}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+              
+              <p style={{ 
+                fontSize: '0.875rem', 
+                color: '#15803d', 
+                marginBottom: '1rem' 
+              }}>
+                Select which brokers are available to members of this merchant. Only selected brokers will appear in the broker selection screen.
+              </p>
+
+              {brokersLoading ? (
+                <p style={{ color: '#6b7280', fontStyle: 'italic' }}>Loading brokers...</p>
+              ) : allBrokers.length === 0 ? (
+                <p style={{ color: '#9ca3af' }}>No brokers configured in the system.</p>
+              ) : (
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                  gap: '0.5rem'
+                }}>
+                  {allBrokers.map((broker) => {
+                    const isAssigned = assignedBrokers.includes(broker.broker_id);
+                    return (
+                      <label
+                        key={broker.broker_id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.5rem 0.75rem',
+                          background: isAssigned ? '#dcfce7' : 'white',
+                          border: `1px solid ${isAssigned ? '#22c55e' : '#e5e7eb'}`,
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isAssigned}
+                          onChange={() => toggleBroker(broker.broker_id)}
+                          style={{ 
+                            width: '16px', 
+                            height: '16px',
+                            accentColor: '#22c55e'
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            fontWeight: '500', 
+                            fontSize: '0.875rem',
+                            color: '#111827',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {broker.broker_name}
+                          </div>
+                          <div style={{ 
+                            fontSize: '0.7rem', 
+                            color: '#6b7280',
+                            fontFamily: 'monospace'
+                          }}>
+                            {broker.broker_id}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{ 
+                marginTop: '1rem', 
+                paddingTop: '1rem', 
+                borderTop: '1px solid #bbf7d0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span style={{ fontSize: '0.875rem', color: '#166534' }}>
+                  {assignedBrokers.length} of {allBrokers.length} brokers selected
+                </span>
+                <button
+                  type="button"
+                  onClick={saveMerchantBrokers}
+                  style={{
+                    padding: '8px 16px',
+                    background: '#22c55e',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem'
+                  }}
+                >
+                  Save Broker Assignments
+                </button>
+              </div>
+            </div>
 
             {/* ✅ Tier Management Section */}
             <div style={{ 
@@ -538,7 +788,8 @@ export default function Admin() {
                 <th>Merchant ID</th>
                 <th>Name</th>
                 <th>Base Rate</th>
-                <th>Tiers Configured</th>
+                <th>Tiers</th>
+                <th>Brokers</th>
                 <th>Status</th>
                 <th>Promotion</th>
               </tr>
@@ -549,6 +800,9 @@ export default function Admin() {
                 const tiersConfigured = [1, 2, 3, 4, 5, 6].filter(
                   (num) => m[`tier${num}_name`] && m[`tier${num}_name`].trim() !== ''
                 ).length;
+
+                // Broker count (if we have it from the API)
+                const brokerCount = m.broker_count ?? '?';
 
                 return (
                   <tr 
@@ -580,10 +834,26 @@ export default function Admin() {
                           fontSize: '0.85rem',
                           fontWeight: '600'
                         }}>
-                          {tiersConfigured} tier{tiersConfigured !== 1 ? 's' : ''}
+                          {tiersConfigured}
                         </span>
                       ) : (
-                        <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>None</span>
+                        <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {brokerCount > 0 ? (
+                        <span style={{
+                          background: '#dcfce7',
+                          color: '#166534',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontSize: '0.85rem',
+                          fontWeight: '600'
+                        }}>
+                          {brokerCount}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>—</span>
                       )}
                     </td>
                     <td>{m.active_status ? "Active" : "Inactive"}</td>
