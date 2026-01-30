@@ -13,14 +13,14 @@ header("Content-Type: application/json");
 require_once 'config.php';
 
 /**
- * my-picks.php
- * Fetch member's saved stock picks from member_stock_picks table
- * Returns symbols for StockPicker "My Picks" category display
+ * get-member-picks.php
+ * Fetch member's saved stock picks for StockPicker display and batch processing
  */
 
 try {
     $input = json_decode(file_get_contents("php://input"), true) ?? [];
     $memberId = isset($input['member_id']) ? trim((string)$input['member_id']) : '';
+    $activeOnly = isset($input['active_only']) ? (bool)$input['active_only'] : true;
     $limit = isset($input['limit']) ? min((int)$input['limit'], 100) : 50;
 
     if (empty($memberId)) {
@@ -29,46 +29,53 @@ try {
         exit;
     }
 
-    // Query from the junction table - active picks only
     $sql = "SELECT 
+                id,
                 symbol,
                 allocation_pct,
                 priority,
+                is_active,
                 created_at,
                 updated_at
             FROM member_stock_picks
-            WHERE member_id = :member_id AND is_active = 1
-            ORDER BY priority DESC, created_at ASC
-            LIMIT :lim";
+            WHERE member_id = :member_id";
+    
+    if ($activeOnly) {
+        $sql .= " AND is_active = 1";
+    }
+    
+    $sql .= " ORDER BY priority DESC, created_at ASC LIMIT :lim";
 
     $stmt = $conn->prepare($sql);
     $stmt->bindValue(':member_id', $memberId, PDO::PARAM_STR);
     $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
     $stmt->execute();
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $picks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Format response to match expected structure in StockPicker.jsx
-    $formattedRows = array_map(function($row) {
-        return [
-            'symbol' => $row['symbol'],
-            'allocation_pct' => $row['allocation_pct'],
-            'priority' => (int)$row['priority'],
-            'created_at' => $row['created_at']
-        ];
-    }, $rows);
+    // Calculate total allocation for validation
+    $totalAllocation = 0.0;
+    $hasCustomAllocation = false;
+    foreach ($picks as $pick) {
+        if ($pick['allocation_pct'] !== null) {
+            $hasCustomAllocation = true;
+            $totalAllocation += (float)$pick['allocation_pct'];
+        }
+    }
 
     echo json_encode([
         "success" => true,
-        "rows" => $formattedRows,
-        "count" => count($formattedRows)
+        "picks" => $picks,
+        "count" => count($picks),
+        "total_allocation" => $hasCustomAllocation ? round($totalAllocation, 2) : null,
+        "has_custom_allocation" => $hasCustomAllocation
     ]);
 
 } catch (PDOException $e) {
-    error_log("my-picks.php error: " . $e->getMessage());
+    error_log("get-member-picks.php error: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(["success" => false, "error" => "Database error"]);
 } catch (Exception $e) {
-    error_log("my-picks.php error: " . $e->getMessage());
+    error_log("get-member-picks.php error: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(["success" => false, "error" => "Server error"]);
 }

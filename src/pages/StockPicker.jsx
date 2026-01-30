@@ -4,11 +4,11 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
-import { Search } from "lucide-react";
+import { Search, Heart, HeartOff, Trash2 } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
-const MY_PICKS = "My Picks"; // ✅ NEW: Member's own picks
+const MY_PICKS = "My Picks"; // ✅ Member's persisted picks
 const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
 // ✅ Map categories -> API screener IDs
@@ -27,7 +27,7 @@ const categoryMap = {
 // ✅ Map categories -> background images
 const categoryImages = {
   [POPULAR_MEMBER_PICKS]: "/icons/StockLoyal-icon.png",
-  [MY_PICKS]: "/icons/thumbs-up.jpg", // ✅ NEW: Thumbs up icon for My Picks
+  [MY_PICKS]: "/icons/thumbs-up.jpg",
   "Most Active": "/icons/most-active.jpg",
   "Large Caps": "/icons/large-caps.jpg",
   "Small Caps": "/icons/small-caps.jpg",
@@ -91,6 +91,10 @@ export default function StockPicker() {
 
   // ✅ Bottom-sheet open/close state
   const [isStockListOpen, setIsStockListOpen] = useState(false);
+
+  // ✅ NEW: Member's saved picks (from junction table)
+  const [memberPicks, setMemberPicks] = useState(new Set());
+  const [savingPick, setSavingPick] = useState(null); // Track which symbol is being saved/removed
 
   // 🎡 Audio + haptic feedback for wheel ticks
   const audioCtxRef = useRef(null);
@@ -167,6 +171,26 @@ export default function StockPicker() {
       // Don't remove on unmount as other instances might use it
     };
   }, []);
+
+  // ✅ NEW: Load member's saved picks on mount
+  useEffect(() => {
+    if (!memberId) return;
+    
+    (async () => {
+      try {
+        const data = await apiPost("get-member-picks.php", { 
+          member_id: memberId,
+          active_only: true 
+        });
+        if (data?.success && Array.isArray(data.picks)) {
+          const symbols = new Set(data.picks.map(p => p.symbol.toUpperCase()));
+          setMemberPicks(symbols);
+        }
+      } catch (err) {
+        console.error("[StockPicker] Failed to load member picks:", err);
+      }
+    })();
+  }, [memberId]);
 
   // --- Slider drag logic for categories ---
   const isDragging = useRef(false);
@@ -287,6 +311,76 @@ export default function StockPicker() {
           2
         )} and $${maxOrderAmount.toFixed(2)} for your broker.`
       : "";
+
+  // ✅ NEW: Save a stock to My Picks
+  const handleSaveToPicks = async (symbol) => {
+    if (!memberId || !symbol) return;
+    
+    const sym = symbol.toUpperCase();
+    setSavingPick(sym);
+    
+    try {
+      const data = await apiPost("save-member-pick.php", {
+        member_id: memberId,
+        symbol: sym,
+        is_active: true
+      });
+      
+      if (data?.success) {
+        setMemberPicks(prev => new Set([...prev, sym]));
+        // Show brief feedback
+        console.log(`✅ Added ${sym} to My Picks`);
+      } else {
+        console.error("Failed to save pick:", data?.error);
+        alert(data?.error || "Failed to save pick");
+      }
+    } catch (err) {
+      console.error("[StockPicker] save pick error:", err);
+      alert("Failed to save pick");
+    } finally {
+      setSavingPick(null);
+    }
+  };
+
+  // ✅ NEW: Remove a stock from My Picks
+  const handleRemoveFromPicks = async (symbol) => {
+    if (!memberId || !symbol) return;
+    
+    const sym = symbol.toUpperCase();
+    setSavingPick(sym);
+    
+    try {
+      const data = await apiPost("remove-member-pick.php", {
+        member_id: memberId,
+        symbol: sym,
+        hard_delete: true // Permanent remove
+      });
+      
+      if (data?.success) {
+        setMemberPicks(prev => {
+          const next = new Set(prev);
+          next.delete(sym);
+          return next;
+        });
+        
+        // If we're in My Picks view, also remove from results
+        if (category === MY_PICKS) {
+          setResults(prev => prev.filter(s => s.symbol !== sym));
+          setSelectedStocks(prev => prev.filter(s => s !== sym));
+        }
+        
+        console.log(`🗑️ Removed ${sym} from My Picks`);
+      } else {
+        console.error("Failed to remove pick:", data?.error);
+        alert(data?.error || "Failed to remove pick");
+      }
+    } catch (err) {
+      console.error("[StockPicker] remove pick error:", err);
+      alert("Failed to remove pick");
+    } finally {
+      setSavingPick(null);
+    }
+  };
 
   // --- Yahoo Screener via proxy.php ---
   const handleCategoryClick = async (cat, scrId) => {
@@ -436,7 +530,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ NEW: My Picks - Member's own previously selected symbols
+  // ✅ My Picks - Member's persisted picks from junction table
   const handleMyPicks = async () => {
     if (isCashOutsideLimits) return;
 
@@ -453,7 +547,7 @@ export default function StockPicker() {
       setCurrentOffset(0);
       setHasMore(false);
 
-      // 1) Pull member's own purchased symbols from backend
+      // 1) Pull member's saved picks from junction table
       const data = await apiPost("my-picks.php", { 
         member_id: memberId,
         limit: 50 
@@ -467,14 +561,14 @@ export default function StockPicker() {
       const cleaned = rows
         .map((r) => ({
           symbol: String(r?.symbol || "").trim().toUpperCase(),
-          purchases: Number(r?.purchases || 0),
-          last_purchased: r?.last_purchased || null,
+          allocation_pct: r?.allocation_pct,
+          priority: r?.priority || 0,
         }))
         .filter((r) => r.symbol);
 
       if (cleaned.length === 0) {
         setResults([]);
-        setStockError("You haven't purchased any stocks yet. Start investing to see your picks here!");
+        setStockError("You haven't saved any picks yet. Browse categories and tap the ❤️ to save stocks for your monthly sweep!");
         return;
       }
 
@@ -517,14 +611,15 @@ export default function StockPicker() {
         });
       });
 
-      // 3) Merge: show purchase count for this member
+      // 3) Merge: show allocation if set
       const merged = cleaned.map((r) => {
         const q = quoteBySymbol.get(r.symbol);
         const displayName = q?.name || r.symbol;
+        const allocLabel = r.allocation_pct ? ` — ${r.allocation_pct}%` : '';
 
         return {
           symbol: r.symbol,
-          name: `${displayName} — You bought ${r.purchases}x`,
+          name: `${displayName}${allocLabel}`,
           price: q?.price ?? null,
           change: q?.change ?? 0,
         };
@@ -648,25 +743,23 @@ export default function StockPicker() {
       });
     });
 
-    // Store for order page
-    localStorage.setItem("basket_amount", cashValue.toString());
-    localStorage.setItem("basket_pointsUsed", selectedPoints.toString());
-
-    setIsStockListOpen(false);
+    // Navigate to checkout
     navigate("/basket");
   };
 
   // --- Symbol search ---
   const handleSymbolSearch = async () => {
-    if (!symbolInput.trim()) return;
+    const sym = symbolInput.trim().toUpperCase();
+    if (!sym) return;
+
     if (isCashOutsideLimits) return;
 
     try {
       setSearching(true);
+      setCategory(`Search: ${sym}`);
       setStockError("");
       setResults([]);
       setSelectedStocks([]);
-      setCategory(`Search: ${symbolInput.toUpperCase()}`);
       setIsStockListOpen(true);
       setLoadingCategory(true);
 
@@ -675,16 +768,22 @@ export default function StockPicker() {
       setCurrentOffset(0);
       setHasMore(false);
 
-      const data = await apiPost("proxy.php", {
-        symbol: symbolInput.toUpperCase(),
-      });
+      const quoteResp = await apiPost("proxy.php", { symbol: sym });
 
       const quoteArr =
-        data?.data ?? data?.results ?? data?.finance?.result?.[0]?.quotes ?? [];
+        quoteResp?.data ??
+        quoteResp?.results ??
+        quoteResp?.finance?.result?.[0]?.quotes ??
+        [];
 
-      const fetched = (Array.isArray(quoteArr) ? quoteArr : []).map((q) => ({
-        symbol: q.symbol,
-        name: q.name || q.shortName || q.longName || q.symbol,
+      if (!Array.isArray(quoteArr) || quoteArr.length === 0) {
+        setStockError(`No results found for "${sym}"`);
+        return;
+      }
+
+      const fetched = quoteArr.map((q) => ({
+        symbol: q.symbol || q.Symbol || sym,
+        name: q.name || q.shortName || q.longName || sym,
         price:
           q.price ??
           q.regularMarketPrice ??
@@ -699,153 +798,185 @@ export default function StockPicker() {
           0,
       }));
 
-      if (fetched.length === 0) {
-        setStockError(`No results found for "${symbolInput.toUpperCase()}"`);
-      }
-
       setResults(fetched);
     } catch (err) {
-      console.error("[StockPicker] search error:", err);
-      setStockError("Search failed.");
+      console.error("[StockPicker] symbol search error:", err);
+      setStockError(`Failed to search for "${sym}"`);
     } finally {
       setSearching(false);
       setLoadingCategory(false);
     }
   };
 
-  // --- Symbol click to view chart ---
+  // --- Handle clicking on symbol to view chart ---
   const handleSymbolClick = (symbol) => {
-    navigate(`/symbol-chart/${symbol}`);
+    window.open(`https://finance.yahoo.com/quote/${symbol}`, "_blank");
   };
 
   // --- Cash input handlers ---
+  const handleCashInputChange = (e) => {
+    setCashInput(e.target.value);
+  };
+
   const handleCashInputFocus = () => {
     setIsEditingCash(true);
   };
 
   const handleCashInputBlur = () => {
     setIsEditingCash(false);
-    let v = parseFloat(cashInput);
-    if (Number.isNaN(v) || v < 0) v = 0;
+    let val = parseFloat(cashInput);
+    if (Number.isNaN(val) || val < 0) val = 0;
 
-    // Reverse: points = cash / rate
-    const newPoints = Math.round(v / conversionRate);
+    // Reverse calculate points from cash
+    const points = Math.round(val / conversionRate);
     const max = parseInt(wallet?.points ?? "0", 10) || 0;
-    const clampedPoints = Math.max(0, Math.min(newPoints, max));
+    const clampedPoints = Math.min(points, max);
 
     setSelectedPoints(clampedPoints);
-    // Sync cash
-    const finalCash = clampedPoints * conversionRate;
+
+    // Recalculate cash from clamped points
+    const cents = Math.round(clampedPoints * conversionRate * 100);
+    const finalCash = cents / 100;
     setCashValue(finalCash);
     setCashInput(finalCash.toFixed(2));
   };
 
-  const handleCashInputChange = (e) => {
-    setCashInput(e.target.value);
-  };
-
-  // --- Render ---
+  // --- Derived values ---
   const maxPoints = parseInt(wallet?.points ?? "0", 10) || 0;
 
+  // ✅ Render pick action button (heart to add, trash to remove)
+  const renderPickAction = (stock) => {
+    const sym = stock.symbol.toUpperCase();
+    const isPicked = memberPicks.has(sym);
+    const isSaving = savingPick === sym;
+
+    if (category === MY_PICKS) {
+      // In My Picks view, show remove button
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRemoveFromPicks(sym);
+          }}
+          disabled={isSaving}
+          title="Remove from My Picks"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: isSaving ? "wait" : "pointer",
+            padding: "4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: isSaving ? 0.5 : 1,
+          }}
+        >
+          <Trash2 size={18} color="#ef4444" />
+        </button>
+      );
+    }
+
+    // In other views, show heart toggle
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isPicked) {
+            handleRemoveFromPicks(sym);
+          } else {
+            handleSaveToPicks(sym);
+          }
+        }}
+        disabled={isSaving}
+        title={isPicked ? "Remove from My Picks" : "Add to My Picks"}
+        style={{
+          background: "transparent",
+          border: "none",
+          cursor: isSaving ? "wait" : "pointer",
+          padding: "4px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: isSaving ? 0.5 : 1,
+        }}
+      >
+        {isPicked ? (
+          <Heart size={18} color="#ef4444" fill="#ef4444" />
+        ) : (
+          <Heart size={18} color="#9ca3af" />
+        )}
+      </button>
+    );
+  };
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <p className="form-error">{error}</p>
+        <button className="btn-secondary" onClick={() => navigate("/wallet")}>
+          Back to Wallet
+        </button>
+      </div>
+    );
+  }
+
+  if (!wallet) {
+    return (
+      <div className="page-container">
+        <p>Loading wallet...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="wallet-container"    >
-      <h2 className="page-title">Pick Stocks</h2>
-      <p className="page-deck">
-        Choose stocks to invest in using your rewards points.
+    <div className="wallet-container" style={{ paddingBottom: "100px" }}>
+      <h1 className="page-title">Pick Stocks</h1>
+      <p style={{ textAlign: "center", color: "#6b7280", marginBottom: "1rem" }}>
+        {brokerName}
       </p>
 
-      {error && <p className="form-error">{error}</p>}
-
-      {/* ✅ Points & Cash side by side with large fonts */}
-      <div class="card"
-        style={{ 
-          width: "100%",
-          maxWidth: "var(--app-max-width)",
-          marginTop: 12,
-          marginBottom: "1rem",
+      {/* Points / Cash display */}
+      <div
+        style={{
+          background: "#f9fafb",
+          borderRadius: "12px",
           padding: "1rem",
-          background: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+          marginBottom: "1rem",
         }}
       >
         <div
           style={{
             display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
             gap: "1rem",
-            alignItems: "stretch",
           }}
         >
-          {/* Points Input - Left */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <label 
-              style={{ 
-                fontSize: "0.9rem", 
-                fontWeight: "600",
-                color: "#374151",
-                display: "block",
-                marginBottom: "0.5rem",
-              }}
-            >
-              Points to Use
-            </label>
-            <input
-              type="number"
-              value={selectedPoints}
-              onChange={(e) => handlePointsChange(e.target.value)}
-              className="form-input"
-              style={{ 
-                width: "100%",
-                fontSize: "1.5rem",
-                fontWeight: "700",
-                textAlign: "center",
-                padding: "0.5rem",
-                height: "auto",
-                boxSizing: "border-box",
-              }}
-            />
-            <div 
-              style={{ 
-                fontSize: "0.75rem", 
-                color: "#6b7280",
-                textAlign: "center",
-                marginTop: "0.25rem",
-              }}
-            >
-              of {maxPoints.toLocaleString()} avail
+          {/* Points side */}
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.25rem" }}>
+              Points
+            </div>
+            <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#2563eb" }}>
+              {selectedPoints.toLocaleString()}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+              of {maxPoints.toLocaleString()}
             </div>
           </div>
 
-          {/* Right arrow */}
-          <div 
-            style={{ 
-              display: "flex", 
-              alignItems: "center",
-              fontSize: "1.5rem",
-              fontWeight: "700",
-              color: "#9ca3af",
-              paddingTop: "1rem",
-            }}
-          >
-            →
-          </div>
+          {/* Arrow */}
+          <div style={{ fontSize: "1.5rem", color: "#9ca3af" }}>→</div>
 
-          {/* Cash Value - Right */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <label 
-              style={{ 
-                fontSize: "0.9rem", 
-                fontWeight: "600",
-                color: "#374151",
-                display: "block",
-                marginBottom: "0.5rem",
-              }}
-            >
+          {/* Cash side */}
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.25rem" }}>
               Cash Value
-            </label>
-            <div style={{ position: "relative" }}>
-              <span 
+            </div>
+            <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
+              <span
                 style={{
                   position: "absolute",
                   left: "0.5rem",
@@ -953,8 +1084,30 @@ export default function StockPicker() {
             opacity: isCashOutsideLimits ? 0.4 : 1,
             cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
           }}
-          title="Stocks you've previously purchased"
+          title="Your saved picks for monthly sweep"
         >
+          {/* Badge showing count of picks */}
+          {memberPicks.size > 0 && (
+            <span
+              style={{
+                position: "absolute",
+                top: "6px",
+                right: "6px",
+                background: "#ef4444",
+                color: "white",
+                borderRadius: "50%",
+                width: "22px",
+                height: "22px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.75rem",
+                fontWeight: "700",
+              }}
+            >
+              {memberPicks.size}
+            </span>
+          )}
           <span
             style={{
               position: "absolute",
@@ -1011,11 +1164,11 @@ export default function StockPicker() {
         </button>
 
         {/* Yahoo screener categories */}
-        {Object.entries(categoryMap).map(([cat, scrId]) => (
+        {Object.entries(categoryMap).map(([catName, scrId]) => (
           <button
-            key={cat}
+            key={catName}
             type="button"
-            onClick={() => handleCategoryClick(cat, scrId)}
+            onClick={() => handleCategoryClick(catName, scrId)}
             className="category-btn"
             disabled={isCashOutsideLimits}
             style={{
@@ -1023,7 +1176,7 @@ export default function StockPicker() {
               height: "90px",
               marginRight: "10px",
               borderRadius: "8px",
-              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
+              backgroundImage: `url(${categoryImages[catName] || "/icons/default-category.jpg"})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               position: "relative",
@@ -1046,55 +1199,52 @@ export default function StockPicker() {
                 fontSize: "0.85rem",
               }}
             >
-              {cat}
+              {catName}
             </span>
           </button>
         ))}
       </div>
 
       {/* Symbol search */}
-      <div class="card"
-        style={{ 
-          width: "100%",
-          maxWidth: "var(--app-max-width)",
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
           marginBottom: "1rem",
-          padding: "1rem",
-          background: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #e5e7eb",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
         }}
       >
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <input
-            type="text"
-            placeholder="AAPL, MSFT..."
-            value={symbolInput}
-            onChange={(e) => setSymbolInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSymbolSearch()}
-            className="form-input"
-            style={{ width: "100px", fontSize: "0.9rem", flexShrink: 0 }}
-            disabled={isCashOutsideLimits}
-          />
-          <button
-            type="button"
-            onClick={handleSymbolSearch}
-            className="btn-primary"
-            disabled={searching || isCashOutsideLimits}
-            style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center",
-              padding: "0.4rem",
-              minWidth: "36px",
-              width: "36px",
-              height: "36px",
-              flexShrink: 0,
-            }}
-          >
-            <Search size={16} />
-          </button>
-        </div>
+        <label style={{ fontSize: "0.9rem", color: "#6b7280", flexShrink: 0 }}>
+          Search:
+        </label>
+        <input
+          type="text"
+          placeholder="AAPL"
+          value={symbolInput}
+          onChange={(e) => setSymbolInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSymbolSearch()}
+          className="form-input"
+          style={{ width: "100px", fontSize: "0.9rem", flexShrink: 0 }}
+          disabled={isCashOutsideLimits}
+        />
+        <button
+          type="button"
+          onClick={handleSymbolSearch}
+          className="btn-primary"
+          disabled={searching || isCashOutsideLimits}
+          style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center",
+            padding: "0.4rem",
+            minWidth: "36px",
+            width: "36px",
+            height: "36px",
+            flexShrink: 0,
+          }}
+        >
+          <Search size={16} />
+        </button>
       </div>
 
       {/* 🔥 Bottom-sheet Stock list overlay - rendered via portal to dedicated container */}
@@ -1184,6 +1334,7 @@ export default function StockPicker() {
                             <br />
                             Change %
                           </th>
+                          <th style={{ width: "40px" }}>Pick</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1230,6 +1381,9 @@ export default function StockPicker() {
                                   : Number(stock.change || 0).toFixed(2)}
                                 %
                               </div>
+                            </td>
+                            <td className="text-center">
+                              {renderPickAction(stock)}
                             </td>
                           </tr>
                         ))}
