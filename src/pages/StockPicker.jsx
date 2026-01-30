@@ -748,7 +748,7 @@ export default function StockPicker() {
   const maxPoints = parseInt(wallet?.points ?? "0", 10) || 0;
 
   return (
-    <div className="stock-picker-container"    >
+    <div className="wallet-container"    >
       <h2 className="page-title">Pick Stocks</h2>
       <p className="page-deck">
         Choose stocks to invest in using your rewards points.
@@ -759,7 +759,9 @@ export default function StockPicker() {
       {/* ✅ Points & Cash side by side with large fonts */}
       <div class="card"
         style={{ 
-          width: "95%",
+          width: "100%",
+          maxWidth: "var(--app-max-width)",
+          marginTop: 12,
           marginBottom: "1rem",
           padding: "1rem",
           background: "#fff",
@@ -1053,7 +1055,8 @@ export default function StockPicker() {
       {/* Symbol search */}
       <div class="card"
         style={{ 
-          width: "95%",
+          width: "100%",
+          maxWidth: "var(--app-max-width)",
           marginBottom: "1rem",
           padding: "1rem",
           background: "#fff",
