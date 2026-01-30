@@ -748,7 +748,7 @@ export default function StockPicker() {
   const maxPoints = parseInt(wallet?.points ?? "0", 10) || 0;
 
   return (
-    <div className="page-container">
+    <div className="stock-picker-container"    >
       <h2 className="page-title">Pick Stocks</h2>
       <p className="page-deck">
         Choose stocks to invest in using your rewards points.
