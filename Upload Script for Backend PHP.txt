@@ -18,7 +18,7 @@ FRONTEND: CHANGES to AWS Amplify and GitHub from PowerShell:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 git add .
-git commit -m "Added AWS SES feature for confirm email"
+git commit -m "Added My Picks to StockPicker "
 git push
 
 

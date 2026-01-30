@@ -5,13 +5,13 @@ BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
 # 2. Local file to upload
-$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\broker_confirm.php"
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\my-picks.php"
 
 # 3. EC2 Host (rename variable so we avoid conflict with $Host)
 $EC2 = "ec2-user@3.150.49.91"
 
 # 4. Destination on remote server
-$DEST = "/home/ec2-user/broker_confirm.php"
+$DEST = "/home/ec2-user/my-picks.php"
 
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
@@ -20,6 +20,6 @@ scp -i $KEY "$SRC" "${EC2}:${DEST}"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/broker_confirm.php /var/www/html/api/broker_confirm.php
-sudo chown apache:apache /var/www/html/api/broker_confirm.php
-sudo chmod 644 /var/www/html/api/broker_confirm.php
+sudo mv /home/ec2-user/my-picks.php /var/www/html/api/my-picks.php
+sudo chown apache:apache /var/www/html/api/my-picks.php
+sudo chmod 644 /var/www/html/api/my-picks.php

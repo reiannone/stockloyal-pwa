@@ -8,20 +8,20 @@ import { Search } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
-const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 const MY_PICKS = "My Picks"; // ✅ NEW: Member's own picks
+const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
 // ✅ Map categories -> API screener IDs
 const categoryMap = {
   "Most Active": "most_actives",
-  "Day Gainers": "day_gainers",
-  "Day Losers": "day_losers",
-  "Large Caps": "undervalued_large_caps",
-  "Small Caps": "aggressive_small_caps",
   "Growth Tech": "growth_technology_stocks",
   "Mutual Funds": "top_mutual_funds",
-  ETFs: "etf",
+  "ETFs": "etf",
   "Crypto - Most Active": "most_actives_cryptocurrencies",
+  "Large Caps": "undervalued_large_caps",
+  "Small Caps": "aggressive_small_caps",
+  "Day Gainers": "day_gainers",
+  "Day Losers": "day_losers",
 };
 
 // ✅ Map categories -> background images
@@ -29,14 +29,14 @@ const categoryImages = {
   [POPULAR_MEMBER_PICKS]: "/icons/StockLoyal-icon.png",
   [MY_PICKS]: "/icons/thumbs-up.jpg", // ✅ NEW: Thumbs up icon for My Picks
   "Most Active": "/icons/most-active.jpg",
-  "Day Gainers": "/icons/day-gainers.jpg",
-  "Day Losers": "/icons/day-losers.jpg",
   "Large Caps": "/icons/large-caps.jpg",
   "Small Caps": "/icons/small-caps.jpg",
   "Growth Tech": "/icons/growth-tech.jpg",
   "Mutual Funds": "/icons/mutual-funds.jpg",
-  ETFs: "/icons/etfs.jpg",
+  "ETFs": "/icons/etfs.jpg",
   "Crypto - Most Active": "/icons/crypto.jpg",
+  "Day Gainers": "/icons/day-gainers.jpg",
+  "Day Losers": "/icons/day-losers.jpg",
 };
 
 export default function StockPicker() {
@@ -756,151 +756,10 @@ export default function StockPicker() {
 
       {error && <p className="form-error">{error}</p>}
 
-      {/* ✅ Category slider at TOP */}
-      <div
-        ref={sliderRef}
-        className="category-slider"
-        onMouseDown={handleMouseDown}
-        onMouseLeave={handleMouseLeave}
-        onMouseUp={handleMouseUp}
-        onMouseMove={handleMouseMove}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          display: "flex",
-          overflowX: "auto",
-          gap: "0px",
-          paddingBottom: "10px",
-          marginBottom: "1rem",
-          cursor: "grab",
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-        }}
-      >
-        {/* My Picks button */}
-        <button
-          type="button"
-          onClick={handleMyPicks}
-          className="category-btn"
-          disabled={isCashOutsideLimits}
-          style={{
-            minWidth: "140px",
-            height: "90px",
-            marginRight: "10px",
-            borderRadius: "8px",
-            backgroundImage: `url(${categoryImages[MY_PICKS]})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            position: "relative",
-            overflow: "hidden",
-            color: "white",
-            fontWeight: "600",
-            opacity: isCashOutsideLimits ? 0.4 : 1,
-            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
-          }}
-          title="Stocks you've previously purchased"
-        >
-          <span
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: "6px",
-              background: "rgba(0,0,0,0.5)",
-              textAlign: "center",
-              fontSize: "0.85rem",
-            }}
-          >
-            {MY_PICKS}
-          </span>
-        </button>
-
-        {/* Popular Member Picks */}
-        <button
-          type="button"
-          onClick={handlePopularMemberPicks}
-          className="category-btn"
-          disabled={isCashOutsideLimits}
-          style={{
-            minWidth: "140px",
-            height: "90px",
-            marginRight: "10px",
-            borderRadius: "8px",
-            backgroundImage: `url(${categoryImages[POPULAR_MEMBER_PICKS]})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            position: "relative",
-            overflow: "hidden",
-            color: "white",
-            fontWeight: "600",
-            opacity: isCashOutsideLimits ? 0.4 : 1,
-            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
-          }}
-          title="Most purchased securities by StockLoyal members"
-        >
-          <span
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: "6px",
-              background: "rgba(0,0,0,0.5)",
-              textAlign: "center",
-              fontSize: "0.85rem",
-            }}
-          >
-            {POPULAR_MEMBER_PICKS}
-          </span>
-        </button>
-
-        {/* Yahoo screener categories */}
-        {Object.entries(categoryMap).map(([cat, scrId]) => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => handleCategoryClick(cat, scrId)}
-            className="category-btn"
-            disabled={isCashOutsideLimits}
-            style={{
-              minWidth: "140px",
-              height: "90px",
-              marginRight: "10px",
-              borderRadius: "8px",
-              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              position: "relative",
-              overflow: "hidden",
-              color: "white",
-              fontWeight: "600",
-              opacity: isCashOutsideLimits ? 0.4 : 1,
-              cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                padding: "6px",
-                background: "rgba(0,0,0,0.5)",
-                textAlign: "center",
-                fontSize: "0.85rem",
-              }}
-            >
-              {cat}
-            </span>
-          </button>
-        ))}
-      </div>
-
       {/* ✅ Points & Cash side by side with large fonts */}
-      <div 
+      <div class="card"
         style={{ 
+          width: "95%",
           marginBottom: "1rem",
           padding: "1rem",
           background: "#fff",
@@ -1049,15 +908,160 @@ export default function StockPicker() {
         )}
       </div>
 
+       {/* ✅ Category slider at TOP */}
+      <div
+        ref={sliderRef}
+        className="category-slider"
+        onMouseDown={handleMouseDown}
+        onMouseLeave={handleMouseLeave}
+        onMouseUp={handleMouseUp}
+        onMouseMove={handleMouseMove}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{
+          display: "flex",
+          overflowX: "auto",
+          gap: "0px",
+          paddingBottom: "10px",
+          marginBottom: "1rem",
+          cursor: "grab",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        {/* My Picks button */}
+        <button
+          type="button"
+          onClick={handleMyPicks}
+          className="category-btn"
+          disabled={isCashOutsideLimits}
+          style={{
+            minWidth: "140px",
+            height: "90px",
+            marginRight: "10px",
+            borderRadius: "8px",
+            backgroundImage: `url(${categoryImages[MY_PICKS]})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            overflow: "hidden",
+            color: "white",
+            fontWeight: "600",
+            opacity: isCashOutsideLimits ? 0.4 : 1,
+            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
+          }}
+          title="Stocks you've previously purchased"
+        >
+          <span
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: "6px",
+              background: "rgba(0,0,0,0.5)",
+              textAlign: "center",
+              fontSize: "0.85rem",
+            }}
+          >
+            {MY_PICKS}
+          </span>
+        </button>
+
+        {/* Popular Member Picks */}
+        <button
+          type="button"
+          onClick={handlePopularMemberPicks}
+          className="category-btn"
+          disabled={isCashOutsideLimits}
+          style={{
+            minWidth: "140px",
+            height: "90px",
+            marginRight: "10px",
+            borderRadius: "8px",
+            backgroundImage: `url(${categoryImages[POPULAR_MEMBER_PICKS]})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            overflow: "hidden",
+            color: "white",
+            fontWeight: "600",
+            opacity: isCashOutsideLimits ? 0.4 : 1,
+            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
+          }}
+          title="Most purchased securities by StockLoyal members"
+        >
+          <span
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: "6px",
+              background: "rgba(0,0,0,0.5)",
+              textAlign: "center",
+              fontSize: "0.85rem",
+            }}
+          >
+            {POPULAR_MEMBER_PICKS}
+          </span>
+        </button>
+
+        {/* Yahoo screener categories */}
+        {Object.entries(categoryMap).map(([cat, scrId]) => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => handleCategoryClick(cat, scrId)}
+            className="category-btn"
+            disabled={isCashOutsideLimits}
+            style={{
+              minWidth: "140px",
+              height: "90px",
+              marginRight: "10px",
+              borderRadius: "8px",
+              backgroundImage: `url(${categoryImages[cat] || "/icons/default.jpg"})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              position: "relative",
+              overflow: "hidden",
+              color: "white",
+              fontWeight: "600",
+              opacity: isCashOutsideLimits ? 0.4 : 1,
+              cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                padding: "6px",
+                background: "rgba(0,0,0,0.5)",
+                textAlign: "center",
+                fontSize: "0.85rem",
+              }}
+            >
+              {cat}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Symbol search */}
-      <div style={{ 
-        marginBottom: "1rem", 
-        padding: "0.5rem 0.75rem",
-        background: "#fff",
-        borderRadius: "8px",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-      }}>
+      <div class="card"
+        style={{ 
+          width: "95%",
+          marginBottom: "1rem",
+          padding: "1rem",
+          background: "#fff",
+          borderRadius: "8px",
+          border: "1px solid #e5e7eb",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+        }}
+      >
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
           <input
             type="text"

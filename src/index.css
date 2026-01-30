@@ -1289,6 +1289,10 @@ button.nav-item {
   color: #0056b3;           /* blue tone, adjust as needed */
   font-Size: 1rem;
 }
+.stock-picker-container {
+  width: 100%;
+  max-width: var(--app-max-width);
+}
 /* Stock list row tweaks */
 .stocklist-table-wrapper {
   overflow-x: auto;
