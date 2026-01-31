@@ -190,23 +190,9 @@ export default function Wallet() {
           if (typeof w?.sweep_percentage !== "undefined") localStorage.setItem("sweep_percentage", String(w.sweep_percentage ?? ""));
           if (typeof w?.broker !== "undefined") localStorage.setItem("broker", String(w.broker || ""));
           if (typeof w?.member_timezone !== "undefined") localStorage.setItem("memberTimezone", String(w.member_timezone || ""));
+          if (typeof w?.merchant_name !== "undefined") localStorage.setItem("merchantName", String(w.merchant_name || ""));
+          if (typeof w?.merchant_id !== "undefined") localStorage.setItem("merchantId", String(w.merchant_id || ""));
           if (typeof w?.election_type !== "undefined") localStorage.setItem("election_type", String(w.election_type || ""));
-          
-          // ✅ Only update merchant values if wallet returns non-empty values
-          // This prevents overwriting values set by SplashScreen with empty strings
-          console.log("[Wallet] Merchant data from API:", { 
-            merchant_id: w?.merchant_id, 
-            merchant_name: w?.merchant_name,
-            localStorage_merchantId: localStorage.getItem("merchantId"),
-            localStorage_merchantName: localStorage.getItem("merchantName")
-          });
-          
-          if (w?.merchant_name && String(w.merchant_name).trim()) {
-            localStorage.setItem("merchantName", String(w.merchant_name).trim());
-          }
-          if (w?.merchant_id && String(w.merchant_id).trim()) {
-            localStorage.setItem("merchantId", String(w.merchant_id).trim());
-          }
 
           window.dispatchEvent(new Event("member-updated"));
         } catch (e) {

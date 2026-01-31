@@ -6,7 +6,7 @@ import { AnimatePresence } from "framer-motion";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import FrameOnly from "./components/FrameOnly.jsx";
 import Layout from "./components/Layout.jsx";
-
+import AdminLanding from "./pages/AdminLanding";
 import SplashScreen from "./pages/SplashScreen.jsx";
 import Promotions from "./pages/Promotions.jsx";
 import Login from "./pages/Login.jsx";
@@ -156,6 +156,7 @@ function App() {
 
             {/* Pages WITH layout (Header + Footer) */}
             <Route element={<Layout />}>
+              <Route path="/admin-home" element={<AdminLanding />} />
               <Route
                 path="/about"
                 element={

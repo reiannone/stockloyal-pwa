@@ -1,6 +1,6 @@
 // src/components/Footer.jsx
 import React, { useMemo, useState, useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   Wallet as WalletIcon,
   Briefcase,
@@ -10,6 +10,7 @@ import {
   Share2,
 } from "lucide-react";
 import { useBasket } from "../context/BasketContext";
+import SlideOutPanel from "./SlideOutPanel";
 import OrderTicker from "./OrderTicker";
 
 // Footer.jsx
@@ -17,8 +18,8 @@ console.log("FOOTER LIVE:", import.meta.url, import.meta.env.MODE);
 
 export default function Footer() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { basket } = useBasket();
+  const [showMenu, setShowMenu] = useState(false);
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
@@ -26,10 +27,42 @@ export default function Footer() {
   // ✅ Check if user is authenticated as admin
   const isAdminAuthenticated = useMemo(() => {
     return localStorage.getItem("adminAuthenticated") === "true";
-  }, [showAdminPrompt]); // Re-check when prompt changes
+  }, [showMenu]); // Re-check when menu opens
 
   // ✅ Admin password (in production, this should be handled server-side)
   const ADMIN_PASSWORD = "StockLoyal2024!";
+
+  // ✅ Hide PWA install banner when admin menu is open - More robust version
+  useEffect(() => {
+    // Try multiple selectors to find the PWA banner
+    const selectors = [
+      '.fixed.bottom-0.z-50',
+      '.fixed.bottom-0[class*="z-"]',
+      'div[class*="bg-gradient-to-r"][class*="from-blue-"]',
+      '.animate-slide-up',
+      'div.fixed.bottom-0'
+    ];
+    
+    let banner = null;
+    for (const selector of selectors) {
+      const elements = document.querySelectorAll(selector);
+      for (const el of elements) {
+        if (el.textContent.includes('Install') || el.textContent.includes('StockLoyal')) {
+          banner = el;
+          break;
+        }
+      }
+      if (banner) break;
+    }
+    
+    if (banner) {
+      if (showMenu) {
+        banner.style.display = 'none';
+      } else {
+        banner.style.display = 'block';
+      }
+    }
+  }, [showMenu]);
 
   // ✅ Handle admin authentication
   const handleAdminAuth = () => {
@@ -38,17 +71,17 @@ export default function Footer() {
       setShowAdminPrompt(false);
       setAdminPassword("");
       setAdminError("");
-      navigate("/admin-home");
+      setShowMenu(true);
     } else {
       setAdminError("Incorrect password. Please try again.");
       setAdminPassword("");
     }
   };
 
-  // ✅ Handle settings button click - navigate directly to admin-home
+  // ✅ Handle settings button click
   const handleSettingsClick = () => {
     if (isAdminAuthenticated) {
-      navigate("/admin-home");
+      setShowMenu(true);
     } else {
       setShowAdminPrompt(true);
     }
@@ -89,6 +122,25 @@ export default function Footer() {
     { to: "/social", label: "Community Feed", icon: <Share2 className="nav-icon" /> },
   ];
 
+  // Full menu matches App.jsx routing exactly (replicated from Footer.jsx)
+  const allPages = [
+    { to: "/admin-home", label: "Admin Home" },
+    { to: "/payments-processing", label: "Payments Processing" },
+    { to: "/csv-files", label: "CSV Files Browser" },
+    { to: "/admin", label: "Merchant Admin" },
+    { to: "/admin-broker", label: "Broker Admin" },
+    { to: "/wallet-admin", label: "Member Wallet Admin" },
+    { to: "/ledger-admin", label: "Ledger Admin" },
+    { to: "/orders-admin", label: "Orders Admin" },
+    { to: "/webhook-admin", label: "Webhook API Admin" },
+    { to: "/merchant-notifications", label: "Merchant API Notifications" },
+    { to: "/broker-notifications", label: "Broker API Notifications" },
+    { to: "/admin-faq", label: "FAQ Admin" },
+    { to: "/data-quality", label: "Data Quality Check" },
+    { to: "/demo-launch", label: "Demo Launch" },
+    { to: "/skyblue-rewards", label: "Sky Blue Airlines Miles" },
+  ];
+
   return (
     <>
       {/* OrderTicker above the footer navigation */}
@@ -116,11 +168,11 @@ export default function Footer() {
             </Link>
           ))}
 
-          {/* Settings - navigates to Admin Landing */}
+          {/* Settings toggle styled like other icons */}
           <button
             type="button"
             onClick={handleSettingsClick}
-            className={`nav-item ${location.pathname === "/admin-home" ? "nav-item-active" : ""}`}
+            className="nav-item"
             style={{
               background: "transparent",
               border: 0,
@@ -174,7 +226,7 @@ export default function Footer() {
             </h3>
             
             <p style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px" }}>
-              Enter the admin password to access admin settings.
+              Enter the admin password to access the settings menu.
             </p>
 
             <input
@@ -235,6 +287,94 @@ export default function Footer() {
           </div>
         </div>
       )}
+
+      {/* Slide-out menu */}
+      <SlideOutPanel
+        isOpen={showMenu}
+        onClose={() => setShowMenu(false)}
+        title="Admin Menu"
+        side="right"
+        width={260}
+        zIndex={2200}
+        anchorSelector=".app-container"
+      >
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {allPages.map(({ to, label }, idx) => (
+            <li
+              key={to}
+              style={{
+                borderTop: idx === 0 ? "none" : "1px solid #e5e7eb",
+              }}
+            >
+              <Link
+                to={to}
+                onClick={() => setShowMenu(false)}
+                className={`flex items-center w-full text-gray-700 transition hover:bg-gray-100 ${
+                  location.pathname === to ? "bg-gray-50 font-medium text-blue-600" : ""
+                }`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  width: "100%",
+                  padding: "6px 12px",
+                  textDecoration: "none",
+                  fontSize: "0.875rem",
+                  lineHeight: 1.2,
+                }}
+              >
+                <span>{label}</span>
+
+                {/* ✅ Basket count in the slide-out menu */}
+                {to === "/basket" && orderCount > 0 && (
+                  <span
+                    style={{
+                      minWidth: 18,
+                      height: 18,
+                      fontSize: "0.7rem",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "9999px",
+                      background: "#1f2937",
+                      color: "#fff",
+                      marginLeft: "auto",
+                      padding: "0 4px",
+                    }}
+                  >
+                    {orderCount}
+                  </span>
+                )}
+              </Link>
+            </li>
+          ))}
+          
+          {/* ✅ Logout Admin Button */}
+          <li style={{ borderTop: "1px solid #e5e7eb", marginTop: "12px" }}>
+            <button
+              onClick={() => {
+                localStorage.removeItem("adminAuthenticated");
+                setShowMenu(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                width: "100%",
+                padding: "6px 12px",
+                textDecoration: "none",
+                fontSize: "0.875rem",
+                lineHeight: 1.2,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "#ef4444",
+                fontWeight: "500",
+              }}
+            >
+              Logout Admin
+            </button>
+          </li>
+        </ul>
+      </SlideOutPanel>
     </>
   );
 }
