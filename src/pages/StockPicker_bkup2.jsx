@@ -42,7 +42,7 @@ const categoryImages = {
 export default function StockPicker() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { addToBasket, basket } = useBasket();
+  const { addToBasket } = useBasket();
 
   const memberId = localStorage.getItem("memberId");
   const { amount: initialAmount = 0, pointsUsed: initialPoints = 0 } =
@@ -657,15 +657,6 @@ export default function StockPicker() {
           });
         });
 
-        // ✅ Update localStorage with basket totals (add to existing)
-        const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-        const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-        const newTotalAmount = existingAmount + cashValue;
-        const newTotalPoints = existingPoints + selectedPoints;
-        
-        localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-        localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
-
         // Close the modal and navigate to basket
         setIsStockListOpen(false);
         setLoadingCategory(false);
@@ -775,7 +766,6 @@ export default function StockPicker() {
 
     // Calculate amount per stock
     const amountPerStock = cashValue / selectedStocks.length;
-    const pointsPerStock = Math.round(selectedPoints / selectedStocks.length);
 
     // Add to basket
     selectedDetails.forEach((stock) => {
@@ -784,18 +774,9 @@ export default function StockPicker() {
         name: stock.name,
         price: stock.price,
         amount: amountPerStock,
-        pointsUsed: pointsPerStock,
+        pointsUsed: Math.round(selectedPoints / selectedStocks.length),
       });
     });
-
-    // ✅ Update localStorage with basket totals (add to existing)
-    const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-    const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-    const newTotalAmount = existingAmount + cashValue;
-    const newTotalPoints = existingPoints + selectedPoints;
-    
-    localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-    localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
 
     // ✅ Close the stock list sheet but stay on StockPicker page
     setIsStockListOpen(false);
@@ -1308,7 +1289,7 @@ export default function StockPicker() {
 
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
 <p className="form-disclosure">
-  <strong>My Picks:</strong> Securities saved under <em>My Picks</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
+  <strong>My Picks:</strong> Securities saved under <em>My Picks</em> are used in the sweep process according to the schedule 
   established between {merchantName} and {brokerName}. You can add securities to your <em>My Picks</em> list by selecting 
   them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
   To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
@@ -1526,18 +1507,18 @@ export default function StockPicker() {
           Go back to Wallet
         </button>
 
-        {/* ✅ Go to Basket - shows basket item count */}
+        {/* ✅ Go with My Picks - loads picks to basket and navigates */}
         <button
           type="button"
           className="btn-primary"
-          onClick={() => navigate("/basket")}
-          disabled={!basket || basket.length === 0}
+          onClick={() => handleMyPicks(true)}
+          disabled={memberPicks.size === 0}
           style={{
-            opacity: (!basket || basket.length === 0) ? 0.5 : 1,
-            cursor: (!basket || basket.length === 0) ? "not-allowed" : "pointer",
+            opacity: memberPicks.size === 0 ? 0.5 : 1,
+            cursor: memberPicks.size === 0 ? "not-allowed" : "pointer",
           }}
         >
-          Go to Basket {basket?.length > 0 && `(${basket.length})`}
+          Go with My Picks {memberPicks.size > 0 && `(${memberPicks.size})`}
         </button>
       </div>
 
