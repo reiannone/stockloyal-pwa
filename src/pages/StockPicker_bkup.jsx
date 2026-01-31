@@ -535,8 +535,7 @@ export default function StockPicker() {
   };
 
   // ✅ My Picks - Member's persisted picks from junction table
-  // autoLoadToBasket: false = just show the list, true = load to basket and navigate
-  const handleMyPicks = async (autoLoadToBasket = false) => {
+  const handleMyPicks = async () => {
     if (isCashOutsideLimits) return;
 
     try {
@@ -574,7 +573,6 @@ export default function StockPicker() {
       if (cleaned.length === 0) {
         setResults([]);
         setStockError("You haven't saved any picks yet. Browse categories and tap the ❤️ to save stocks for your monthly sweep!");
-        setLoadingCategory(false);
         return;
       }
 
@@ -628,41 +626,13 @@ export default function StockPicker() {
           name: `${displayName}${allocLabel}`,
           price: q?.price ?? null,
           change: q?.change ?? 0,
-          allocation_pct: r.allocation_pct,
         };
       });
 
       setResults(merged);
       
       // ✅ Auto-select all stocks for My Picks
-      const allSymbols = merged.map((s) => s.symbol);
-      setSelectedStocks(allSymbols);
-
-      // ✅ If autoLoadToBasket, add all picks to basket and navigate
-      if (autoLoadToBasket && merged.length > 0) {
-        // Calculate amount per stock (equal split or use allocation_pct)
-        merged.forEach((stock) => {
-          const allocation = stock.allocation_pct 
-            ? (parseFloat(stock.allocation_pct) / 100) 
-            : (1 / merged.length);
-          const stockAmount = cashValue * allocation;
-          const stockPoints = Math.round(selectedPoints * allocation);
-
-          addToBasket({
-            symbol: stock.symbol,
-            name: stock.name,
-            price: stock.price,
-            amount: stockAmount,
-            pointsUsed: stockPoints,
-          });
-        });
-
-        // Close the modal and navigate to basket
-        setIsStockListOpen(false);
-        setLoadingCategory(false);
-        navigate("/basket");
-        return;
-      }
+      setSelectedStocks(merged.map((s) => s.symbol));
     } catch (err) {
       console.error("[StockPicker] my picks error:", err);
       setStockError("Failed to load your picks.");
@@ -991,13 +961,13 @@ export default function StockPicker() {
           {/* Points side */}
           <div style={{ flex: 1, textAlign: "center" }}>
             <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: "0.25rem" }}>
-              Points Used
+              Points
             </div>
             <div style={{ fontSize: "1.5rem", fontWeight: "700", color: "#2563eb" }}>
               {selectedPoints.toLocaleString()}
             </div>
             <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-              out of {maxPoints.toLocaleString()} available
+              of {maxPoints.toLocaleString()}
             </div>
           </div>
 
@@ -1051,7 +1021,7 @@ export default function StockPicker() {
                 marginTop: "0.25rem",
               }}
             >
-              @ {conversionRate}/pt conversion rate
+              @ {conversionRate}/pt
             </div>
           </div>
         </div>
@@ -1097,10 +1067,10 @@ export default function StockPicker() {
           msOverflowStyle: "none",
         }}
       >
-        {/* My Picks button - opens slide to view/manage */}
+        {/* My Picks button */}
         <button
           type="button"
-          onClick={() => handleMyPicks(false)}
+          onClick={handleMyPicks}
           className="category-btn"
           disabled={isCashOutsideLimits}
           style={{
