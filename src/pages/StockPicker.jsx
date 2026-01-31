@@ -264,7 +264,9 @@ export default function StockPicker() {
           setMaxOrderAmount(Number(data.wallet.max_order_amount));
         }
 
-        if (data.wallet?.sweep_percentage && data.wallet?.points) {
+        // ✅ Only apply sweep default if user didn't pass explicit values via location.state
+        // This preserves the slider values when user comes from Wallet with specific amounts
+        if (initialPoints === 0 && data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
               (parseFloat(data.wallet.sweep_percentage) / 100)
@@ -276,7 +278,7 @@ export default function StockPicker() {
         setError("Network error while fetching wallet.");
       }
     })();
-  }, [memberId]);
+  }, [memberId, initialPoints]);
 
   useEffect(() => {
     let r = parseFloat(localStorage.getItem("conversion_rate") || "0");
@@ -293,6 +295,14 @@ export default function StockPicker() {
       setCashInput(val.toFixed(2));
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
+
+  // ✅ Sync slider values to localStorage so they always reflect current selection
+  useEffect(() => {
+    if (selectedPoints > 0 && cashValue > 0) {
+      localStorage.setItem("basket_amount", cashValue.toFixed(2));
+      localStorage.setItem("basket_pointsUsed", String(selectedPoints));
+    }
+  }, [selectedPoints, cashValue]);
 
   // --- Points handler ---
   const handlePointsChange = (val) => {
@@ -657,14 +667,7 @@ export default function StockPicker() {
           });
         });
 
-        // ✅ Update localStorage with basket totals (add to existing)
-        const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-        const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-        const newTotalAmount = existingAmount + cashValue;
-        const newTotalPoints = existingPoints + selectedPoints;
-        
-        localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-        localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
+        // ✅ localStorage is already synced via useEffect when slider changes
 
         // Close the modal and navigate to basket
         setIsStockListOpen(false);
@@ -788,14 +791,7 @@ export default function StockPicker() {
       });
     });
 
-    // ✅ Update localStorage with basket totals (add to existing)
-    const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-    const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-    const newTotalAmount = existingAmount + cashValue;
-    const newTotalPoints = existingPoints + selectedPoints;
-    
-    localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-    localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
+    // ✅ localStorage is already synced via useEffect when slider changes
 
     // ✅ Close the stock list sheet but stay on StockPicker page
     setIsStockListOpen(false);
