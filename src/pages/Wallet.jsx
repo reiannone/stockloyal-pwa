@@ -99,8 +99,19 @@ export default function Wallet() {
   };
 
   const isMerchantMissing = (w) => {
-    const m = String(w?.merchant_id ?? "").trim();
-    return !m || m.toLowerCase() === "null" || m.toLowerCase() === "undefined";
+    // Check wallet object first
+    const walletMerchant = String(w?.merchant_id ?? "").trim();
+    if (walletMerchant && walletMerchant.toLowerCase() !== "null" && walletMerchant.toLowerCase() !== "undefined") {
+      return false; // Merchant found in wallet
+    }
+    
+    // ✅ Fallback: Check localStorage (set by SplashScreen)
+    const lsMerchant = String(localStorage.getItem("merchantId") ?? "").trim();
+    if (lsMerchant && lsMerchant.toLowerCase() !== "null" && lsMerchant.toLowerCase() !== "undefined") {
+      return false; // Merchant found in localStorage
+    }
+    
+    return true; // No merchant found anywhere
   };
 
   const openWarningThenRedirect = ({ title, message, cta, route }) => {
@@ -280,9 +291,16 @@ export default function Wallet() {
           if (typeof w?.portfolio_value !== "undefined") localStorage.setItem("portfolio_value", Number(w.portfolio_value || 0).toFixed(2));
           if (typeof w?.broker !== "undefined") localStorage.setItem("broker", String(w.broker || ""));
           if (typeof w?.member_timezone !== "undefined") localStorage.setItem("memberTimezone", String(w.member_timezone || ""));
-          if (typeof w?.merchant_name !== "undefined") localStorage.setItem("merchantName", String(w.merchant_name || ""));
-          if (typeof w?.merchant_id !== "undefined") localStorage.setItem("merchantId", String(w.merchant_id || ""));
           if (typeof w?.election_type !== "undefined") localStorage.setItem("election_type", String(w.election_type || ""));
+          
+          // ✅ Only update merchant values if wallet returns non-empty values
+          if (w?.merchant_name && String(w.merchant_name).trim()) {
+            localStorage.setItem("merchantName", String(w.merchant_name).trim());
+          }
+          if (w?.merchant_id && String(w.merchant_id).trim()) {
+            localStorage.setItem("merchantId", String(w.merchant_id).trim());
+          }
+          
           window.dispatchEvent(new Event("member-updated"));
         } catch (e) {
           console.warn("[Wallet] localStorage sync failed on refresh", e);
@@ -414,7 +432,7 @@ export default function Wallet() {
   const conversionRate = Number(wallet.conversion_rate || 0);
   const portfolioValue = Number(wallet.portfolio_value || 0);
   const sweepPct = wallet.sweep_percentage ?? null;
-  const merchantName = wallet.merchant_name || "Merchant";
+  const merchantName = wallet.merchant_name || localStorage.getItem("merchantName") || "Merchant";
 
   // ✅ Use cash_balance from database directly (already converted)
   const effectiveCashBalance = baseCash;
