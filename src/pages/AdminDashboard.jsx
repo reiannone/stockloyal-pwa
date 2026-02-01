@@ -162,16 +162,24 @@ export default function AdminDashboard() {
   return (
     <div className="app-container app-content">
       {/* Header */}
-      <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 className="heading" style={{ margin: 0 }}>Admin Dashboard</h1>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+      <h1 className="page-title">Admin Dashboard</h1>
+      <p className="page-deck">This admin page presents high-level statistics and key performance indicators (KPIs) for the StockLoyal platform.</p>
+      
+      {/* Period Filter Card */}
+      <div className="card" style={{ 
+        marginBottom: "1.5rem", 
+        backgroundColor: "#fef3c7", 
+        borderLeft: "4px solid #f59e0b",
+        padding: "1rem"
+      }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ color: "#6b7280", fontSize: "0.85rem" }}>Period:</span>
           {[1, 7, 30, 90, 365].map((d) => (
             <button
               key={d}
               className={days === d ? "btn-primary" : "btn-secondary"}
               onClick={() => setDays(d)}
-              style={{ padding: "0.4rem 0.75rem", fontSize: "0.85rem" }}
+              style={{ width: "4.00rem", padding: "0.4rem 0.75rem", fontSize: "0.85rem" }}
             >
               {d === 1 ? "Today" : `${d}d`}
             </button>
@@ -184,7 +192,7 @@ export default function AdminDashboard() {
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
-      </div>
+      </div> 
 
       {loading ? (
         <p className="body-text">Loading dashboard...</p>
