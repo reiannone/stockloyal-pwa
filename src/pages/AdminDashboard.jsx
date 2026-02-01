@@ -20,7 +20,6 @@ import {
   Clock,
   Send,
   CheckCircle,
-  Target,
   XCircle,
   Wallet,
   Coins,
@@ -34,6 +33,11 @@ import {
   ShoppingBasket,
   RefreshCw,
   BarChart3,
+  Receipt,
+  ArrowDownLeft,
+  ArrowUpRight,
+  AlertCircle,
+  RotateCcw,
 } from "lucide-react";
 
 // ── Summary Card Component ──────────────────────────────────────────────────
@@ -139,7 +143,7 @@ export default function AdminDashboard() {
   const ordersByBrokerColumns = [
     { key: "broker", label: "Broker" },
     { key: "orders_count", label: "Orders", align: "right", render: (v) => fmt(v) },
-    { key: "executed_count", label: "Executed", align: "right", render: (v) => fmt(v) },
+    { key: "executed_count", label: "Exec/Conf", align: "right", render: (v) => fmt(v) },
     { key: "orders_amount", label: "Amount", align: "right", render: (v) => fmtCurrency(v) },
   ];
 
@@ -231,57 +235,6 @@ export default function AdminDashboard() {
           </div>
 
           {/* ══════════════════════════════════════════════════════════════════
-              ORDERS SECTION
-          ══════════════════════════════════════════════════════════════════ */}
-          <h2 className="subheading">Orders</h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "0.75rem",
-              marginBottom: "1.5rem",
-            }}
-          >
-            <SummaryCard
-              title="Total Orders"
-              value={fmt(realtime?.orders?.total)}
-              icon={Package}
-              color="#3b82f6"
-            />
-            <SummaryCard
-              title="Pending"
-              value={fmt(realtime?.orders?.pending)}
-              icon={Clock}
-              color="#f59e0b"
-            />
-            <SummaryCard
-              title="Placed"
-              value={fmt(realtime?.orders?.placed)}
-              icon={Send}
-              color="#6366f1"
-            />
-            <SummaryCard
-              title="Confirmed"
-              value={fmt(realtime?.orders?.confirmed)}
-              icon={CheckCircle}
-              color="#10b981"
-            />
-            <SummaryCard
-              title="Executed"
-              value={fmt(realtime?.orders?.executed)}
-              subValue={fmtCurrency(realtime?.orders?.executed_amount)}
-              icon={Target}
-              color="#059669"
-            />
-            <SummaryCard
-              title="Failed/Cancelled"
-              value={fmt((parseInt(realtime?.orders?.failed) || 0) + (parseInt(realtime?.orders?.cancelled) || 0))}
-              icon={XCircle}
-              color="#dc2626"
-            />
-          </div>
-
-          {/* ══════════════════════════════════════════════════════════════════
               WALLET / POINTS SECTION
           ══════════════════════════════════════════════════════════════════ */}
           <h2 className="subheading">Wallets & Points</h2>
@@ -331,11 +284,120 @@ export default function AdminDashboard() {
               color="#ec4899"
             />
           </div>
+          
+          {/* ══════════════════════════════════════════════════════════════════
+              ORDERS SECTION
+          ══════════════════════════════════════════════════════════════════ */}
+          <h2 className="subheading">Orders & Baskets</h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "0.75rem",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <SummaryCard
+              title="Total Orders"
+              value={fmt(realtime?.orders?.total)}
+              icon={Package}
+              color="#3b82f6"
+            />
+            <SummaryCard
+              title="Pending"
+              value={fmt(realtime?.orders?.pending)}
+              icon={Clock}
+              color="#f59e0b"
+            />
+            <SummaryCard
+              title="Placed"
+              value={fmt(realtime?.orders?.placed)}
+              icon={Send}
+              color="#6366f1"
+            />
+            <SummaryCard
+              title="Executed/Confirmed"
+              value={fmt((parseInt(realtime?.orders?.executed) || 0) + (parseInt(realtime?.orders?.confirmed) || 0))}
+              subValue={fmtCurrency(realtime?.orders?.executed_amount)}
+              icon={CheckCircle}
+              color="#059669"
+            />
+            <SummaryCard
+              title="Failed/Cancelled"
+              value={fmt((parseInt(realtime?.orders?.failed) || 0) + (parseInt(realtime?.orders?.cancelled) || 0))}
+              icon={XCircle}
+              color="#dc2626"
+            />
+            <SummaryCard
+              title="Total Baskets"
+              value={fmt(realtime?.baskets?.total)}
+              icon={ShoppingBasket}
+              color="#10b981"
+            />
+          </div>
 
           {/* ══════════════════════════════════════════════════════════════════
-              SOCIAL & BASKETS SECTION
+              TRANSACTIONS LEDGER SECTION
           ══════════════════════════════════════════════════════════════════ */}
-          <h2 className="subheading">Social & Baskets</h2>
+          <h2 className="subheading">Transactions Ledger</h2>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "0.75rem",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <SummaryCard
+              title="Total Transactions"
+              value={fmt(realtime?.ledger?.total)}
+              icon={Receipt}
+              color="#3b82f6"
+            />
+            <SummaryCard
+              title="Inbound"
+              value={fmt(realtime?.ledger?.inbound)}
+              subValue={`${fmt(realtime?.ledger?.inbound_points)} pts / ${fmtCurrency(realtime?.ledger?.inbound_cash)}`}
+              icon={ArrowDownLeft}
+              color="#10b981"
+            />
+            <SummaryCard
+              title="Outbound"
+              value={fmt(realtime?.ledger?.outbound)}
+              subValue={`${fmt(realtime?.ledger?.outbound_points)} pts / ${fmtCurrency(realtime?.ledger?.outbound_cash)}`}
+              icon={ArrowUpRight}
+              color="#f59e0b"
+            />
+            <SummaryCard
+              title="Pending"
+              value={fmt(realtime?.ledger?.pending)}
+              icon={Clock}
+              color="#f59e0b"
+            />
+            <SummaryCard
+              title="Confirmed"
+              value={fmt(realtime?.ledger?.confirmed)}
+              icon={CheckCircle}
+              color="#10b981"
+            />
+            <SummaryCard
+              title="Failed"
+              value={fmt(realtime?.ledger?.failed)}
+              icon={AlertCircle}
+              color="#dc2626"
+            />
+            <SummaryCard
+              title="Reversed"
+              value={fmt(realtime?.ledger?.reversed)}
+              icon={RotateCcw}
+              color="#6366f1"
+            />
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════════
+              SOCIAL SECTION
+          ══════════════════════════════════════════════════════════════════ */}
+          <h2 className="subheading">Social</h2>
           <div
             style={{
               display: "grid",
@@ -362,12 +424,6 @@ export default function AdminDashboard() {
               value={fmt(realtime?.social?.likes)}
               icon={Heart}
               color="#ef4444"
-            />
-            <SummaryCard
-              title="Total Baskets"
-              value={fmt(realtime?.baskets?.total)}
-              icon={ShoppingBasket}
-              color="#10b981"
             />
           </div>
 
@@ -595,63 +651,6 @@ export default function AdminDashboard() {
             </>
           )}
 
-          {/* ══════════════════════════════════════════════════════════════════
-              RECENT ORDERS
-          ══════════════════════════════════════════════════════════════════ */}
-          {realtime?.recent_orders && realtime.recent_orders.length > 0 && (
-            <>
-              <h2 className="subheading">Recent Orders</h2>
-              <div className="card">
-                <table className="basket-table">
-                  <thead>
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Member</th>
-                      <th>Symbol</th>
-                      <th style={{ textAlign: "right" }}>Amount</th>
-                      <th style={{ textAlign: "center" }}>Status</th>
-                      <th>Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {realtime.recent_orders.map((order) => (
-                      <tr key={order.order_id}>
-                        <td>#{order.order_id}</td>
-                        <td>{order.member_id}</td>
-                        <td><strong>{order.symbol}</strong></td>
-                        <td style={{ textAlign: "right" }}>{fmtCurrency(order.amount)}</td>
-                        <td style={{ textAlign: "center" }}>
-                          <span
-                            style={{
-                              padding: "0.2rem 0.5rem",
-                              borderRadius: "4px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              backgroundColor:
-                                order.status === "executed" ? "#d1fae5"
-                                : order.status === "failed" || order.status === "cancelled" ? "#fee2e2"
-                                : order.status === "confirmed" ? "#dbeafe"
-                                : "#fef3c7",
-                              color:
-                                order.status === "executed" ? "#065f46"
-                                : order.status === "failed" || order.status === "cancelled" ? "#991b1b"
-                                : order.status === "confirmed" ? "#1e40af"
-                                : "#92400e",
-                            }}
-                          >
-                            {order.status}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: "0.8rem", color: "#6b7280" }}>
-                          {order.placed_at ? new Date(order.placed_at).toLocaleString() : "-"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
         </>
       )}
     </div>

@@ -97,7 +97,7 @@ try {
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
                 SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
                 COALESCE(SUM(amount), 0) as total_amount,
-                COALESCE(SUM(CASE WHEN status = 'executed' THEN amount ELSE 0 END), 0) as executed_amount
+                COALESCE(SUM(CASE WHEN status IN ('executed', 'confirmed') THEN amount ELSE 0 END), 0) as executed_amount
             FROM orders
         ");
         $result['orders'] = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -125,7 +125,7 @@ try {
                 COALESCE(broker, 'Unknown') as broker,
                 COUNT(*) as orders_count,
                 COALESCE(SUM(amount), 0) as orders_amount,
-                SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END) as executed_count
+                SUM(CASE WHEN status IN ('executed', 'confirmed') THEN 1 ELSE 0 END) as executed_count
             FROM orders
             GROUP BY broker
             ORDER BY orders_count DESC
@@ -193,6 +193,41 @@ try {
         ];
     } catch (Throwable $e) {
         $result['points'] = ['total_transactions' => 0, 'error' => $e->getMessage()];
+    }
+
+    // ── Transactions Ledger Comprehensive Stats ────────────────────────────
+    try {
+        $stmt = $db->query("
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as inbound,
+                SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound,
+                COALESCE(SUM(CASE WHEN direction = 'inbound' THEN amount_points ELSE 0 END), 0) as inbound_points,
+                COALESCE(SUM(CASE WHEN direction = 'outbound' THEN ABS(amount_points) ELSE 0 END), 0) as outbound_points,
+                COALESCE(SUM(CASE WHEN direction = 'inbound' THEN amount_cash ELSE 0 END), 0) as inbound_cash,
+                COALESCE(SUM(CASE WHEN direction = 'outbound' THEN ABS(amount_cash) ELSE 0 END), 0) as outbound_cash,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN status = 'reversed' THEN 1 ELSE 0 END) as reversed
+            FROM transactions_ledger
+        ");
+        $ledger = $stmt->fetch(PDO::FETCH_ASSOC);
+        $result['ledger'] = [
+            'total' => $ledger['total'] ?? 0,
+            'inbound' => $ledger['inbound'] ?? 0,
+            'outbound' => $ledger['outbound'] ?? 0,
+            'inbound_points' => $ledger['inbound_points'] ?? 0,
+            'outbound_points' => $ledger['outbound_points'] ?? 0,
+            'inbound_cash' => $ledger['inbound_cash'] ?? 0,
+            'outbound_cash' => $ledger['outbound_cash'] ?? 0,
+            'pending' => $ledger['pending'] ?? 0,
+            'confirmed' => $ledger['confirmed'] ?? 0,
+            'failed' => $ledger['failed'] ?? 0,
+            'reversed' => $ledger['reversed'] ?? 0,
+        ];
+    } catch (Throwable $e) {
+        $result['ledger'] = ['total' => 0, 'error' => $e->getMessage()];
     }
 
     // ── Points by Merchant (from ledger) ────────────────────────────────────
