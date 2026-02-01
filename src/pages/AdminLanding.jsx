@@ -19,6 +19,7 @@ import {
   LogOut,
   Lock,
   Share2,
+  ChartColumn,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -142,6 +143,13 @@ export default function AdminLanding() {
       icon: <HelpCircle size={32} />,
       color: "#84cc16",
       bgColor: "#f7fee7",
+    },
+    {
+      to: "/dashboard",
+      label: "Daily App Performance Charts",
+      icon: <ChartColumn size={32} />,
+      color: "#22c55e",
+      bgColor: "#f0fdf4",
     },
     {
       to: "/data-quality",
