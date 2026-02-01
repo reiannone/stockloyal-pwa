@@ -8,7 +8,7 @@ import { Search, Heart, HeartOff, Trash2 } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
-const MY_PICKS = "My Picks"; // ✅ Member's persisted picks
+const MY_PICKS = "My List"; // ✅ Member's persisted list of securities for sweeps
 const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
 // ✅ Map categories -> API screener IDs
@@ -264,7 +264,9 @@ export default function StockPicker() {
           setMaxOrderAmount(Number(data.wallet.max_order_amount));
         }
 
-        if (data.wallet?.sweep_percentage && data.wallet?.points) {
+        // ✅ Only apply sweep default if user didn't pass explicit values via location.state
+        // This preserves the slider values when user comes from Wallet with specific amounts
+        if (initialPoints === 0 && data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
               (parseFloat(data.wallet.sweep_percentage) / 100)
@@ -276,7 +278,7 @@ export default function StockPicker() {
         setError("Network error while fetching wallet.");
       }
     })();
-  }, [memberId]);
+  }, [memberId, initialPoints]);
 
   useEffect(() => {
     let r = parseFloat(localStorage.getItem("conversion_rate") || "0");
@@ -293,6 +295,14 @@ export default function StockPicker() {
       setCashInput(val.toFixed(2));
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
+
+  // ✅ Sync slider values to localStorage so they always reflect current selection
+  useEffect(() => {
+    if (selectedPoints > 0 && cashValue > 0) {
+      localStorage.setItem("basket_amount", cashValue.toFixed(2));
+      localStorage.setItem("basket_pointsUsed", String(selectedPoints));
+    }
+  }, [selectedPoints, cashValue]);
 
   // --- Points handler ---
   const handlePointsChange = (val) => {
@@ -316,7 +326,7 @@ export default function StockPicker() {
         )} and $${maxOrderAmount.toFixed(2)} for your broker.`
       : "";
 
-  // ✅ NEW: Save a stock to My Picks
+  // ✅ NEW: Save a stock to My List
   const handleSaveToPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -333,7 +343,7 @@ export default function StockPicker() {
       if (data?.success) {
         setMemberPicks(prev => new Set([...prev, sym]));
         // Show brief feedback
-        console.log(`✅ Added ${sym} to My Picks`);
+        console.log(`✅ Added ${sym} to My List`);
       } else {
         console.error("Failed to save pick:", data?.error);
         alert(data?.error || "Failed to save pick");
@@ -346,7 +356,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ NEW: Remove a stock from My Picks
+  // ✅ NEW: Remove a stock from My List
   const handleRemoveFromPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -367,13 +377,13 @@ export default function StockPicker() {
           return next;
         });
         
-        // If we're in My Picks view, also remove from results
+        // If we're in My List view, also remove from results
         if (category === MY_PICKS) {
           setResults(prev => prev.filter(s => s.symbol !== sym));
           setSelectedStocks(prev => prev.filter(s => s !== sym));
         }
         
-        console.log(`🗑️ Removed ${sym} from My Picks`);
+        console.log(`🗑️ Removed ${sym} from My List`);
       } else {
         console.error("Failed to remove pick:", data?.error);
         alert(data?.error || "Failed to remove pick");
@@ -534,7 +544,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ My Picks - Member's persisted picks from junction table
+  // ✅ My List - Member's persisted picks from junction table
   // autoLoadToBasket: false = just show the list, true = load to basket and navigate
   const handleMyPicks = async (autoLoadToBasket = false) => {
     if (isCashOutsideLimits) return;
@@ -634,7 +644,7 @@ export default function StockPicker() {
 
       setResults(merged);
       
-      // ✅ Auto-select all stocks for My Picks
+      // ✅ Auto-select all stocks for My List
       const allSymbols = merged.map((s) => s.symbol);
       setSelectedStocks(allSymbols);
 
@@ -657,14 +667,7 @@ export default function StockPicker() {
           });
         });
 
-        // ✅ Update localStorage with basket totals (add to existing)
-        const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-        const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-        const newTotalAmount = existingAmount + cashValue;
-        const newTotalPoints = existingPoints + selectedPoints;
-        
-        localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-        localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
+        // ✅ localStorage is already synced via useEffect when slider changes
 
         // Close the modal and navigate to basket
         setIsStockListOpen(false);
@@ -673,7 +676,7 @@ export default function StockPicker() {
         return;
       }
     } catch (err) {
-      console.error("[StockPicker] my picks error:", err);
+      console.error("[StockPicker] My List error:", err);
       setStockError("Failed to load your picks.");
     } finally {
       setLoadingCategory(false);
@@ -788,14 +791,7 @@ export default function StockPicker() {
       });
     });
 
-    // ✅ Update localStorage with basket totals (add to existing)
-    const existingAmount = parseFloat(localStorage.getItem("basket_amount") || "0");
-    const existingPoints = parseInt(localStorage.getItem("basket_pointsUsed") || "0", 10);
-    const newTotalAmount = existingAmount + cashValue;
-    const newTotalPoints = existingPoints + selectedPoints;
-    
-    localStorage.setItem("basket_amount", newTotalAmount.toFixed(2));
-    localStorage.setItem("basket_pointsUsed", String(newTotalPoints));
+    // ✅ localStorage is already synced via useEffect when slider changes
 
     // ✅ Close the stock list sheet but stay on StockPicker page
     setIsStockListOpen(false);
@@ -910,7 +906,7 @@ export default function StockPicker() {
     const isSaving = savingPick === sym;
 
     if (category === MY_PICKS) {
-      // In My Picks view, show remove button
+      // In My List view, show remove button
       return (
         <button
           type="button"
@@ -919,7 +915,7 @@ export default function StockPicker() {
             handleRemoveFromPicks(sym);
           }}
           disabled={isSaving}
-          title="Remove from My Picks"
+          title="Remove from My List"
           style={{
             background: "transparent",
             border: "none",
@@ -949,7 +945,7 @@ export default function StockPicker() {
           }
         }}
         disabled={isSaving}
-        title={isPicked ? "Remove from My Picks" : "Add to My Picks"}
+        title={isPicked ? "Remove from My List" : "Add to My List"}
         style={{
           background: "transparent",
           border: "none",
@@ -1122,7 +1118,7 @@ export default function StockPicker() {
           msOverflowStyle: "none",
         }}
       >
-        {/* My Picks button - opens slide to view/manage */}
+        {/* My List button - opens slide to view/manage */}
         <button
           type="button"
           onClick={() => handleMyPicks(false)}
@@ -1308,8 +1304,8 @@ export default function StockPicker() {
 
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
 <p className="form-disclosure">
-  <strong>My Picks:</strong> Securities saved under <em>My Picks</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
-  established between {merchantName} and {brokerName}. You can add securities to your <em>My Picks</em> list by selecting 
+  <strong>My List:</strong> Securities saved under <em>My List</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
+  established between {merchantName} and {brokerName}. You can add securities to your <em>My List</em> by selecting 
   them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
   To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
 </p>
