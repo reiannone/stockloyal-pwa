@@ -449,7 +449,7 @@ export default function AdminLanding() {
               Payments Processing
             </button>
             <button
-              onClick={() => navigate("/data-quality")}
+              onClick={() => navigate("/dashboard")}
               style={{
                 padding: "10px 20px",
                 backgroundColor: "#10b981",
@@ -464,8 +464,8 @@ export default function AdminLanding() {
                 gap: "8px",
               }}
             >
-              <CheckCircle size={18} />
-              Run Data Check
+              <ChartColumn size={18} />
+              KPI Dashbaord
             </button>
             <button
               onClick={() => navigate("/orders-admin")}
