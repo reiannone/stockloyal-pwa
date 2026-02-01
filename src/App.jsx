@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import SocialPostsAdmin from "./pages/SocialPostsAdmin.jsx";
 import WebhookAdmin from "./pages/WebhookAdmin.jsx";
 import MerchantNotifications from "./pages/MerchantNotifications.jsx";
 import BrokerNotifications from "./pages/BrokerNotifications.jsx";
@@ -330,6 +331,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <OrdersAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/social-posts-admin"
+                element={
+                  <PageWrapper>
+                    <SocialPostsAdmin />
                   </PageWrapper>
                 }
               />

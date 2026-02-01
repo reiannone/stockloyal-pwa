@@ -18,6 +18,7 @@ import {
   Plane,
   LogOut,
   Lock,
+  Share2,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -59,20 +60,6 @@ export default function AdminLanding() {
   // Admin menu tiles with icons and colors
   const adminTiles = [
     {
-      to: "/payments-processing",
-      label: "Payments Processing",
-      icon: <CreditCard size={32} />,
-      color: "#3b82f6",
-      bgColor: "#eff6ff",
-    },
-    {
-      to: "/csv-files",
-      label: "CSV Files Browser",
-      icon: <FileText size={32} />,
-      color: "#8b5cf6",
-      bgColor: "#f5f3ff",
-    },
-    {
       to: "/admin",
       label: "Merchant Admin",
       icon: <Store size={32} />,
@@ -92,6 +79,20 @@ export default function AdminLanding() {
       icon: <Wallet size={32} />,
       color: "#06b6d4",
       bgColor: "#ecfeff",
+    },
+    {
+      to: "/payments-processing",
+      label: "Payments Processing",
+      icon: <CreditCard size={32} />,
+      color: "#3b82f6",
+      bgColor: "#eff6ff",
+    },
+    {
+      to: "/csv-files",
+      label: "CSV Files Browser",
+      icon: <FileText size={32} />,
+      color: "#8b5cf6",
+      bgColor: "#f5f3ff",
     },
     {
       to: "/ledger-admin",
@@ -127,6 +128,13 @@ export default function AdminLanding() {
       icon: <BellRing size={32} />,
       color: "#ef4444",
       bgColor: "#fef2f2",
+    },
+    {
+      to: "/social-posts-admin",
+      label: "Monitor Social Posts",
+      icon: <Share2 size={32} />,
+      color: "#84cc16",
+      bgColor: "#f7fee7",
     },
     {
       to: "/admin-faq",
@@ -414,7 +422,7 @@ export default function AdminLanding() {
           </h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <button
-              onClick={() => navigate("/demo-launch")}
+              onClick={() => navigate("/payments-processing")}
               style={{
                 padding: "10px 20px",
                 backgroundColor: "#3b82f6",
@@ -429,8 +437,8 @@ export default function AdminLanding() {
                 gap: "8px",
               }}
             >
-              <Rocket size={18} />
-              Launch Demo
+              <CreditCard size={18} />
+              Payments Processing
             </button>
             <button
               onClick={() => navigate("/data-quality")}
