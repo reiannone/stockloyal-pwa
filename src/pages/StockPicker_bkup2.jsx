@@ -51,6 +51,28 @@ export default function StockPicker() {
   // ✅ Get merchant name from localStorage
   const merchantName =
     localStorage.getItem("merchantName") || "Merchant";
+
+  // ✅ Get sweep day from localStorage (merchant data)
+  const sweepDay = localStorage.getItem("sweep_day");
+
+  // ✅ Format sweep day for display (handles VARCHAR values)
+  // Returns null for "T+1" (handled separately) or invalid values
+  const formatSweepDay = (day) => {
+    if (!day || day === "null") return null;
+    // "T+1" is handled separately in the JSX, return null here
+    if (day === "T+1") return null;
+    const numDay = parseInt(day, 10);
+    if (isNaN(numDay)) return null;
+    if (numDay === -1) return "the last business day";
+    if (numDay === 1) return "the 1st";
+    if (numDay === 2) return "the 2nd";
+    if (numDay === 3) return "the 3rd";
+    if (numDay === 21) return "the 21st";
+    if (numDay === 22) return "the 22nd";
+    if (numDay === 23) return "the 23rd";
+    if (numDay === 31) return "the 31st";
+    return `the ${numDay}th`;
+  };
   
     // ✅ Get broker name from localStorage
   const brokerName =
@@ -1005,6 +1027,26 @@ export default function StockPicker() {
       <p style={{ textAlign: "center", color: "#6b7280", marginBottom: "1rem" }}>
         All orders are placed through your broker, {brokerName}.
       </p>
+
+      {/* Sweep Schedule Notice */}
+      {(sweepDay === "T+1" || formatSweepDay(sweepDay)) && (
+        <div style={{
+          background: "#fef3c7",
+          border: "1px solid #f59e0b",
+          borderRadius: "8px",
+          padding: "0.75rem 1rem",
+          marginBottom: "1rem",
+          textAlign: "center",
+          fontSize: "0.875rem",
+          color: "#92400e"
+        }}>
+          {sweepDay === "T+1" ? (
+            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day.</>
+          ) : (
+            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month.</>
+          )}
+        </div>
+      )}
 
       {/* Points / Cash display */}
       <div

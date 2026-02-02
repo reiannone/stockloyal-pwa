@@ -17,6 +17,12 @@ export default function OrderConfirmation() {
     localStorage.getItem("brokerName") ||
     "your broker";
 
+  // ✅ Pull merchant name from storage for sweep schedule message
+  const merchantName =
+    localStorage.getItem("merchantName") ||
+    localStorage.getItem("merchant_name") ||
+    "Your merchant";
+
   const [orders, setOrders] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
   const [error, setError] = useState("");
@@ -34,7 +40,26 @@ export default function OrderConfirmation() {
   // ✅ NEW: broker notification status (passed from Order.jsx)
   const brokerNotified = location.state?.brokerNotified || false;
 
+  // ✅ NEW: Sweep schedule info (passed from Order.jsx)
+  const isImmediateProcessing = location.state?.isImmediateProcessing !== false; // default true
+  const sweepDay = location.state?.sweepDay || localStorage.getItem("sweep_day") || null;
+
   const pointsUsed = location.state?.pointsUsed || 0;
+
+  // ✅ Helper to format sweep day display
+  const getSweepDayDisplay = (day) => {
+    if (!day) return "";
+    const d = parseInt(day, 10);
+    if (d === -1) return "last day";
+    if (d >= 1 && d <= 31) {
+      const suffix = (d === 1 || d === 21 || d === 31) ? "st" 
+        : (d === 2 || d === 22) ? "nd" 
+        : (d === 3 || d === 23) ? "rd" 
+        : "th";
+      return `${d}${suffix}`;
+    }
+    return String(day);
+  };
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -199,19 +224,19 @@ export default function OrderConfirmation() {
         Showing times in <strong>{memberTimezone || detectedTz}</strong>
       </p>
 
-      {/* ✅ Success banner + green check + broker name from storage */}
+      {/* ✅ Success banner + green check - different message for queued vs placed */}
       {showSuccess && (
         <>
-          {console.log("🎉 SUCCESS BANNER RENDERING - showSuccess:", showSuccess)}
+          {console.log("🎉 SUCCESS BANNER RENDERING - showSuccess:", showSuccess, "isImmediateProcessing:", isImmediateProcessing)}
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 10,
-              background: "#ecfdf5",
-              border: "2px solid #10b981",
-              color: "#065f46",
+              background: isImmediateProcessing ? "#ecfdf5" : "#fef3c7",
+              border: isImmediateProcessing ? "2px solid #10b981" : "2px solid #f59e0b",
+              color: isImmediateProcessing ? "#065f46" : "#78350f",
               borderRadius: 12,
               padding: "12px 16px",
               marginBottom: 16,
@@ -220,62 +245,64 @@ export default function OrderConfirmation() {
               textAlign: "center",
             }}
           >
-            <CheckCircle size={28} color="#10b981" />
+            <CheckCircle size={28} color={isImmediateProcessing ? "#10b981" : "#f59e0b"} />
             <span>
-              Buy Orders Successfully Placed — your buy order submitted to{" "}
-              {brokerName}!
+              {isImmediateProcessing 
+                ? `Buy Orders Successfully Placed — your buy order submitted to ${brokerName}!`
+                : `Buy Orders Pending — your order is queued for processing on the ${getSweepDayDisplay(sweepDay)} of the month.`
+              }
             </span>
           </div>
         </>
       )}
 
-      {/* ✅ Broker Notification Banner */}
-      {showSuccess && (
-        brokerNotified ? (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              background: "#e0f2fe",
-              border: "2px solid #0284c7",
-              color: "#0c4a6e",
-              borderRadius: 12,
-              padding: "12px 16px",
-              marginBottom: 16,
-              fontWeight: 600,
-              fontSize: "0.9rem",
-              textAlign: "center",
-            }}
-          >
-            <CheckCircle size={24} color="#0284c7" />
-            <span>✅ Broker Notified: {brokerName} received your order details</span>
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              background: "#f3f4f6",
-              border: "2px solid #9ca3af",
-              color: "#374151",
-              borderRadius: 12,
-              padding: "12px 16px",
-              marginBottom: 16,
-              fontWeight: 600,
-              fontSize: "0.9rem",
-              textAlign: "center",
-            }}
-          >
-            <CheckCircle size={24} color="#6b7280" />
-            <span>
-              Broker Notification Pending: {brokerName} webhook is processing (you can still view your orders below)
-            </span>
-          </div>
-        )
+      {/* ✅ Sweep Schedule Banner for queued/batched orders */}
+      {showSuccess && !isImmediateProcessing && sweepDay && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            background: "#e0f2fe",
+            border: "2px solid #0284c7",
+            color: "#0c4a6e",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            textAlign: "center",
+          }}
+        >
+          <span>
+            📅 {merchantName} processes points conversion and trade orders on the {getSweepDayDisplay(sweepDay)} of each month.
+          </span>
+        </div>
+      )}
+
+      {/* ✅ Broker Notification Banner (only for immediate/T+1 processing when broker confirmed) */}
+      {showSuccess && isImmediateProcessing && brokerNotified && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            background: "#e0f2fe",
+            border: "2px solid #0284c7",
+            color: "#0c4a6e",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 16,
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            textAlign: "center",
+          }}
+        >
+          <CheckCircle size={24} color="#0284c7" />
+          <span>✅ Broker Notified: {brokerName} received your order details</span>
+        </div>
       )}
 
       {/* ✅ Merchant Notification Banner */}
