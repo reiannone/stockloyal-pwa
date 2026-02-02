@@ -75,15 +75,20 @@ try {
     $webhook_url = $input['webhook_url'] ?? null;
     $api_key     = $input['api_key']     ?? null;
 
+    // ✅ NEW: logo URL
+    $logo_url    = $input['logo_url']    ?? null;
+
     // Normalize empty strings to NULL so DB stays clean
     $webhook_url = (is_string($webhook_url) && trim($webhook_url) === '') ? null : $webhook_url;
     $api_key     = (is_string($api_key)     && trim($api_key) === '')     ? null : $api_key;
+    $logo_url    = (is_string($logo_url)    && trim($logo_url) === '')    ? null : $logo_url;
 
     // Insert or update
     $sql = "
         INSERT INTO broker_master (
             broker_id,
             broker_name,
+            logo_url,
             ach_bank_name,
             ach_routing_num,
             ach_account_num,
@@ -109,6 +114,7 @@ try {
         VALUES (
             :broker_id,
             :broker_name,
+            :logo_url,
             :ach_bank_name,
             :ach_routing_num,
             :ach_account_num,
@@ -133,6 +139,7 @@ try {
         )
         ON DUPLICATE KEY UPDATE
             broker_name              = VALUES(broker_name),
+            logo_url                 = VALUES(logo_url),
             ach_bank_name            = VALUES(ach_bank_name),
             ach_routing_num          = VALUES(ach_routing_num),
             ach_account_num          = VALUES(ach_account_num),
@@ -159,6 +166,7 @@ try {
 
     $stmt->bindValue(':broker_id',   $broker_id,   PDO::PARAM_STR);
     $stmt->bindValue(':broker_name', $broker_name, PDO::PARAM_STR);
+    $stmt->bindValue(':logo_url',    $logo_url);
 
     $stmt->bindValue(':ach_bank_name',    $ach_bank_name);
     $stmt->bindValue(':ach_routing_num',  $ach_routing_num);

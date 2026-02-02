@@ -1,10 +1,12 @@
 // src/pages/AdminBroker.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { apiGet, apiPost } from "../api.js";
+import { Upload, X, Image } from "lucide-react";
 
 const BROKER_TEMPLATE = {
   broker_id: "",
   broker_name: "",
+  logo_url: "", // ✅ Broker logo image URL
   ach_bank_name: "",
   ach_routing_num: "",
   ach_account_num: "",
@@ -37,6 +39,11 @@ export default function AdminBroker() {
   const [brokers, setBrokers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ Logo upload state
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const fileInputRef = useRef(null);
 
   // Load all brokers
   const fetchBrokers = async () => {
@@ -145,6 +152,92 @@ export default function AdminBroker() {
     }));
   };
 
+  // ✅ Handle logo file selection and upload
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      alert('Please select a valid image file (PNG, JPG, GIF, WebP, or SVG)');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image file must be less than 2MB');
+      return;
+    }
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setLogoPreview(event.target.result);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload the file
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      formData.append('broker_id', selected?.broker_id || 'new');
+      formData.append('type', 'broker');
+
+      // Use fetch directly for multipart form data
+      // Resolve API base the same way api.js does
+      const apiBase = window.__VITE_API_BASE__
+        || window.__API_BASE__
+        || localStorage.getItem('apiBase')
+        || import.meta.env.VITE_API_BASE
+        || (window.location.hostname === 'localhost' 
+          ? 'http://localhost/api' 
+          : 'https://api.stockloyal.com/api');
+      
+      const response = await fetch(`${apiBase}/upload-logo.php`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data?.success && data?.url) {
+        setSelected((prev) => ({
+          ...prev,
+          logo_url: data.url,
+        }));
+        setLogoPreview(null); // Clear preview, use actual URL
+        console.log('✅ Logo uploaded:', data.url);
+      } else {
+        alert('Upload failed: ' + (data?.error || 'Unknown error'));
+        setLogoPreview(null);
+      }
+    } catch (err) {
+      console.error('[AdminBroker] Logo upload failed:', err);
+      alert('Upload failed: network/server error');
+      setLogoPreview(null);
+    } finally {
+      setUploadingLogo(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // ✅ Remove logo
+  const handleRemoveLogo = () => {
+    setSelected((prev) => ({
+      ...prev,
+      logo_url: '',
+    }));
+    setLogoPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const startNewBroker = () => {
     setSelected({ ...BROKER_TEMPLATE });
   };
@@ -188,6 +281,132 @@ export default function AdminBroker() {
                 required
               />
             </FormRow>
+
+            {/* ✅ Logo Upload Section */}
+            <div style={{ 
+              gridColumn: '1 / -1', 
+              marginTop: '0.5rem', 
+              marginBottom: '1rem',
+              padding: '1rem',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb'
+            }}>
+              <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block' }}>
+                Broker Logo:
+              </label>
+              
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                {/* Logo Preview */}
+                <div style={{
+                  width: '100px',
+                  height: '100px',
+                  border: '2px dashed #d1d5db',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#fff',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}>
+                  {(logoPreview || selected?.logo_url) ? (
+                    <>
+                      <img 
+                        src={logoPreview || selected?.logo_url} 
+                        alt="Broker logo"
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          background: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        title="Remove logo"
+                      >
+                        <X size={12} />
+                      </button>
+                    </>
+                  ) : (
+                    <Image size={32} color="#9ca3af" />
+                  )}
+                </div>
+
+                {/* Upload Controls */}
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
+                    onChange={handleLogoUpload}
+                    style={{ display: 'none' }}
+                    id="logo-upload-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingLogo}
+                    className="btn-secondary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.875rem',
+                      padding: '0.5rem 1rem',
+                    }}
+                  >
+                    <Upload size={16} />
+                    {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                  </button>
+                  <p style={{ 
+                    margin: '0.5rem 0 0 0', 
+                    fontSize: '0.75rem', 
+                    color: '#6b7280',
+                    lineHeight: 1.4
+                  }}>
+                    Recommended: Square image, 200x200px or larger.<br />
+                    Formats: PNG, JPG, GIF, WebP, SVG (max 2MB)
+                  </p>
+                  
+                  {/* Logo URL display */}
+                  {selected?.logo_url && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={selected.logo_url}
+                        readOnly
+                        style={{ 
+                          fontSize: '0.75rem', 
+                          fontFamily: 'monospace',
+                          background: '#f3f4f6',
+                          color: '#6b7280',
+                        }}
+                        title="Logo URL"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
             {/* ACH Routing */}
             <FormRow label="ACH Bank Name">
@@ -481,6 +700,7 @@ export default function AdminBroker() {
           <table className="basket-table">
             <thead>
               <tr>
+                <th style={{ width: '50px' }}>Logo</th>
                 <th>Broker ID</th>
                 <th>Name</th>
                 <th>Support Phone</th>
@@ -493,6 +713,7 @@ export default function AdminBroker() {
                   key={b.broker_id}
                   onClick={() => {
                     setSelected({ ...b });
+                    setLogoPreview(null); // Clear any preview when switching brokers
                     // Scroll to top of page - multiple methods for compatibility
                     const container = document.getElementById('admin-broker-container');
                     if (container) {
@@ -504,6 +725,22 @@ export default function AdminBroker() {
                   style={{ cursor: 'pointer' }}
                   title="Click to edit this broker"
                 >
+                  <td style={{ textAlign: 'center' }}>
+                    {b.logo_url ? (
+                      <img 
+                        src={b.logo_url} 
+                        alt={`${b.broker_name} logo`}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          objectFit: 'contain',
+                          borderRadius: '4px',
+                        }}
+                      />
+                    ) : (
+                      <Image size={24} color="#d1d5db" />
+                    )}
+                  </td>
                   <td>{b.broker_id}</td>
                   <td>{b.broker_name}</td>
                   <td>{b.support_phone || "-"}</td>
@@ -512,7 +749,7 @@ export default function AdminBroker() {
               ))}
               {brokers.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: "center" }}>
+                  <td colSpan={5} style={{ textAlign: "center" }}>
                     No brokers found. Click &quot;New Broker&quot; to add one.
                   </td>
                 </tr>
