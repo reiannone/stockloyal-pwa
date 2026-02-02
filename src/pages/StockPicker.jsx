@@ -55,12 +55,15 @@ export default function StockPicker() {
   // ✅ Get sweep day from localStorage (merchant data)
   const sweepDay = localStorage.getItem("sweep_day");
 
-  // ✅ Format sweep day for display
+  // ✅ Format sweep day for display (handles VARCHAR values)
+  // Returns null for "T+1" (handled separately) or invalid values
   const formatSweepDay = (day) => {
     if (!day || day === "null") return null;
+    // "T+1" is handled separately in the JSX, return null here
+    if (day === "T+1") return null;
     const numDay = parseInt(day, 10);
     if (isNaN(numDay)) return null;
-    if (numDay === -1) return "the last day";
+    if (numDay === -1) return "the last business day";
     if (numDay === 1) return "the 1st";
     if (numDay === 2) return "the 2nd";
     if (numDay === 3) return "the 3rd";
@@ -1026,7 +1029,7 @@ export default function StockPicker() {
       </p>
 
       {/* Sweep Schedule Notice */}
-      {formatSweepDay(sweepDay) && (
+      {(sweepDay === "T+1" || formatSweepDay(sweepDay)) && (
         <div style={{
           background: "#fef3c7",
           border: "1px solid #f59e0b",
@@ -1037,7 +1040,11 @@ export default function StockPicker() {
           fontSize: "0.875rem",
           color: "#92400e"
         }}>
-          📅 <strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month.
+          {sweepDay === "T+1" ? (
+            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day.</>
+          ) : (
+            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month.</>
+          )}
         </div>
       )}
 

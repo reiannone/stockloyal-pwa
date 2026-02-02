@@ -212,45 +212,57 @@ export default function Order() {
         // Don't fail the order if merchant notification fails
       }
 
-      // ✅ Notify broker (server-side uses broker_master.webhook_url + api_key)
-      // Modeled after merchant_notifications approach: try/catch, log on server, do NOT fail order
+      // ✅ Check sweep_day to determine if broker processes should run
+      // Run broker notifications if sweep_day is missing, null, or "T+1" (immediate processing)
+      // Skip if sweep_day is 1-31 (orders will be batched on that day of the month)
+      const sweepDay = localStorage.getItem("sweep_day");
+      const runBrokerProcesses = !sweepDay || sweepDay === "T+1";
+
       let brokerNotified = false;
-      try {
-        const brokerPayload = {
-          event_type: "order_placed",
-          member_id: memberId,
-          merchant_id: merchantId,
-          broker: broker || "Not linked", // matches broker_master.broker_name OR broker_id (backend supports both)
-          basket_id: basketId,
-          amount: totalAmount,
-          points_used: Math.round(pointsUsed),
-          orders: enrichedBasket.map((s, idx) => ({
-            symbol: s.symbol,
-            shares: s.shares || 0,
-            points_used: pointsAlloc[idx] || 0,
-            amount: perOrderAmount,
-            order_type: "market",
-          })),
-          timestamp: new Date().toISOString(),
-        };
 
-        const brokerRes = await apiPost("notify_broker.php", brokerPayload);
-        brokerNotified = brokerRes?.notified || brokerRes?.success;
-        console.log("[Order] Broker notified:", brokerNotified, brokerRes);
-      } catch (err) {
-        console.error("[Order] Failed to notify broker:", err);
-        // Don't fail the order if broker notification fails
-      }
-
-      // broker confirm stub
-      setTimeout(async () => {
+      if (!runBrokerProcesses) {
+        console.log("[Order] Skipping broker processes - sweep_day:", sweepDay, "(orders will be batched)");
+      } else {
+        console.log("[Order] Running broker processes - sweep_day:", sweepDay || "(not set)");
+        // ✅ Notify broker (server-side uses broker_master.webhook_url + api_key)
+        // Modeled after merchant_notifications approach: try/catch, log on server, do NOT fail order
         try {
-          const confirmRes = await apiPost("broker_confirm.php", { member_id: memberId });
-          console.log("[Order] Broker confirm response:", confirmRes);
+          const brokerPayload = {
+            event_type: "order_placed",
+            member_id: memberId,
+            merchant_id: merchantId,
+            broker: broker || "Not linked", // matches broker_master.broker_name OR broker_id (backend supports both)
+            basket_id: basketId,
+            amount: totalAmount,
+            points_used: Math.round(pointsUsed),
+            orders: enrichedBasket.map((s, idx) => ({
+              symbol: s.symbol,
+              shares: s.shares || 0,
+              points_used: pointsAlloc[idx] || 0,
+              amount: perOrderAmount,
+              order_type: "market",
+            })),
+            timestamp: new Date().toISOString(),
+          };
+
+          const brokerRes = await apiPost("notify_broker.php", brokerPayload);
+          brokerNotified = brokerRes?.notified || brokerRes?.success;
+          console.log("[Order] Broker notified:", brokerNotified, brokerRes);
         } catch (err) {
-          console.error("[Order] Broker confirm error:", err);
+          console.error("[Order] Failed to notify broker:", err);
+          // Don't fail the order if broker notification fails
         }
-      }, 300000); // 5 minutes = 5 * 60 * 1000 = 300,000ms
+
+        // broker confirm stub
+        setTimeout(async () => {
+          try {
+            const confirmRes = await apiPost("broker_confirm.php", { member_id: memberId });
+            console.log("[Order] Broker confirm response:", confirmRes);
+          } catch (err) {
+            console.error("[Order] Broker confirm error:", err);
+          }
+        }, 60000); // 1 minutes = 1 * 60 * 1000 = 60,000ms
+      }
 
       // 🔊 success ping here
       playPing();

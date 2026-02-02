@@ -55,9 +55,15 @@ try {
             }
         }
 
-        // ✅ Normalize sweep_day to integer (or null)
+        // ✅ Normalize sweep_day - keep as string to support "T+1" and numeric day values
+        // sweep_day is VARCHAR(10): NULL, "T+1", "1"-"31", "-1"
         if (isset($row["sweep_day"])) {
-            $row["sweep_day"] = is_null($row["sweep_day"]) ? null : (int)$row["sweep_day"];
+            // Keep as string, just trim whitespace if present
+            $row["sweep_day"] = is_null($row["sweep_day"]) ? null : trim((string)$row["sweep_day"]);
+            // Convert empty string to null
+            if ($row["sweep_day"] === "") {
+                $row["sweep_day"] = null;
+            }
         }
 
         echo json_encode([

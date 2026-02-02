@@ -428,7 +428,7 @@ export default function Admin() {
                 color: '#78350f', 
                 marginBottom: '1rem' 
               }}>
-                Configure the day of month when automated sweep orders are processed for this merchant's members.
+                Configure when orders are processed. Select <strong>T+1</strong> for same-day order processing with next-day settlement, or choose a specific day of the month for batched sweep orders.
               </p>
               
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -444,6 +444,7 @@ export default function Admin() {
                     style={{ width: '100%' }}
                   >
                     <option value="">No automatic sweep</option>
+                    <option value="T+1">T+1 (Same-day processing, next-day settlement)</option>
                     <option value="1">1st of the month</option>
                     <option value="15">15th of the month</option>
                     <option value="-1">Last day of the month</option>
