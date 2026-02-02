@@ -752,10 +752,23 @@ export default function StockPicker() {
   };
 
   // --- Toggle stock selection ---
+  // ✅ Also adds to My List when selecting
   const toggleSelect = (symbol) => {
-    setSelectedStocks((prev) =>
-      prev.includes(symbol) ? prev.filter((s) => s !== symbol) : [...prev, symbol]
-    );
+    const sym = symbol.toUpperCase();
+    const isCurrentlySelected = selectedStocks.includes(sym);
+    
+    if (isCurrentlySelected) {
+      // Deselecting - just remove from selected list
+      setSelectedStocks((prev) => prev.filter((s) => s !== sym));
+    } else {
+      // Selecting - add to selected list AND add to My List
+      setSelectedStocks((prev) => [...prev, sym]);
+      
+      // Also add to My List if not already in picks
+      if (!memberPicks.has(sym)) {
+        handleSaveToPicks(sym);
+      }
+    }
   };
 
   // --- Close stock list ---
@@ -863,9 +876,10 @@ export default function StockPicker() {
     }
   };
 
-  // --- Handle clicking on symbol to view chart ---
+  // --- Handle clicking on symbol to view chart (TradingView) ---
   const handleSymbolClick = (symbol) => {
-    window.open(`https://finance.yahoo.com/quote/${symbol}`, "_blank");
+    if (!symbol) return;
+    navigate(`/symbol-chart/${encodeURIComponent(symbol)}`);
   };
 
   // --- Cash input handlers ---

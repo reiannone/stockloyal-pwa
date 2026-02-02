@@ -25,6 +25,12 @@ $conversion_rate  = $input["conversion_rate"]  ?? 1.0;
 $active_status    = $input["active_status"]    ?? 1;
 $promotion_text   = $input["promotion_text"]   ?? "";
 $promotion_active = $input["promotion_active"] ?? 0;
+$sweep_day        = $input["sweep_day"]        ?? null;
+
+// Handle "custom" value - should already be converted to number on frontend
+if ($sweep_day === "" || $sweep_day === "custom") {
+    $sweep_day = null;
+}
 
 // ✅ Extract tier fields
 $tier1_name            = $input["tier1_name"]            ?? null;
@@ -58,6 +64,12 @@ try {
     $exists = $check->fetchColumn();
 
     if ($exists) {
+        // Check if sweep_day changed to update sweep_modified_at
+        $checkSweep = $conn->prepare("SELECT sweep_day FROM merchant WHERE merchant_id = :merchant_id LIMIT 1");
+        $checkSweep->execute(["merchant_id" => $merchant_id]);
+        $oldSweepDay = $checkSweep->fetchColumn();
+        $sweepChanged = ($oldSweepDay !== $sweep_day);
+        
         // ---------------- UPDATE existing row ----------------
         $stmt = $conn->prepare("
             UPDATE merchant SET 
@@ -72,6 +84,8 @@ try {
                 active_status   = :active_status,
                 promotion_text  = :promotion_text,
                 promotion_active= :promotion_active,
+                sweep_day       = :sweep_day,
+                sweep_modified_at = " . ($sweepChanged ? "NOW()" : "sweep_modified_at") . ",
                 tier1_name            = :tier1_name,
                 tier1_min_points      = :tier1_min_points,
                 tier1_conversion_rate = :tier1_conversion_rate,
@@ -100,6 +114,7 @@ try {
                 contact_email, contact_phone, website_url,
                 webhook_url, api_key,
                 conversion_rate, active_status, promotion_text, promotion_active,
+                sweep_day, sweep_modified_at,
                 tier1_name, tier1_min_points, tier1_conversion_rate,
                 tier2_name, tier2_min_points, tier2_conversion_rate,
                 tier3_name, tier3_min_points, tier3_conversion_rate,
@@ -111,6 +126,7 @@ try {
                 :contact_email, :contact_phone, :website_url,
                 :webhook_url, :api_key,
                 :conversion_rate, :active_status, :promotion_text, :promotion_active,
+                :sweep_day, " . ($sweep_day ? "NOW()" : "NULL") . ",
                 :tier1_name, :tier1_min_points, :tier1_conversion_rate,
                 :tier2_name, :tier2_min_points, :tier2_conversion_rate,
                 :tier3_name, :tier3_min_points, :tier3_conversion_rate,
@@ -134,6 +150,7 @@ try {
         "active_status"    => $active_status,
         "promotion_text"   => $promotion_text,
         "promotion_active" => $promotion_active,
+        "sweep_day"        => $sweep_day,
         "tier1_name"            => $tier1_name,
         "tier1_min_points"      => $tier1_min_points,
         "tier1_conversion_rate" => $tier1_conversion_rate,

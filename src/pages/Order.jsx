@@ -250,7 +250,7 @@ export default function Order() {
         } catch (err) {
           console.error("[Order] Broker confirm error:", err);
         }
-      }, 1000);
+      }, 300000); // 5 minutes = 5 * 60 * 1000 = 300,000ms
 
       // 🔊 success ping here
       playPing();

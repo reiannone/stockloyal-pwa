@@ -15,7 +15,6 @@ import {
 import {
   Users,
   UserPlus,
-  CalendarDays,
   Package,
   Clock,
   Send,
@@ -43,7 +42,7 @@ import {
 // ── Summary Card Component ──────────────────────────────────────────────────
 function SummaryCard({ title, value, subValue, icon: Icon, color = "#3b82f6" }) {
   return (
-    <div className="card" style={{ padding: "1rem", display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+    <div className="card" style={{ padding: "1rem", display: "flex", alignItems: "flex-start", gap: "0.75rem", minWidth: 0 }}>
       <div
         style={{
           width: "40px",
@@ -58,15 +57,22 @@ function SummaryCard({ title, value, subValue, icon: Icon, color = "#3b82f6" }) 
       >
         <Icon size={20} color={color} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: "#6b7280", fontSize: "0.75rem", marginBottom: "0.15rem" }}>
+      <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+        <div style={{ color: "#6b7280", fontSize: "0.75rem", marginBottom: "0.15rem", whiteSpace: "nowrap" }}>
           {title}
         </div>
-        <div style={{ fontSize: "1.35rem", fontWeight: "700", color: "#111827" }}>
+        <div style={{ 
+          fontSize: "1.25rem", 
+          fontWeight: "700", 
+          color: "#111827", 
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis"
+        }}>
           {value}
         </div>
         {subValue && (
-          <div style={{ color: "#9ca3af", fontSize: "0.7rem", marginTop: "0.1rem" }}>
+          <div style={{ color: "#9ca3af", fontSize: "0.7rem", marginTop: "0.1rem", whiteSpace: "nowrap" }}>
             {subValue}
           </div>
         )}
@@ -88,7 +94,7 @@ export default function AdminDashboard() {
     try {
       const [analyticsRes, realtimeRes] = await Promise.all([
         apiPost("get-admin-metrics.php", { days }),
-        apiPost("get-admin-realtime.php", {}),
+        apiPost("get-admin-realtime.php", { days }), // Now filtered by days
       ]);
 
       if (analyticsRes?.success) {
@@ -202,6 +208,23 @@ export default function AdminDashboard() {
         <p className="body-text">Loading dashboard...</p>
       ) : (
         <>
+          {/* Active Filter Indicator */}
+          <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "0.5rem", 
+            marginBottom: "1rem",
+            padding: "0.5rem 0.75rem",
+            background: "#eff6ff",
+            borderRadius: "6px",
+            border: "1px solid #bfdbfe"
+          }}>
+            <span style={{ fontSize: "0.85rem", color: "#1e40af" }}>
+              📊 Showing data for: <strong>{days === 1 ? "Today" : `Last ${days} days`}</strong>
+              {realtime?.filter && <span style={{ color: "#6b7280", marginLeft: "0.5rem" }}>({realtime.filter})</span>}
+            </span>
+          </div>
+
           {/* ══════════════════════════════════════════════════════════════════
               MEMBERS SECTION
           ══════════════════════════════════════════════════════════════════ */}
@@ -209,28 +232,22 @@ export default function AdminDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "0.75rem",
               marginBottom: "1.5rem",
             }}
           >
             <SummaryCard
               title="Total Members"
-              value={fmt(realtime?.members?.total)}
+              value={fmt(realtime?.members?.total_all_time)}
               icon={Users}
               color="#8b5cf6"
             />
             <SummaryCard
-              title="New (7 days)"
-              value={fmt(realtime?.members?.new_7d)}
+              title={`New (${days === 1 ? "Today" : `${days}d`})`}
+              value={fmt(realtime?.members?.new_in_period)}
               icon={UserPlus}
               color="#10b981"
-            />
-            <SummaryCard
-              title="New (30 days)"
-              value={fmt(realtime?.members?.new_30d)}
-              icon={CalendarDays}
-              color="#3b82f6"
             />
           </div>
 
@@ -241,7 +258,7 @@ export default function AdminDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "0.75rem",
               marginBottom: "1.5rem",
             }}
@@ -292,7 +309,7 @@ export default function AdminDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "0.75rem",
               marginBottom: "1.5rem",
             }}
@@ -343,7 +360,7 @@ export default function AdminDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "0.75rem",
               marginBottom: "1.5rem",
             }}
@@ -401,7 +418,7 @@ export default function AdminDashboard() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "0.75rem",
               marginBottom: "1.5rem",
             }}

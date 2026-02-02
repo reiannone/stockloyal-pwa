@@ -40,6 +40,11 @@ try {
             }
         }
 
+        // ✅ Normalize conversion_rate to float
+        if (isset($row["conversion_rate"])) {
+            $row["conversion_rate"] = is_null($row["conversion_rate"]) ? null : (float)$row["conversion_rate"];
+        }
+
         // ✅ Normalize tier fields to proper types
         for ($i = 1; $i <= 6; $i++) {
             if (isset($row["tier{$i}_min_points"])) {
@@ -48,6 +53,11 @@ try {
             if (isset($row["tier{$i}_conversion_rate"])) {
                 $row["tier{$i}_conversion_rate"] = is_null($row["tier{$i}_conversion_rate"]) ? null : (float)$row["tier{$i}_conversion_rate"];
             }
+        }
+
+        // ✅ Normalize sweep_day to integer (or null)
+        if (isset($row["sweep_day"])) {
+            $row["sweep_day"] = is_null($row["sweep_day"]) ? null : (int)$row["sweep_day"];
         }
 
         echo json_encode([

@@ -63,6 +63,7 @@ function SplashScreen() {
       localStorage.removeItem("cashBalance");
       localStorage.removeItem("portfolio_value");
       localStorage.removeItem("basketId");
+      localStorage.removeItem("sweep_day");
       
       localStorage.setItem("memberId", memberId);
       console.log("[Splash] Stored memberId:", memberId);
@@ -144,6 +145,14 @@ function SplashScreen() {
               if (merchantData.merchant_name) {
                 localStorage.setItem("merchantName", merchantData.merchant_name);
                 console.log("[Splash] Stored merchantName:", merchantData.merchant_name);
+              }
+              
+              // ✅ Save sweep_day for StockPicker and Basket pages
+              if (merchantData.sweep_day !== undefined && merchantData.sweep_day !== null) {
+                localStorage.setItem("sweep_day", String(merchantData.sweep_day));
+                console.log("[Splash] Stored sweep_day:", merchantData.sweep_day);
+              } else {
+                localStorage.removeItem("sweep_day"); // Clear if not set
               }
             } catch (e) {
               console.warn(

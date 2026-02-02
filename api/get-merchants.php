@@ -34,6 +34,8 @@ try {
             updated_at,
             promotion_text,
             promotion_active,
+            sweep_day,
+            sweep_modified_at,
             tier1_name,
             tier1_min_points,
             tier1_conversion_rate,
@@ -65,6 +67,7 @@ try {
         if (isset($r['conversion_rate']))  $r['conversion_rate']  = is_null($r['conversion_rate']) ? null : (float) $r['conversion_rate'];
         if (isset($r['active_status']))    $r['active_status']    = (int) $r['active_status'];
         if (isset($r['promotion_active'])) $r['promotion_active'] = (int) $r['promotion_active'];
+        if (isset($r['sweep_day']))        $r['sweep_day']        = is_null($r['sweep_day']) ? null : (string) $r['sweep_day'];
         
         // Normalize tier fields
         for ($i = 1; $i <= 6; $i++) {
