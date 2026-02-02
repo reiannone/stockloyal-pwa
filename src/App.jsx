@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import SweepAdmin from "./pages/SweepAdmin.jsx";
 import SocialPostsAdmin from "./pages/SocialPostsAdmin.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import WebhookAdmin from "./pages/WebhookAdmin.jsx";
@@ -332,6 +333,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <OrdersAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/sweep-admin"
+                element={
+                  <PageWrapper>
+                    <SweepAdmin />
                   </PageWrapper>
                 }
               />

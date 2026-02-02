@@ -111,6 +111,13 @@ export default function Order() {
       const newCash = Math.max(0, Number((currCash - totalAmount).toFixed(2)));
       const newPortfolio = Number((currPortfolio + totalAmount).toFixed(2));
 
+      // ✅ Check sweep_day to determine order processing mode
+      // - "T+1", null, or missing: Immediate processing with 3-stage flow (pending → placed → confirmed)
+      // - "1"-"31" or "-1": Batched processing on sweep day (status: "queued")
+      const sweepDay = localStorage.getItem("sweep_day");
+      const isImmediateProcessing = !sweepDay || sweepDay === "T+1";
+      const initialOrderStatus = isImmediateProcessing ? "pending" : "queued";
+
       // place each order
       for (let i = 0; i < enrichedBasket.length; i++) {
         const stock = enrichedBasket[i];
@@ -125,6 +132,8 @@ export default function Order() {
           amount: perOrderAmount,
           order_type: "market",
           broker: broker || "Not linked",
+          order_status: initialOrderStatus, // ✅ Set initial status based on sweep_day
+          sweep_day: sweepDay || null, // ✅ Include sweep_day for backend reference
         };
 
         const result = await apiPost("place_order.php", payload);
@@ -212,26 +221,27 @@ export default function Order() {
         // Don't fail the order if merchant notification fails
       }
 
-      // ✅ Check sweep_day to determine if broker processes should run
-      // Run broker notifications if sweep_day is missing, null, or "T+1" (immediate processing)
-      // Skip if sweep_day is 1-31 (orders will be batched on that day of the month)
-      const sweepDay = localStorage.getItem("sweep_day");
-      const runBrokerProcesses = !sweepDay || sweepDay === "T+1";
+      // ✅ THREE-STAGE ORDER PROCESS (for T+1/null/missing sweep_day):
+      // Stage 1: Order created with status "pending" (done above)
+      // Stage 2: notify_broker.php → Broker acknowledges → status updated to "placed"
+      // Stage 3: broker_confirm.php → Broker confirms execution → status updated to "confirmed"
+      //
+      // For batched orders (sweep_day 1-31): Orders stay "queued" until sweep day processing
 
       let brokerNotified = false;
 
-      if (!runBrokerProcesses) {
-        console.log("[Order] Skipping broker processes - sweep_day:", sweepDay, "(orders will be batched)");
+      if (!isImmediateProcessing) {
+        console.log("[Order] Skipping broker processes - sweep_day:", sweepDay, "(orders queued for batch processing)");
       } else {
-        console.log("[Order] Running broker processes - sweep_day:", sweepDay || "(not set)");
-        // ✅ Notify broker (server-side uses broker_master.webhook_url + api_key)
-        // Modeled after merchant_notifications approach: try/catch, log on server, do NOT fail order
+        console.log("[Order] Running 3-stage broker process - sweep_day:", sweepDay || "(not set)");
+        
+        // ✅ STAGE 2: Notify broker to acknowledge order → updates status to "placed"
         try {
           const brokerPayload = {
             event_type: "order_placed",
             member_id: memberId,
             merchant_id: merchantId,
-            broker: broker || "Not linked", // matches broker_master.broker_name OR broker_id (backend supports both)
+            broker: broker || "Not linked",
             basket_id: basketId,
             amount: totalAmount,
             points_used: Math.round(pointsUsed),
@@ -243,25 +253,33 @@ export default function Order() {
               order_type: "market",
             })),
             timestamp: new Date().toISOString(),
+            // ✅ Include processing stage info
+            processing_stage: "acknowledge", // Broker should update order status to "placed"
           };
 
           const brokerRes = await apiPost("notify_broker.php", brokerPayload);
           brokerNotified = brokerRes?.notified || brokerRes?.success;
-          console.log("[Order] Broker notified:", brokerNotified, brokerRes);
+          console.log("[Order] Stage 2 - Broker notified:", brokerNotified, brokerRes);
         } catch (err) {
-          console.error("[Order] Failed to notify broker:", err);
+          console.error("[Order] Stage 2 - Failed to notify broker:", err);
           // Don't fail the order if broker notification fails
         }
 
-        // broker confirm stub
+        // ✅ STAGE 3: Broker confirmation → updates status to "confirmed"
+        // Delayed call to allow broker time to process and execute the order
         setTimeout(async () => {
           try {
-            const confirmRes = await apiPost("broker_confirm.php", { member_id: memberId });
-            console.log("[Order] Broker confirm response:", confirmRes);
+            const confirmPayload = {
+              member_id: memberId,
+              basket_id: basketId,
+              processing_stage: "confirm", // Broker should update order status to "confirmed"
+            };
+            const confirmRes = await apiPost("broker_confirm.php", confirmPayload);
+            console.log("[Order] Stage 3 - Broker confirm response:", confirmRes);
           } catch (err) {
-            console.error("[Order] Broker confirm error:", err);
+            console.error("[Order] Stage 3 - Broker confirm error:", err);
           }
-        }, 60000); // 1 minutes = 1 * 60 * 1000 = 60,000ms
+        }, 6000); // 1 minute delay for broker to process
       }
 
       // 🔊 success ping here
@@ -275,10 +293,13 @@ export default function Order() {
           placed: true,
           amount: totalAmount,
           basketId,
-          merchantNotified, // ✅ Pass notification status
-          brokerNotified, // ✅ Pass broker notification status
-          pointsUsed: Math.round(pointsUsed), // ✅ Pass points used
-          // ledgerSuccess, // optional if you want to show status on confirmation page
+          merchantNotified,
+          brokerNotified,
+          pointsUsed: Math.round(pointsUsed),
+          // ✅ Order processing info
+          orderStatus: initialOrderStatus, // "pending" for T+1, "queued" for batched
+          isImmediateProcessing, // true for T+1/null/missing, false for batched
+          sweepDay: sweepDay || null,
         },
       });
     } catch (err) {

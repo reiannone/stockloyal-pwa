@@ -20,6 +20,7 @@ import {
   Lock,
   Share2,
   ChartColumn,
+  Paintbrush,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -106,6 +107,13 @@ export default function AdminLanding() {
       to: "/orders-admin",
       label: "Orders Admin",
       icon: <ShoppingCart size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+    {
+      to: "/sweep-admin",
+      label: "Sweep Admin",
+      icon: <Paintbrush size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },

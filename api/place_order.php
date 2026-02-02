@@ -46,12 +46,23 @@ $order_type  = $input['order_type'] ?? "market"; // ✅ default to market
 $amount      = isset($input['amount']) ? floatval($input['amount']) : 0.0;
 $basket_id   = $input['basket_id'] ?? null;
 
+// ✅ NEW: Support 3-stage order process
+// order_status: "pending" (T+1/immediate), "queued" (batched), or legacy "placed"
+$order_status = $input['order_status'] ?? 'pending'; // ✅ Accept dynamic status
+$sweep_day    = $input['sweep_day'] ?? null; // ✅ Accept sweep_day for reference
+
 try {
+    // ✅ 3-STAGE ORDER PROCESS:
+    // - "pending": Initial status for T+1/immediate processing (Stage 1)
+    // - "placed": After broker acknowledges (Stage 2)
+    // - "confirmed": After broker confirms execution (Stage 3)
+    // - "queued": For batched orders (sweep_day 1-31), processed on sweep day
+    
     $sql = "
         INSERT INTO orders (
             member_id, merchant_id, symbol, shares, points_used, amount, order_type, status, placed_at, broker, basket_id
         ) VALUES (
-            :member_id, :merchant_id, :symbol, :shares, :points_used, :amount, :order_type, 'placed', NOW(), :broker, :basket_id
+            :member_id, :merchant_id, :symbol, :shares, :points_used, :amount, :order_type, :status, NOW(), :broker, :basket_id
         )
     ";
 
@@ -64,6 +75,7 @@ try {
         ':amount'      => $amount,
         ':points_used' => $points_used,
         ':order_type'  => $order_type,
+        ':status'      => $order_status, // ✅ Use dynamic status
         ':broker'      => $broker,
         ':basket_id'   => $basket_id
     ]);
@@ -89,7 +101,8 @@ try {
             "status"      => $row['status'],
             "broker"      => $row['broker'],
             "basket_id"   => $row['basket_id'],
-            "placed_at"   => $row['placed_at'] // ✅ timestamp included
+            "placed_at"   => $row['placed_at'], // ✅ timestamp included
+            "sweep_day"   => $sweep_day, // ✅ Include sweep_day for reference
         ]
     ]);
 } catch (Exception $e) {

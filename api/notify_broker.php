@@ -31,6 +31,11 @@ try {
   $basket_id   = trim((string)($input['basket_id'] ?? ''));
   $broker      = trim((string)($input['broker'] ?? ''));
 
+  // ✅ NEW: Processing stage for 3-stage order flow
+  // "acknowledge" = Stage 2: Update orders to "placed"
+  // "confirm" = Stage 3: Update orders to "confirmed"
+  $processing_stage = trim((string)($input['processing_stage'] ?? 'acknowledge'));
+
   if ($member_id === '' || $basket_id === '' || $broker === '') {
     j(["success" => false, "error" => "member_id, basket_id, broker are required"], 400);
   }
@@ -51,7 +56,48 @@ try {
       "amount"      => $input['amount'] ?? null,
       "points_used" => $input['points_used'] ?? null,
       "orders"      => $input['orders'] ?? null,
+      "processing_stage" => $processing_stage, // ✅ Include stage in payload
     ];
+  }
+
+  // ✅ FIRST: Update order status REGARDLESS of broker lookup
+  // This ensures orders progress even if broker is not configured
+  $ordersUpdated = 0;
+  $newStatus = null;
+  $fromStatus = null;
+  
+  if ($processing_stage === 'acknowledge') {
+    $newStatus = 'placed';
+    $fromStatus = 'pending';
+  } elseif ($processing_stage === 'confirm') {
+    $newStatus = 'confirmed';
+    $fromStatus = 'placed';
+  }
+  
+  if ($newStatus !== null && $basket_id !== '') {
+    try {
+      $orderUpd = $conn->prepare("
+        UPDATE orders 
+        SET status = :new_status,
+            updated_at = NOW()
+        WHERE basket_id = :basket_id 
+          AND member_id = :member_id
+          AND LOWER(status) = LOWER(:from_status)
+      ");
+      $orderUpd->execute([
+        ":new_status"  => $newStatus,
+        ":basket_id"   => $basket_id,
+        ":member_id"   => $member_id,
+        ":from_status" => $fromStatus,
+      ]);
+      $ordersUpdated = $orderUpd->rowCount();
+      
+      error_log("notify_broker.php: Updated $ordersUpdated orders from '$fromStatus' to '$newStatus' for basket_id=$basket_id, member_id=$member_id");
+    } catch (Exception $orderErr) {
+      error_log("notify_broker.php: Failed to update order status: " . $orderErr->getMessage());
+    }
+  } else {
+    error_log("notify_broker.php: Skipping order update - newStatus=$newStatus, basket_id=$basket_id, processing_stage=$processing_stage");
   }
 
   // 1) Lookup broker_master webhook_url + api_key
@@ -68,18 +114,23 @@ try {
   ]);
   $bm = $stmt->fetch(PDO::FETCH_ASSOC);
 
+  // If broker not found, still return success since orders were updated
   if (!$bm) {
-    j(["success" => false, "error" => "Broker not found in broker_master"], 404);
+    error_log("notify_broker.php: Broker '$broker' not found in broker_master - orders updated but no webhook sent");
+    j([
+      "success" => true,
+      "notified" => false,
+      "message" => "Broker not found in broker_master - orders updated but no webhook sent",
+      "processing_stage" => $processing_stage,
+      "orders_updated" => $ordersUpdated,
+      "new_order_status" => $newStatus,
+    ]);
   }
 
   $broker_id   = $bm['broker_id'] ?? null;
   $broker_name = $bm['broker_name'] ?? null;
   $webhook_url = $bm['webhook_url'] ?? null;
   $api_key     = $bm['api_key'] ?? null;
-
-  if (!$webhook_url) {
-    j(["success" => false, "error" => "Broker webhook_url is not configured"], 400);
-  }
 
   // 2) Insert notification record (pending)
   $payloadJson = json_encode($payloadArr, JSON_UNESCAPED_SLASHES);
@@ -99,6 +150,28 @@ try {
     ":payload"     => $payloadJson,
   ]);
   $notif_id = (int)$conn->lastInsertId();
+
+  // ✅ If no webhook URL configured, return success (orders already updated above)
+  if (!$webhook_url) {
+    // Update notification record to reflect no webhook
+    $upd = $conn->prepare("
+      UPDATE broker_notifications
+      SET status='skipped', error_message='No webhook URL configured'
+      WHERE id=:id
+    ");
+    $upd->execute([":id" => $notif_id]);
+
+    j([
+      "success" => true,
+      "notified" => false,
+      "notification_id" => $notif_id,
+      "status" => "skipped",
+      "message" => "No webhook URL configured - orders updated without webhook",
+      "processing_stage" => $processing_stage,
+      "orders_updated" => $ordersUpdated,
+      "new_order_status" => $newStatus,
+    ]);
+  }
 
   // 3) POST to broker webhook
   $ch = curl_init($webhook_url);
@@ -139,6 +212,7 @@ try {
       ":id"   => $notif_id
     ]);
 
+    // ✅ Orders were already updated above, return that info even on webhook failure
     j([
       "success" => true,
       "notified" => false,
@@ -146,6 +220,10 @@ try {
       "status" => "failed",
       "http_code" => $httpCode,
       "error" => $curlErr ?: "Webhook call failed",
+      "processing_stage" => $processing_stage,
+      "orders_updated" => $ordersUpdated,
+      "new_order_status" => $newStatus,
+      "message" => "Webhook failed but orders were updated",
     ]);
   }
 
@@ -172,6 +250,9 @@ try {
     "notification_id" => $notif_id,
     "status" => $ok ? "sent" : "failed",
     "http_code" => $httpCode,
+    "processing_stage" => $processing_stage,
+    "orders_updated" => $ordersUpdated,
+    "new_order_status" => $newStatus,
   ]);
 
 } catch (Exception $e) {

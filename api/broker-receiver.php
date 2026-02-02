@@ -1,0 +1,487 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * broker-receiver.php
+ * 
+ * Inbound webhook receiver for BROKER events
+ * Handles the 3-stage order processing flow:
+ *   Stage 2: order.acknowledged → status "placed"
+ *   Stage 3: order.confirmed → status "confirmed"
+ * 
+ * Endpoint: https://api.stockloyal.com/api/broker-receiver.php
+ */
+
+// CORS headers
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key, X-Webhook-Signature, X-Request-Id, X-Event-Type');
+header('Content-Type: application/json');
+
+// Handle preflight
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+// Only accept POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
+    exit;
+}
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+$logDir = '/var/www/html/stockloyal-pwa/logs';
+$logFile = $logDir . '/broker-webhook.log';
+
+// Ensure log directory exists
+if (!is_dir($logDir)) {
+    @mkdir($logDir, 0755, true);
+}
+
+// ============================================================================
+// DATABASE CONNECTION
+// ============================================================================
+
+try {
+    $host = 'stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com';
+    $dbname = 'stockloyal';
+    $username = 'admin';
+    $password = 'StockLoyal2025!';
+    
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false
+    ]);
+} catch (PDOException $e) {
+    error_log("broker-receiver.php: Database connection failed: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Database connection failed']);
+    exit;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function logMessage(string $logFile, string $message): void {
+    $timestamp = gmdate('Y-m-d H:i:s');
+    file_put_contents($logFile, "[{$timestamp}] {$message}\n", FILE_APPEND);
+}
+
+function respond(array $data, int $code = 200): void {
+    http_response_code($code);
+    echo json_encode($data);
+    exit;
+}
+
+// ============================================================================
+// AUTHENTICATION
+// ============================================================================
+
+function authenticateBroker(PDO $conn, string $logFile): ?array {
+    // Get API key from headers (support multiple formats)
+    $apiKey = $_SERVER['HTTP_X_API_KEY'] 
+        ?? $_SERVER['HTTP_AUTHORIZATION'] 
+        ?? null;
+    
+    // Strip "Bearer " prefix if present
+    if ($apiKey && stripos($apiKey, 'Bearer ') === 0) {
+        $apiKey = substr($apiKey, 7);
+    }
+    
+    if (empty($apiKey)) {
+        logMessage($logFile, "⚠️ AUTH FAILED: No API key provided");
+        return null;
+    }
+    
+    // Look up broker by API key (removed 'active' column reference)
+    try {
+        $stmt = $conn->prepare("
+            SELECT broker_id, broker_name, webhook_url, api_key
+            FROM broker_master
+            WHERE api_key = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$apiKey]);
+        $broker = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$broker) {
+            logMessage($logFile, "⚠️ AUTH FAILED: Invalid API key");
+            return null;
+        }
+        
+        logMessage($logFile, "✅ Authenticated broker: {$broker['broker_name']} (ID: {$broker['broker_id']})");
+        return $broker;
+        
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ AUTH ERROR: " . $e->getMessage());
+        return null;
+    }
+}
+
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+/**
+ * Handle order.acknowledged event (Stage 2)
+ * Updates order status from "pending" to "placed"
+ */
+function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): array {
+    $basketId = $payload['basket_id'] ?? '';
+    $memberId = $payload['member_id'] ?? '';
+    $brokerOrderId = $payload['broker_order_id'] ?? null;
+    $acknowledgedAt = $payload['acknowledged_at'] ?? gmdate('c');
+    
+    if (empty($basketId)) {
+        throw new Exception('Missing basket_id');
+    }
+    
+    logMessage($logFile, "Processing order.acknowledged: basket_id={$basketId}, member_id={$memberId}");
+    
+    // Update orders from "pending" to "placed" (case-insensitive)
+    $stmt = $conn->prepare("
+        UPDATE orders 
+        SET status = 'placed',
+            broker_order_id = COALESCE(?, broker_order_id),
+            updated_at = NOW()
+        WHERE basket_id = ?
+          AND LOWER(status) = 'pending'
+    ");
+    $stmt->execute([$brokerOrderId, $basketId]);
+    $rowsUpdated = $stmt->rowCount();
+    
+    logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'placed'");
+    
+    // Log to broker_notifications if tracking
+    try {
+        $notifStmt = $conn->prepare("
+            INSERT INTO broker_notifications 
+            (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+            VALUES (?, ?, 'order.acknowledged', 'received', ?, ?, ?, NOW())
+        ");
+        $notifStmt->execute([
+            $payload['broker_id'] ?? null,
+            $payload['broker_name'] ?? null,
+            $memberId,
+            $basketId,
+            json_encode($payload)
+        ]);
+    } catch (PDOException $e) {
+        // Non-critical, continue
+        logMessage($logFile, "⚠️ Failed to log notification: " . $e->getMessage());
+    }
+    
+    return [
+        'event' => 'order.acknowledged',
+        'basket_id' => $basketId,
+        'orders_updated' => $rowsUpdated,
+        'new_status' => 'placed'
+    ];
+}
+
+/**
+ * Handle order.confirmed event (Stage 3)
+ * Updates order status from "placed" to "confirmed"
+ */
+function handleOrderConfirmed(PDO $conn, array $payload, string $logFile): array {
+    $basketId = $payload['basket_id'] ?? '';
+    $memberId = $payload['member_id'] ?? '';
+    $brokerOrderId = $payload['broker_order_id'] ?? null;
+    $executionPrice = $payload['execution_price'] ?? null;
+    $executedShares = $payload['executed_shares'] ?? null;
+    $confirmedAt = $payload['confirmed_at'] ?? gmdate('c');
+    
+    if (empty($basketId)) {
+        throw new Exception('Missing basket_id');
+    }
+    
+    logMessage($logFile, "Processing order.confirmed: basket_id={$basketId}, member_id={$memberId}");
+    
+    // Update orders from "placed" to "confirmed" (case-insensitive)
+    $stmt = $conn->prepare("
+        UPDATE orders 
+        SET status = 'confirmed',
+            broker_order_id = COALESCE(?, broker_order_id),
+            confirmed_at = NOW(),
+            updated_at = NOW()
+        WHERE basket_id = ?
+          AND LOWER(status) = 'placed'
+    ");
+    $stmt->execute([$brokerOrderId, $basketId]);
+    $rowsUpdated = $stmt->rowCount();
+    
+    logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'confirmed'");
+    
+    return [
+        'event' => 'order.confirmed',
+        'basket_id' => $basketId,
+        'orders_updated' => $rowsUpdated,
+        'new_status' => 'confirmed'
+    ];
+}
+
+/**
+ * Handle order.executed event
+ * Final execution details with fills
+ */
+function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array {
+    $basketId = $payload['basket_id'] ?? '';
+    $memberId = $payload['member_id'] ?? '';
+    $fills = $payload['fills'] ?? [];
+    
+    if (empty($basketId)) {
+        throw new Exception('Missing basket_id');
+    }
+    
+    logMessage($logFile, "Processing order.executed: basket_id={$basketId}, fills=" . count($fills));
+    
+    $ordersUpdated = 0;
+    
+    // Update individual orders with execution details if provided
+    foreach ($fills as $fill) {
+        $symbol = $fill['symbol'] ?? '';
+        $executedShares = $fill['shares'] ?? null;
+        $executionPrice = $fill['price'] ?? null;
+        $brokerOrderId = $fill['broker_order_id'] ?? null;
+        
+        if (empty($symbol)) continue;
+        
+        $stmt = $conn->prepare("
+            UPDATE orders 
+            SET status = 'executed',
+                broker_order_id = COALESCE(?, broker_order_id),
+                executed_shares = COALESCE(?, executed_shares),
+                execution_price = COALESCE(?, execution_price),
+                executed_at = NOW(),
+                updated_at = NOW()
+            WHERE basket_id = ?
+              AND symbol = ?
+        ");
+        $stmt->execute([$brokerOrderId, $executedShares, $executionPrice, $basketId, $symbol]);
+        $ordersUpdated += $stmt->rowCount();
+    }
+    
+    // If no individual fills, update all orders in basket
+    if (empty($fills)) {
+        $stmt = $conn->prepare("
+            UPDATE orders 
+            SET status = 'executed',
+                executed_at = NOW(),
+                updated_at = NOW()
+            WHERE basket_id = ?
+              AND LOWER(status) IN ('placed', 'confirmed')
+        ");
+        $stmt->execute([$basketId]);
+        $ordersUpdated = $stmt->rowCount();
+    }
+    
+    logMessage($logFile, "✅ Updated {$ordersUpdated} orders to 'executed'");
+    
+    return [
+        'event' => 'order.executed',
+        'basket_id' => $basketId,
+        'orders_updated' => $ordersUpdated,
+        'new_status' => 'executed'
+    ];
+}
+
+/**
+ * Handle order.rejected event
+ * Broker rejected the order
+ */
+function handleOrderRejected(PDO $conn, array $payload, string $logFile): array {
+    $basketId = $payload['basket_id'] ?? '';
+    $memberId = $payload['member_id'] ?? '';
+    $reason = $payload['reason'] ?? 'Unknown reason';
+    $rejectedAt = $payload['rejected_at'] ?? gmdate('c');
+    
+    if (empty($basketId)) {
+        throw new Exception('Missing basket_id');
+    }
+    
+    logMessage($logFile, "Processing order.rejected: basket_id={$basketId}, reason={$reason}");
+    
+    // Update orders to "rejected" (case-insensitive)
+    $stmt = $conn->prepare("
+        UPDATE orders 
+        SET status = 'rejected',
+            reject_reason = ?,
+            updated_at = NOW()
+        WHERE basket_id = ?
+          AND LOWER(status) IN ('pending', 'placed')
+    ");
+    $stmt->execute([$reason, $basketId]);
+    $rowsUpdated = $stmt->rowCount();
+    
+    logMessage($logFile, "⚠️ Rejected {$rowsUpdated} orders: {$reason}");
+    
+    // TODO: Consider refunding points to member wallet
+    
+    return [
+        'event' => 'order.rejected',
+        'basket_id' => $basketId,
+        'orders_updated' => $rowsUpdated,
+        'new_status' => 'rejected',
+        'reason' => $reason
+    ];
+}
+
+/**
+ * Handle order.cancelled event
+ */
+function handleOrderCancelled(PDO $conn, array $payload, string $logFile): array {
+    $basketId = $payload['basket_id'] ?? '';
+    $memberId = $payload['member_id'] ?? '';
+    $reason = $payload['reason'] ?? 'Cancelled by broker';
+    
+    if (empty($basketId)) {
+        throw new Exception('Missing basket_id');
+    }
+    
+    logMessage($logFile, "Processing order.cancelled: basket_id={$basketId}");
+    
+    $stmt = $conn->prepare("
+        UPDATE orders 
+        SET status = 'cancelled',
+            cancel_reason = ?,
+            updated_at = NOW()
+        WHERE basket_id = ?
+          AND LOWER(status) IN ('pending', 'placed', 'queued')
+    ");
+    $stmt->execute([$reason, $basketId]);
+    $rowsUpdated = $stmt->rowCount();
+    
+    logMessage($logFile, "✅ Cancelled {$rowsUpdated} orders");
+    
+    return [
+        'event' => 'order.cancelled',
+        'basket_id' => $basketId,
+        'orders_updated' => $rowsUpdated,
+        'new_status' => 'cancelled'
+    ];
+}
+
+/**
+ * Handle test.connection event
+ */
+function handleTestConnection(array $payload, string $logFile): array {
+    logMessage($logFile, "✅ Test connection received");
+    
+    return [
+        'event' => 'test.connection',
+        'message' => 'Broker webhook connection successful',
+        'echo' => $payload['echo'] ?? null
+    ];
+}
+
+// ============================================================================
+// MAIN PROCESSING
+// ============================================================================
+
+try {
+    // Get raw payload
+    $rawPayload = file_get_contents('php://input');
+    $sourceIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    
+    logMessage($logFile, str_repeat('=', 80));
+    logMessage($logFile, "Inbound BROKER webhook from {$sourceIp}");
+    logMessage($logFile, "Payload: {$rawPayload}");
+    
+    // Parse JSON
+    $payload = json_decode($rawPayload, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Invalid JSON: ' . json_last_error_msg());
+    }
+    
+    // Get event type (support multiple formats)
+    $eventType = $payload['event_type'] 
+        ?? $payload['event'] 
+        ?? $_SERVER['HTTP_X_EVENT_TYPE'] 
+        ?? '';
+    
+    $requestId = $payload['request_id'] 
+        ?? $_SERVER['HTTP_X_REQUEST_ID'] 
+        ?? uniqid('brk_', true);
+    
+    logMessage($logFile, "Event: {$eventType}, Request ID: {$requestId}");
+    
+    // Authenticate broker (optional for test events)
+    $broker = null;
+    if ($eventType !== 'test.connection' && $eventType !== 'test') {
+        $broker = authenticateBroker($conn, $logFile);
+        // Note: Not enforcing auth for now to allow easier integration
+        // Uncomment below to require authentication:
+        // if (!$broker) {
+        //     respond(['success' => false, 'error' => 'Authentication failed'], 401);
+        // }
+    }
+    
+    // Add broker info to payload if authenticated
+    if ($broker) {
+        $payload['broker_id'] = $broker['broker_id'];
+        $payload['broker_name'] = $broker['broker_name'];
+    }
+    
+    // Log to webhook_logs table (without 'source' column that may not exist)
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO webhook_logs 
+            (request_id, event_type, source_ip, payload, received_at)
+            VALUES (?, ?, ?, ?, NOW())
+        ");
+        $stmt->execute([$requestId, $eventType, $sourceIp, $rawPayload]);
+    } catch (PDOException $e) {
+        // Table might not exist or have different schema - continue anyway
+        logMessage($logFile, "⚠️ webhook_logs insert failed: " . $e->getMessage());
+    }
+    
+    // Route to appropriate handler
+    // Note: 'order_placed' and 'order.placed' are treated as Stage 2 (acknowledge) - pending → placed
+    $result = match($eventType) {
+        'order.acknowledged', 'order_acknowledged', 'order_placed', 'order.placed' => handleOrderAcknowledged($conn, $payload, $logFile),
+        'order.confirmed', 'order_confirmed' => handleOrderConfirmed($conn, $payload, $logFile),
+        'order.executed', 'order_executed' => handleOrderExecuted($conn, $payload, $logFile),
+        'order.rejected', 'order_rejected' => handleOrderRejected($conn, $payload, $logFile),
+        'order.cancelled', 'order_cancelled' => handleOrderCancelled($conn, $payload, $logFile),
+        'test.connection', 'test' => handleTestConnection($payload, $logFile),
+        default => [
+            'event' => $eventType,
+            'message' => 'Event type not handled',
+            'supported_events' => [
+                'order_placed',
+                'order.acknowledged',
+                'order.confirmed', 
+                'order.executed',
+                'order.rejected',
+                'order.cancelled',
+                'test.connection'
+            ]
+        ]
+    };
+    
+    logMessage($logFile, "Response: " . json_encode($result));
+    logMessage($logFile, str_repeat('-', 80));
+    
+    respond(array_merge([
+        'success' => true,
+        'request_id' => $requestId,
+        'timestamp' => gmdate('c')
+    ], $result));
+
+} catch (Exception $e) {
+    logMessage($logFile, "❌ ERROR: " . $e->getMessage());
+    logMessage($logFile, str_repeat('-', 80));
+    
+    respond([
+        'success' => false,
+        'error' => $e->getMessage(),
+        'request_id' => $requestId ?? uniqid('err_', true)
+    ], 400);
+}
