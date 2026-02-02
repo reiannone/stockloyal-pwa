@@ -8,7 +8,7 @@ import { Search, Heart, HeartOff, Trash2 } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
-const MY_PICKS = "My List"; // ✅ Member's persisted list of securities for sweeps
+const MY_PICKS = "My Active List"; // ✅ Member's persisted list of securities for sweeps
 const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
 // ✅ Map categories -> API screener IDs
@@ -326,7 +326,7 @@ export default function StockPicker() {
         )} and $${maxOrderAmount.toFixed(2)} for your broker.`
       : "";
 
-  // ✅ NEW: Save a stock to My List
+  // ✅ NEW: Save a stock to My Active List
   const handleSaveToPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -343,7 +343,7 @@ export default function StockPicker() {
       if (data?.success) {
         setMemberPicks(prev => new Set([...prev, sym]));
         // Show brief feedback
-        console.log(`✅ Added ${sym} to My List`);
+        console.log(`✅ Added ${sym} to My Active List`);
       } else {
         console.error("Failed to save pick:", data?.error);
         alert(data?.error || "Failed to save pick");
@@ -356,7 +356,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ NEW: Remove a stock from My List
+  // ✅ NEW: Remove a stock from My Active List
   const handleRemoveFromPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -377,13 +377,13 @@ export default function StockPicker() {
           return next;
         });
         
-        // If we're in My List view, also remove from results
+        // If we're in My Active List view, also remove from results
         if (category === MY_PICKS) {
           setResults(prev => prev.filter(s => s.symbol !== sym));
           setSelectedStocks(prev => prev.filter(s => s !== sym));
         }
         
-        console.log(`🗑️ Removed ${sym} from My List`);
+        console.log(`🗑️ Removed ${sym} from My Active List`);
       } else {
         console.error("Failed to remove pick:", data?.error);
         alert(data?.error || "Failed to remove pick");
@@ -544,7 +544,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ My List - Member's persisted picks from junction table
+  // ✅ My Active List - Member's persisted picks from junction table
   // autoLoadToBasket: false = just show the list, true = load to basket and navigate
   const handleMyPicks = async (autoLoadToBasket = false) => {
     if (isCashOutsideLimits) return;
@@ -644,7 +644,7 @@ export default function StockPicker() {
 
       setResults(merged);
       
-      // ✅ Auto-select all stocks for My List
+      // ✅ Auto-select all stocks for My Active List
       const allSymbols = merged.map((s) => s.symbol);
       setSelectedStocks(allSymbols);
 
@@ -676,7 +676,7 @@ export default function StockPicker() {
         return;
       }
     } catch (err) {
-      console.error("[StockPicker] My List error:", err);
+      console.error("[StockPicker] My Active List error:", err);
       setStockError("Failed to load your picks.");
     } finally {
       setLoadingCategory(false);
@@ -752,7 +752,7 @@ export default function StockPicker() {
   };
 
   // --- Toggle stock selection ---
-  // ✅ Also adds to My List when selecting
+  // ✅ Also adds to My Active List when selecting
   const toggleSelect = (symbol) => {
     const sym = symbol.toUpperCase();
     const isCurrentlySelected = selectedStocks.includes(sym);
@@ -761,10 +761,10 @@ export default function StockPicker() {
       // Deselecting - just remove from selected list
       setSelectedStocks((prev) => prev.filter((s) => s !== sym));
     } else {
-      // Selecting - add to selected list AND add to My List
+      // Selecting - add to selected list AND add to My Active List
       setSelectedStocks((prev) => [...prev, sym]);
       
-      // Also add to My List if not already in picks
+      // Also add to My Active List if not already in picks
       if (!memberPicks.has(sym)) {
         handleSaveToPicks(sym);
       }
@@ -920,7 +920,7 @@ export default function StockPicker() {
     const isSaving = savingPick === sym;
 
     if (category === MY_PICKS) {
-      // In My List view, show remove button
+      // In My Active List view, show remove button
       return (
         <button
           type="button"
@@ -929,7 +929,7 @@ export default function StockPicker() {
             handleRemoveFromPicks(sym);
           }}
           disabled={isSaving}
-          title="Remove from My List"
+          title="Remove from My Active List"
           style={{
             background: "transparent",
             border: "none",
@@ -959,7 +959,7 @@ export default function StockPicker() {
           }
         }}
         disabled={isSaving}
-        title={isPicked ? "Remove from My List" : "Add to My List"}
+        title={isPicked ? "Remove from My Active List" : "Add to My Active List"}
         style={{
           background: "transparent",
           border: "none",
@@ -1132,7 +1132,7 @@ export default function StockPicker() {
           msOverflowStyle: "none",
         }}
       >
-        {/* My List button - opens slide to view/manage */}
+        {/* My Active List button - opens slide to view/manage */}
         <button
           type="button"
           onClick={() => handleMyPicks(false)}
@@ -1318,8 +1318,8 @@ export default function StockPicker() {
 
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
 <p className="form-disclosure">
-  <strong>My List:</strong> Securities saved under <em>My List</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
-  established between {merchantName} and {brokerName}. You can add securities to your <em>My List</em> by selecting 
+  <strong>My Active List:</strong> Securities saved under <em>My Active List</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
+  established between {merchantName} and {brokerName}. You can add securities to your <em>My Active List</em> by selecting 
   them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
   To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
 </p>

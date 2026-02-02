@@ -1,0 +1,19 @@
+# 1. Path to your PEM key
+$KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
+
+# 2. Local file to upload
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\get_merchant.php"
+
+# 3. EC2 Host (rename variable so we avoid conflict with $Host)
+$EC2 = "ec2-user@3.150.49.91"
+
+# 4. Destination on remote server
+$DEST = "/home/ec2-user/get_merchant.php"
+
+# 5. Upload using scp — THIS WORKS IN POWERSHELL
+scp -i $KEY "$SRC" "${EC2}:${DEST}"
+
+
+sudo mv /home/ec2-user/get_merchant.php /var/www/html/api/get_merchant.php
+sudo chown apache:apache /var/www/html/api/get_merchant.php
+sudo chmod 644 /var/www/html/api/get_merchant.php
