@@ -83,6 +83,13 @@ export default function AdminLanding() {
       bgColor: "#ecfeff",
     },
     {
+      to: "/sweep-admin",
+      label: "Sweep Admin",
+      icon: <Paintbrush size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+    {
       to: "/payments-processing",
       label: "Payments Processing",
       icon: <CreditCard size={32} />,
@@ -107,13 +114,6 @@ export default function AdminLanding() {
       to: "/orders-admin",
       label: "Orders Admin",
       icon: <ShoppingCart size={32} />,
-      color: "#6366f1",
-      bgColor: "#eef2ff",
-    },
-    {
-      to: "/sweep-admin",
-      label: "Sweep Admin",
-      icon: <Paintbrush size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },
@@ -438,6 +438,25 @@ export default function AdminLanding() {
           </h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <button
+              onClick={() => navigate("/sweep-admin")}
+              style={{
+                padding: "10px 20px",
+                backgroundColor: "#6366f1",
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "500",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <Paintbrush size={18} />
+              Sweep Process Admin
+            </button>
+            <button
               onClick={() => navigate("/payments-processing")}
               style={{
                 padding: "10px 20px",
@@ -474,25 +493,6 @@ export default function AdminLanding() {
             >
               <ChartColumn size={18} />
               KPI Dashbaord
-            </button>
-            <button
-              onClick={() => navigate("/orders-admin")}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#6366f1",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <ShoppingCart size={18} />
-              View Orders
             </button>
           </div>
         </div>
