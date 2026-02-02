@@ -43,6 +43,7 @@ export default function AdminBroker() {
   // ✅ Logo upload state
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [logoUrlInput, setLogoUrlInput] = useState('');
   const fileInputRef = useRef(null);
 
   // Load all brokers
@@ -152,7 +153,17 @@ export default function AdminBroker() {
     }));
   };
 
-  // ✅ Handle logo file selection and upload
+  // ✅ Helper: resolve API base URL the same way api.js does
+  const getApiBase = () =>
+    window.__VITE_API_BASE__
+    || window.__API_BASE__
+    || localStorage.getItem('apiBase')
+    || import.meta.env.VITE_API_BASE
+    || (window.location.hostname === 'localhost'
+      ? 'http://localhost/api'
+      : 'https://api.stockloyal.com/api');
+
+  // ✅ Handle logo file upload from local machine
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -177,7 +188,7 @@ export default function AdminBroker() {
     };
     reader.readAsDataURL(file);
 
-    // Upload the file
+    // Upload the file to production
     setUploadingLogo(true);
     try {
       const formData = new FormData();
@@ -185,17 +196,7 @@ export default function AdminBroker() {
       formData.append('broker_id', selected?.broker_id || 'new');
       formData.append('type', 'broker');
 
-      // Use fetch directly for multipart form data
-      // Resolve API base the same way api.js does
-      const apiBase = window.__VITE_API_BASE__
-        || window.__API_BASE__
-        || localStorage.getItem('apiBase')
-        || import.meta.env.VITE_API_BASE
-        || (window.location.hostname === 'localhost' 
-          ? 'http://localhost/api' 
-          : 'https://api.stockloyal.com/api');
-      
-      const response = await fetch(`${apiBase}/upload-logo.php`, {
+      const response = await fetch(`${getApiBase()}/upload-logo.php`, {
         method: 'POST',
         body: formData,
       });
@@ -207,7 +208,7 @@ export default function AdminBroker() {
           ...prev,
           logo_url: data.url,
         }));
-        setLogoPreview(null); // Clear preview, use actual URL
+        setLogoPreview(null);
         console.log('✅ Logo uploaded:', data.url);
       } else {
         alert('Upload failed: ' + (data?.error || 'Unknown error'));
@@ -219,10 +220,63 @@ export default function AdminBroker() {
       setLogoPreview(null);
     } finally {
       setUploadingLogo(false);
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  // ✅ Handle logo fetch from external URL — downloads it to production server
+  const handleLogoFromUrl = async () => {
+    const url = logoUrlInput.trim();
+    if (!url) {
+      alert('Please enter an image URL');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      alert('Please enter a valid URL (e.g. https://example.com/logo.png)');
+      return;
+    }
+
+    // Show the URL as preview immediately
+    setLogoPreview(url);
+    setUploadingLogo(true);
+
+    try {
+      const response = await fetch(`${getApiBase()}/upload-logo.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_url: url,
+          broker_id: selected?.broker_id || 'new',
+          type: 'broker',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data?.success && data?.url) {
+        setSelected((prev) => ({
+          ...prev,
+          logo_url: data.url,
+        }));
+        setLogoPreview(null);
+        setLogoUrlInput('');
+        console.log('✅ Logo fetched & saved:', data.url);
+      } else {
+        alert('Fetch failed: ' + (data?.error || 'Unknown error'));
+        setLogoPreview(null);
+      }
+    } catch (err) {
+      console.error('[AdminBroker] Logo URL fetch failed:', err);
+      alert('Fetch failed: network/server error');
+      setLogoPreview(null);
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -233,6 +287,7 @@ export default function AdminBroker() {
       logo_url: '',
     }));
     setLogoPreview(null);
+    setLogoUrlInput('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -352,6 +407,7 @@ export default function AdminBroker() {
 
                 {/* Upload Controls */}
                 <div style={{ flex: 1, minWidth: '200px' }}>
+                  {/* Option 1: Upload from local machine */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -374,33 +430,92 @@ export default function AdminBroker() {
                     }}
                   >
                     <Upload size={16} />
-                    {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                    {uploadingLogo ? 'Saving to server...' : 'Upload from Computer'}
                   </button>
+
+                  {/* Divider */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    margin: '0.75rem 0',
+                    color: '#9ca3af',
+                    fontSize: '0.75rem',
+                  }}>
+                    <div style={{ flex: 1, height: '1px', background: '#d1d5db' }} />
+                    OR
+                    <div style={{ flex: 1, height: '1px', background: '#d1d5db' }} />
+                  </div>
+
+                  {/* Option 2: Fetch from URL */}
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      className="form-input"
+                      type="url"
+                      placeholder="https://example.com/broker-logo.png"
+                      value={logoUrlInput}
+                      onChange={(e) => setLogoUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogoFromUrl(); } }}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleLogoFromUrl}
+                      disabled={uploadingLogo || !logoUrlInput.trim()}
+                      className="btn-primary"
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.5rem 0.75rem',
+                        whiteSpace: 'nowrap',
+                        opacity: (uploadingLogo || !logoUrlInput.trim()) ? 0.5 : 1,
+                      }}
+                    >
+                      {uploadingLogo ? 'Fetching...' : 'Fetch & Save'}
+                    </button>
+                  </div>
+
                   <p style={{ 
                     margin: '0.5rem 0 0 0', 
                     fontSize: '0.75rem', 
                     color: '#6b7280',
                     lineHeight: 1.4
                   }}>
-                    Recommended: Square image, 200x200px or larger.<br />
-                    Formats: PNG, JPG, GIF, WebP, SVG (max 2MB)
+                    Upload a file or paste any image URL. The image will be saved to the production server on AWS.
                   </p>
                   
-                  {/* Logo URL display */}
+                  {/* Saved Logo URL display */}
                   {selected?.logo_url && (
-                    <div style={{ marginTop: '0.5rem' }}>
+                    <div style={{ 
+                      marginTop: '0.5rem',
+                      padding: '0.5rem',
+                      background: '#ecfdf5',
+                      borderRadius: '4px',
+                      border: '1px solid #a7f3d0',
+                    }}>
+                      <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 600 }}>
+                        ✅ Saved on server:
+                      </span>
                       <input
                         className="form-input"
                         type="text"
                         value={selected.logo_url}
                         readOnly
                         style={{ 
-                          fontSize: '0.75rem', 
+                          fontSize: '0.7rem', 
                           fontFamily: 'monospace',
-                          background: '#f3f4f6',
+                          background: '#fff',
                           color: '#6b7280',
+                          marginTop: '0.25rem',
                         }}
-                        title="Logo URL"
+                        title="Production logo URL (click to copy)"
+                        onClick={(e) => {
+                          e.target.select();
+                          navigator.clipboard?.writeText(selected.logo_url);
+                        }}
                       />
                     </div>
                   )}
