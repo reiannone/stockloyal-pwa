@@ -488,13 +488,10 @@ export default function MerchantNotifications() {
                   <th>Merchant</th>
                   <th>Member</th>
                   <th>Event Type</th>
-                  <th>Points</th>
-                  <th>Cash</th>
+                  <th>Points / Cash</th>
                   <th>Basket ID</th>
-                  <th>Status</th>
-                  <th>Response Code</th>
-                  <th>Created At</th>
-                  <th>Sent At</th>
+                  <th>Status / Code</th>
+                  <th>Created / Sent</th>
                 </tr>
               </thead>
               <tbody>
@@ -519,25 +516,33 @@ export default function MerchantNotifications() {
                       <td>{r.merchant_id || "-"}</td>
                       <td>{r.member_id || "-"}</td>
                       <td>{r.event_type || "-"}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {r.points_amount != null ? formatPoints(r.points_amount) : "-"}
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        {r.cash_amount != null ? formatDollars(r.cash_amount) : "-"}
+                      <td style={{ textAlign: "right", lineHeight: 1.4 }}>
+                        <div>{r.points_amount != null ? formatPoints(r.points_amount) : "-"}</div>
+                        <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+                          {r.cash_amount != null ? formatDollars(r.cash_amount) : "-"}
+                        </div>
                       </td>
                       <td style={{ fontSize: "0.85rem" }}>{r.basket_id || "-"}</td>
-                      <td>
-                        <span style={getStatusPillStyle(r.status)}>{r.status || "unknown"}</span>
+                      <td style={{ textAlign: "center", lineHeight: 1.4 }}>
+                        <div>
+                          <span style={getStatusPillStyle(r.status)}>{r.status || "unknown"}</span>
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: 2 }}>
+                          {r.response_code || "-"}
+                        </div>
                       </td>
-                      <td style={{ textAlign: "center" }}>{r.response_code || "-"}</td>
-                      <td style={{ fontSize: "0.85rem" }}>{toLocalZonedString(r.created_at)}</td>
-                      <td style={{ fontSize: "0.85rem" }}>{toLocalZonedString(r.sent_at)}</td>
+                      <td style={{ fontSize: "0.85rem", lineHeight: 1.4 }}>
+                        <div>{toLocalZonedString(r.created_at)}</div>
+                        <div style={{ color: "#6b7280" }}>
+                          {toLocalZonedString(r.sent_at) || "-"}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={11} style={{ textAlign: "center", color: "#9ca3af" }}>
+                    <td colSpan={8} style={{ textAlign: "center", color: "#9ca3af" }}>
                       No notifications found.
                     </td>
                   </tr>

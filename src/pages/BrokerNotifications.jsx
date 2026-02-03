@@ -481,15 +481,12 @@ export default function BrokerNotifications() {
                 <tr>
                   <th>ID</th>
                   <th>Broker</th>
-                  <th>Broker ID</th>
                   <th>Member</th>
                   <th>Merchant</th>
                   <th>Event Type</th>
                   <th>Basket ID</th>
-                  <th>Status</th>
-                  <th>Response Code</th>
-                  <th>Created At</th>
-                  <th>Sent At</th>
+                  <th>Status / Code</th>
+                  <th>Created / Sent</th>
                 </tr>
               </thead>
 
@@ -514,24 +511,31 @@ export default function BrokerNotifications() {
                     >
                       <td>{pk}</td>
                       <td>{r.broker_name || "-"}</td>
-                      <td style={{ fontSize: "0.85rem" }}>{r.broker_id || "-"}</td>
                       <td>{r.member_id || "-"}</td>
                       <td>{r.merchant_id || "-"}</td>
                       <td>{r.event_type || "-"}</td>
                       <td style={{ fontSize: "0.85rem" }}>{r.basket_id || "-"}</td>
-                      <td>
-                        <span style={getStatusPillStyle(r.status)}>{r.status || "unknown"}</span>
+                      <td style={{ textAlign: "center", lineHeight: 1.4 }}>
+                        <div>
+                          <span style={getStatusPillStyle(r.status)}>{r.status || "unknown"}</span>
+                        </div>
+                        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: 2 }}>
+                          {r.response_code || "-"}
+                        </div>
                       </td>
-                      <td style={{ textAlign: "center" }}>{r.response_code || "-"}</td>
-                      <td style={{ fontSize: "0.85rem" }}>{toLocalZonedString(r.created_at)}</td>
-                      <td style={{ fontSize: "0.85rem" }}>{toLocalZonedString(r.sent_at)}</td>
+                      <td style={{ fontSize: "0.85rem", lineHeight: 1.4 }}>
+                        <div>{toLocalZonedString(r.created_at)}</div>
+                        <div style={{ color: "#6b7280" }}>
+                          {toLocalZonedString(r.sent_at) || "-"}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
 
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={11} style={{ textAlign: "center", color: "#9ca3af" }}>
+                    <td colSpan={8} style={{ textAlign: "center", color: "#9ca3af" }}>
                       No broker notifications found.
                     </td>
                   </tr>

@@ -132,7 +132,7 @@ export default function Order() {
           amount: perOrderAmount,
           order_type: "market",
           broker: broker || "Not linked",
-          order_status: initialOrderStatus, // ✅ Set initial status based on sweep_day
+          status: initialOrderStatus, // ✅ Matches database column name
           sweep_day: sweepDay || null, // ✅ Include sweep_day for backend reference
         };
 

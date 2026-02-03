@@ -81,7 +81,14 @@ try {
             LIMIT ? OFFSET ?";
     
     $stmt = $conn->prepare($sql);
-    $stmt->execute(array_merge($params, [$perPage, $offset]));
+    // Bind filter params as strings
+    foreach ($params as $i => $val) {
+        $stmt->bindValue($i + 1, $val, PDO::PARAM_STR);
+    }
+    // Bind LIMIT and OFFSET as integers (PDO requires this for MySQL)
+    $stmt->bindValue(count($params) + 1, $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
+    $stmt->execute();
     $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     echo json_encode([

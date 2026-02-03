@@ -31,13 +31,25 @@ import {
  *  POST /api/webhook-test.php
  */
 
-// API endpoint configuration
-const WEBHOOK_API = {
-  config: '/api/webhook-config.php',
-  stats: '/api/webhook-stats.php',
-  logs: '/api/webhook-logs.php',
-  test: '/api/webhook-test.php'
+// Dynamic API base URL (matches pattern used in Admin.jsx, AdminBroker.jsx, etc.)
+const getApiBase = () =>
+  window.__VITE_API_BASE__
+  || window.__API_BASE__
+  || localStorage.getItem('apiBase')
+  || import.meta.env.VITE_API_BASE
+  || (window.location.hostname === 'localhost'
+    ? 'http://localhost/api'
+    : 'https://api.stockloyal.com/api');
+
+// API endpoint paths (appended to getApiBase() at call time)
+const WEBHOOK_ENDPOINTS = {
+  config: '/webhook-config.php',
+  stats: '/webhook-stats.php',
+  logs: '/webhook-logs.php',
+  test: '/webhook-test.php'
 };
+
+const apiUrl = (endpoint) => `${getApiBase()}${WEBHOOK_ENDPOINTS[endpoint]}`;
 
 export default function WebhookAdmin() {
   const [activeTab, setActiveTab] = useState("settings"); // settings | stats | logs
@@ -77,8 +89,11 @@ export default function WebhookAdmin() {
   // -------- API calls --------
   const loadConfiguration = async () => {
     try {
-      const response = await fetch(WEBHOOK_API.config);
+      console.log("[WebhookAdmin] loadConfiguration fetching:", apiUrl('config'));
+      const response = await fetch(apiUrl('config'));
+      console.log("[WebhookAdmin] loadConfiguration status:", response.status);
       const data = await response.json();
+      console.log("[WebhookAdmin] loadConfiguration data:", data);
       if (data?.success && data?.config) setConfig(data.config);
     } catch (error) {
       console.error("Failed to load configuration:", error);
@@ -87,7 +102,7 @@ export default function WebhookAdmin() {
 
   const loadStats = async () => {
     try {
-      const response = await fetch(WEBHOOK_API.stats);
+      const response = await fetch(apiUrl('stats'));
       const data = await response.json();
       if (data?.success && data?.stats) setStats(data.stats);
     } catch (error) {
@@ -107,8 +122,12 @@ export default function WebhookAdmin() {
         verified: filters.verified || "",
       });
 
-      const response = await fetch(`${WEBHOOK_API.logs}?${params.toString()}`);
+      const url = `${apiUrl('logs')}?${params.toString()}`;
+      console.log("[WebhookAdmin] loadLogs fetching:", url);
+      const response = await fetch(url);
+      console.log("[WebhookAdmin] loadLogs response status:", response.status);
       const data = await response.json();
+      console.log("[WebhookAdmin] loadLogs data:", data);
 
       if (data?.success) {
         setLogs(Array.isArray(data.logs) ? data.logs : []);
@@ -127,7 +146,7 @@ export default function WebhookAdmin() {
   const saveConfiguration = async () => {
     setLoading(true);
     try {
-      const response = await fetch(WEBHOOK_API.config, {
+      const response = await fetch(apiUrl('config'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
@@ -150,7 +169,7 @@ export default function WebhookAdmin() {
   const testWebhook = async () => {
     setLoading(true);
     try {
-      const response = await fetch(WEBHOOK_API.test, {
+      const response = await fetch(apiUrl('test'), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -464,7 +483,7 @@ export default function WebhookAdmin() {
                         <th>Request ID</th>
                         <th>Event Type</th>
                         <th>Source IP</th>
-                        <th>Time</th>
+                        <th>Time (GMT)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -603,7 +622,7 @@ export default function WebhookAdmin() {
                   <th>Event Type</th>
                   <th>Source IP</th>
                   <th style={{ textAlign: "center" }}>Signature</th>
-                  <th>Time</th>
+                  <th>Time (GMT)</th>
                 </tr>
               </thead>
               <tbody>
@@ -642,9 +661,9 @@ export default function WebhookAdmin() {
   // -------- Main --------
   return (
     <div id="webhook-admin-container" className="app-container app-content">
-      <h1 className="page-title">Webhook Admin</h1>
+      <h1 className="page-title">StockLoyal Primary App Webhook Admin</h1>
       <p className="page-deck">
-        Manage webhook configuration and monitor incoming events (styling aligned with <code>AdminBroker</code>).
+        Manage StockLoyal's core webhook configuration and monitor incoming events from merchants and brokers.
       </p>
 
       {/* Tab Buttons - styled like AdminBroker card-actions buttons */}
