@@ -602,7 +602,7 @@ export default function Wallet() {
       </p>
 
       {/* --- Summary Card --- */}
-      <div className="card" style={{ marginTop: 12 }}>
+      <div className="card card--accent" style={{ marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
@@ -705,7 +705,7 @@ export default function Wallet() {
       </div>
 
       {/* --- Social Media Share Card --- */}
-      <div className="card card--accent" style={{ marginTop: 14 }}>
+      <div className="card" style={{ marginTop: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div
             style={{
