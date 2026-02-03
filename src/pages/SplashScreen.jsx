@@ -64,6 +64,7 @@ function SplashScreen() {
       localStorage.removeItem("portfolio_value");
       localStorage.removeItem("basketId");
       localStorage.removeItem("sweep_day");
+      localStorage.removeItem("merchantLogo");
       
       localStorage.setItem("memberId", memberId);
       console.log("[Splash] Stored memberId:", memberId);
@@ -145,6 +146,14 @@ function SplashScreen() {
               if (merchantData.merchant_name) {
                 localStorage.setItem("merchantName", merchantData.merchant_name);
                 console.log("[Splash] Stored merchantName:", merchantData.merchant_name);
+              }
+              
+              // ✅ Save merchant logo_url for Header display
+              if (merchantData.logo_url) {
+                localStorage.setItem("merchantLogo", merchantData.logo_url);
+                console.log("[Splash] Stored merchantLogo:", merchantData.logo_url);
+              } else {
+                localStorage.removeItem("merchantLogo");
               }
               
               // ✅ Save sweep_day for StockPicker and Basket pages

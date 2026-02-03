@@ -42,7 +42,7 @@ const categoryImages = {
 export default function StockPicker() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { addToBasket, basket } = useBasket();
+  const { addToBasket, basket, clearBasket, removeFromBasket } = useBasket();
 
   const memberId = localStorage.getItem("memberId");
   const { amount: initialAmount = 0, pointsUsed: initialPoints = 0 } =
@@ -122,6 +122,11 @@ export default function StockPicker() {
   const [memberPicks, setMemberPicks] = useState(new Set());
   const [savingPick, setSavingPick] = useState(null); // Track which symbol is being saved/removed
 
+  // ✅ NEW: Persistent My Active List data (always visible on page)
+  const [myActiveListData, setMyActiveListData] = useState([]);
+  const [loadingMyActiveList, setLoadingMyActiveList] = useState(true);
+  const [myActiveListSelected, setMyActiveListSelected] = useState([]); // Selected symbols from persistent table
+
   // 🎡 Audio + haptic feedback for wheel ticks
   const audioCtxRef = useRef(null);
   const lastTickTimeRef = useRef(0);
@@ -198,25 +203,166 @@ export default function StockPicker() {
     };
   }, []);
 
-  // ✅ NEW: Load member's saved picks on mount
+  // ✅ NEW: Load member's saved picks AND My Active List data on mount
   useEffect(() => {
     if (!memberId) return;
     
     (async () => {
       try {
-        const data = await apiPost("get-member-picks.php", { 
+        // Load member picks for the Set (used for heart icons)
+        const picksData = await apiPost("get-member-picks.php", { 
           member_id: memberId,
           active_only: true 
         });
-        if (data?.success && Array.isArray(data.picks)) {
-          const symbols = new Set(data.picks.map(p => p.symbol.toUpperCase()));
+        if (picksData?.success && Array.isArray(picksData.picks)) {
+          const symbols = new Set(picksData.picks.map(p => p.symbol.toUpperCase()));
           setMemberPicks(symbols);
         }
       } catch (err) {
         console.error("[StockPicker] Failed to load member picks:", err);
       }
+
+      // Load full My Active List data with price enrichment
+      await loadMyActiveList();
     })();
   }, [memberId]);
+
+  // ✅ Function to load My Active List with Yahoo quote enrichment
+  const loadMyActiveList = async () => {
+    if (!memberId) return;
+    
+    setLoadingMyActiveList(true);
+    
+    try {
+      // 1) Pull member's saved picks from junction table
+      const data = await apiPost("my-picks.php", { 
+        member_id: memberId,
+        limit: 50 
+      });
+      
+      if (!data?.success) {
+        console.error("[StockPicker] Failed to load My Active List:", data?.error);
+        setMyActiveListData([]);
+        setLoadingMyActiveList(false);
+        return;
+      }
+
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const cleaned = rows
+        .map((r) => ({
+          symbol: String(r?.symbol || "").trim().toUpperCase(),
+          allocation_pct: r?.allocation_pct,
+          priority: r?.priority || 0,
+        }))
+        .filter((r) => r.symbol);
+
+      if (cleaned.length === 0) {
+        setMyActiveListData([]);
+        setLoadingMyActiveList(false);
+        return;
+      }
+
+      // 2) Enrich with Yahoo quote data via proxy.php { symbol: "AAPL,MSFT,..." }
+      const symbolCsv = cleaned.map((r) => r.symbol).join(",");
+      const quoteResp = await apiPost("proxy.php", { symbol: symbolCsv });
+
+      const quoteArr =
+        quoteResp?.data ??
+        quoteResp?.results ??
+        quoteResp?.finance?.result?.[0]?.quotes ??
+        [];
+
+      // Build map by symbol
+      const quoteBySymbol = new Map();
+      (Array.isArray(quoteArr) ? quoteArr : []).forEach((q) => {
+        const sym = String(q?.symbol || "").toUpperCase();
+        if (!sym) return;
+
+        const name = q?.name || q?.shortName || q?.longName || sym;
+
+        const price =
+          q?.price ??
+          q?.regularMarketPrice ??
+          q?.postMarketPrice ??
+          q?.preMarketPrice ??
+          null;
+
+        const change =
+          q?.change ??
+          q?.regularMarketChangePercent ??
+          q?.postMarketChangePercent ??
+          q?.preMarketChangePercent ??
+          0;
+
+        quoteBySymbol.set(sym, {
+          name,
+          price: price != null ? Number(price) : null,
+          change: change != null ? Number(change) : 0,
+        });
+      });
+
+      // 3) Merge
+      const merged = cleaned.map((r) => {
+        const q = quoteBySymbol.get(r.symbol);
+        return {
+          symbol: r.symbol,
+          name: q?.name || r.symbol,
+          price: q?.price ?? null,
+          change: q?.change ?? 0,
+          allocation_pct: r.allocation_pct,
+        };
+      });
+
+      setMyActiveListData(merged);
+      
+      // Auto-select all stocks in My Active List
+      setMyActiveListSelected(merged.map((s) => s.symbol));
+      
+    } catch (err) {
+      console.error("[StockPicker] My Active List load error:", err);
+      setMyActiveListData([]);
+    } finally {
+      setLoadingMyActiveList(false);
+    }
+  };
+
+  // ✅ Sync basket with My Active List selections
+  // This ensures the basket always reflects what's selected in My Active List
+  useEffect(() => {
+    if (loadingMyActiveList || myActiveListData.length === 0) return;
+    
+    // Clear basket and rebuild from My Active List selections
+    clearBasket();
+    
+    const selectedData = myActiveListData.filter((s) =>
+      myActiveListSelected.includes(s.symbol)
+    );
+    
+    if (selectedData.length === 0) return;
+    
+    // Calculate amount per stock (equal split or use allocation_pct)
+    const totalAllocation = selectedData.reduce(
+      (sum, s) => sum + (s.allocation_pct ? parseFloat(s.allocation_pct) : 0),
+      0
+    );
+    const hasAllocations = totalAllocation > 0;
+
+    selectedData.forEach((stock) => {
+      const allocation = hasAllocations && stock.allocation_pct
+        ? parseFloat(stock.allocation_pct) / totalAllocation
+        : 1 / selectedData.length;
+      const stockAmount = cashValue * allocation;
+      const stockPoints = Math.round(selectedPoints * allocation);
+
+      addToBasket({
+        symbol: stock.symbol,
+        name: stock.name,
+        price: stock.price,
+        amount: stockAmount,
+        pointsUsed: stockPoints,
+      });
+    });
+  }, [myActiveListSelected, myActiveListData, cashValue, selectedPoints, loadingMyActiveList]);
 
   // --- Slider drag logic for categories ---
   const isDragging = useRef(false);
@@ -366,6 +512,9 @@ export default function StockPicker() {
         setMemberPicks(prev => new Set([...prev, sym]));
         // Show brief feedback
         console.log(`✅ Added ${sym} to My Active List`);
+        
+        // ✅ Reload My Active List to get updated data with prices
+        await loadMyActiveList();
       } else {
         console.error("Failed to save pick:", data?.error);
         alert(data?.error || "Failed to save pick");
@@ -405,6 +554,10 @@ export default function StockPicker() {
           setSelectedStocks(prev => prev.filter(s => s !== sym));
         }
         
+        // ✅ Also remove from persistent My Active List table
+        setMyActiveListData(prev => prev.filter(s => s.symbol !== sym));
+        setMyActiveListSelected(prev => prev.filter(s => s !== sym));
+        
         console.log(`🗑️ Removed ${sym} from My Active List`);
       } else {
         console.error("Failed to remove pick:", data?.error);
@@ -416,6 +569,45 @@ export default function StockPicker() {
     } finally {
       setSavingPick(null);
     }
+  };
+
+  // ✅ Continue with selected stocks from persistent My Active List
+  const handleContinueWithMyActiveList = () => {
+    if (myActiveListSelected.length === 0) {
+      alert("Please select at least one stock from My Active List");
+      return;
+    }
+
+    // Get the selected stocks with their data
+    const selectedData = myActiveListData.filter((s) =>
+      myActiveListSelected.includes(s.symbol)
+    );
+
+    // Calculate amount per stock (equal split or use allocation_pct)
+    const totalAllocation = selectedData.reduce(
+      (sum, s) => sum + (s.allocation_pct ? parseFloat(s.allocation_pct) : 0),
+      0
+    );
+    const hasAllocations = totalAllocation > 0;
+
+    selectedData.forEach((stock) => {
+      const allocation = hasAllocations && stock.allocation_pct
+        ? parseFloat(stock.allocation_pct) / totalAllocation
+        : 1 / selectedData.length;
+      const stockAmount = cashValue * allocation;
+      const stockPoints = Math.round(selectedPoints * allocation);
+
+      addToBasket({
+        symbol: stock.symbol,
+        name: stock.name,
+        price: stock.price,
+        amount: stockAmount,
+        pointsUsed: stockPoints,
+      });
+    });
+
+    // Navigate to basket
+    navigate("/basket");
   };
 
   // --- Yahoo Screener via proxy.php ---
@@ -1174,67 +1366,6 @@ export default function StockPicker() {
           msOverflowStyle: "none",
         }}
       >
-        {/* My Active List button - opens slide to view/manage */}
-        <button
-          type="button"
-          onClick={() => handleMyPicks(false)}
-          className="category-btn"
-          disabled={isCashOutsideLimits}
-          style={{
-            minWidth: "140px",
-            height: "90px",
-            marginRight: "10px",
-            borderRadius: "8px",
-            backgroundImage: `url(${categoryImages[MY_PICKS]})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            position: "relative",
-            overflow: "hidden",
-            color: "white",
-            fontWeight: "600",
-            opacity: isCashOutsideLimits ? 0.4 : 1,
-            cursor: isCashOutsideLimits ? "not-allowed" : "pointer",
-          }}
-          title="Your saved picks for monthly sweep"
-        >
-          {/* Badge showing count of picks */}
-          {memberPicks.size > 0 && (
-            <span
-              style={{
-                position: "absolute",
-                top: "6px",
-                right: "6px",
-                background: "#ef4444",
-                color: "white",
-                borderRadius: "50%",
-                width: "22px",
-                height: "22px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.75rem",
-                fontWeight: "700",
-              }}
-            >
-              {memberPicks.size}
-            </span>
-          )}
-          <span
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              padding: "6px",
-              background: "rgba(0,0,0,0.5)",
-              textAlign: "center",
-              fontSize: "0.85rem",
-            }}
-          >
-            {MY_PICKS}
-          </span>
-        </button>
-
         {/* Popular Member Picks */}
         <button
           type="button"
@@ -1365,6 +1496,165 @@ export default function StockPicker() {
   them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
   To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
 </p>
+
+      {/* ✅ PERSISTENT My Active List Table */}
+      <div
+        style={{
+          background: "#f9fafb",
+          borderRadius: "12px",
+          padding: "1rem",
+          marginBottom: "1rem",
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "1rem",
+              fontWeight: "700",
+              color: "#1f2937",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+          >
+            📋 My Active List
+            {myActiveListData.length > 0 && (
+              <span
+                style={{
+                  background: "#2563eb",
+                  color: "white",
+                  borderRadius: "50%",
+                  width: "22px",
+                  height: "22px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.75rem",
+                  fontWeight: "700",
+                }}
+              >
+                {myActiveListData.length}
+              </span>
+            )}
+          </h3>
+        </div>
+
+        {loadingMyActiveList ? (
+          <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
+            Loading your picks...
+          </p>
+        ) : myActiveListData.length === 0 ? (
+          <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
+            You haven't saved any picks yet. Browse categories above and tap the ❤️ to save stocks for your sweep!
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="stocklist-table" style={{ width: "100%", fontSize: "0.85rem" }}>
+              <thead>
+                <tr>
+                  <th style={{ width: "40px", textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={myActiveListSelected.length === myActiveListData.length && myActiveListData.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setMyActiveListSelected(myActiveListData.map((s) => s.symbol));
+                        } else {
+                          setMyActiveListSelected([]);
+                        }
+                      }}
+                      title="Select all"
+                    />
+                  </th>
+                  <th>Symbol</th>
+                  <th>Name</th>
+                  <th style={{ textAlign: "right" }}>Price</th>
+                  <th style={{ textAlign: "right" }}>Change</th>
+                  <th style={{ width: "40px", textAlign: "center" }}>Remove</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myActiveListData.map((stock) => (
+                  <tr key={stock.symbol}>
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={myActiveListSelected.includes(stock.symbol)}
+                        onChange={() => {
+                          setMyActiveListSelected((prev) =>
+                            prev.includes(stock.symbol)
+                              ? prev.filter((s) => s !== stock.symbol)
+                              : [...prev, stock.symbol]
+                          );
+                        }}
+                      />
+                    </td>
+                    <td
+                      style={{
+                        color: "#2563eb",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        textDecoration: "underline",
+                      }}
+                      onClick={() => handleSymbolClick(stock.symbol)}
+                      title={`View ${stock.symbol} chart`}
+                    >
+                      {stock.symbol}
+                    </td>
+                    <td style={{ maxWidth: "120px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {stock.name || "-"}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {stock.price != null ? `$${Number(stock.price).toFixed(2)}` : "N/A"}
+                    </td>
+                    <td
+                      style={{
+                        textAlign: "right",
+                        color:
+                          stock.change > 0
+                            ? "#22c55e"
+                            : stock.change < 0
+                            ? "#ef4444"
+                            : "#6b7280",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {stock.change > 0 ? "+" : ""}
+                      {typeof stock.change === "number" ? stock.change.toFixed(2) : "0.00"}%
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromPicks(stock.symbol)}
+                        disabled={savingPick === stock.symbol}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          cursor: savingPick === stock.symbol ? "wait" : "pointer",
+                          padding: "4px",
+                          opacity: savingPick === stock.symbol ? 0.5 : 1,
+                        }}
+                        title="Remove from My Active List"
+                      >
+                        <Trash2 size={18} color="#ef4444" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* 🔥 Bottom-sheet Stock list overlay - rendered via portal to dedicated container */}
       {isStockListOpen &&

@@ -491,6 +491,7 @@ export default function Ledger() {
           View Order History
         </button>
         </div>
+      <div>
         <button
           type="button"
           className="btn-primary"
@@ -499,6 +500,7 @@ export default function Ledger() {
         >
           Back to Wallet
         </button>
+        </div>
       </div>
     </div>
   );

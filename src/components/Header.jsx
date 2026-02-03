@@ -19,6 +19,7 @@ export default function Header() {
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [userAvatar, setUserAvatar] = useState(null);
   const [memberId, setMemberId] = useState(null);
+  const [merchantLogo, setMerchantLogo] = useState(localStorage.getItem("merchantLogo"));
 
   // ✅ Logout function with confirmation
   const handleLogout = () => {
@@ -44,6 +45,7 @@ export default function Header() {
     localStorage.removeItem("basketId");
     localStorage.removeItem("memberTimezone");
     localStorage.removeItem("lastLoginAt");
+    localStorage.removeItem("merchantLogo");
     
     // Clear state
     setMemberId(null);
@@ -120,6 +122,7 @@ export default function Header() {
       const id = localStorage.getItem("memberId");
       console.log("🔁 member-updated event:", id);
       setMemberId(id);
+      setMerchantLogo(localStorage.getItem("merchantLogo"));
     };
     window.addEventListener("member-updated", handleMemberUpdate);
 
@@ -198,7 +201,18 @@ export default function Header() {
             pointerEvents: "none",
           }}
         >
-          <img src={logo} alt="StockLoyal" style={{ height: 30, width: "auto" }} />
+          <img
+            src={merchantLogo || logo}
+            alt={merchantLogo ? (localStorage.getItem("merchantName") || "Merchant") : "StockLoyal"}
+            style={{ height: 30, width: "auto", maxWidth: 140, objectFit: "contain" }}
+            onError={(e) => {
+              // If merchant logo fails to load, fall back to StockLoyal
+              if (e.target.src !== logo) {
+                e.target.src = logo;
+                e.target.alt = "StockLoyal";
+              }
+            }}
+          />
         </div>
 
         {/* RIGHT: Member ID chip + Avatar */}

@@ -486,7 +486,7 @@ export default function Transactions() {
             onClick={() => navigate("/ledger")}
             style={{ flex: 1 }}
           >
-            View Transaction Ledger
+            View Transactions Ledger
           </button>
         </div>
 

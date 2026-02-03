@@ -379,6 +379,14 @@ export default function Portfolio() {
           marginTop: "20px",
         }}
       >
+        
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => navigate("/ledger")}
+        >
+          View Transactions Ledger
+        </button>
         <button
           type="button"
           className="btn-secondary"
@@ -386,7 +394,8 @@ export default function Portfolio() {
         >
           View Order History
         </button>
-
+      </div>
+      <div>
         <button
           type="button"
           className="btn-primary"

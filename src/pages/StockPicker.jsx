@@ -87,7 +87,7 @@ export default function StockPicker() {
   const [conversionRate, setConversionRate] = useState(0.01);
   const [selectedPoints, setSelectedPoints] = useState(initialPoints);
   const [cashValue, setCashValue] = useState(initialAmount);
-  const [cashInput, setCashInput] = useState(initialAmount.toFixed(2));
+  const [cashInput, setCashInput] = useState(String(Math.floor(initialAmount)));
   const [isEditingCash, setIsEditingCash] = useState(false);
 
   // --- Broker limits ---
@@ -458,9 +458,9 @@ export default function StockPicker() {
   useEffect(() => {
     if (!isEditingCash) {
       const cents = Math.round(selectedPoints * conversionRate * 100);
-      const val = cents / 100;
+      const val = Math.floor(cents / 100);
       setCashValue(val);
-      setCashInput(val.toFixed(2));
+      setCashInput(val.toLocaleString());
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
 
@@ -1119,9 +1119,9 @@ export default function StockPicker() {
 
     // Recalculate cash from clamped points
     const cents = Math.round(clampedPoints * conversionRate * 100);
-    const finalCash = cents / 100;
+    const finalCash = Math.floor(cents / 100);
     setCashValue(finalCash);
-    setCashInput(finalCash.toFixed(2));
+    setCashInput(finalCash.toLocaleString());
   };
 
   // --- Derived values ---
