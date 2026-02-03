@@ -23,6 +23,7 @@ try {
             merchant_id,
             merchant_name,
             program_name,
+            logo_url,
             contact_email,
             contact_phone,
             website_url,

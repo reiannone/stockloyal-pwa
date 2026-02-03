@@ -699,7 +699,8 @@ export default function Wallet() {
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
           <button className="btn-secondary" onClick={() => navigate("/portfolio")}>StockLoyal Portfolio</button>
-          <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Transactions</button>
+          <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Order History</button>
+          <button className="btn-secondary" onClick={() => navigate("/ledger")}>View Transactions</button>
         </div>
       </div>
 

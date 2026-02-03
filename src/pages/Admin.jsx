@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { apiGet, apiPost } from "../api.js";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
+import { Upload, X, Image } from "lucide-react";
 
 // ✅ Custom upload adapter for CKEditor images
 class MyUploadAdapter {
@@ -56,6 +57,12 @@ export default function Admin() {
 
   // Track the original (pre-edit) conversion rate to detect changes on save
   const originalRateRef = useRef(null);
+
+  // ✅ Logo upload state (same pattern as AdminBroker.jsx)
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [logoUrlInput, setLogoUrlInput] = useState('');
+  const fileInputRef = useRef(null);
 
   // Load all merchants
   const fetchMerchants = async () => {
@@ -275,6 +282,146 @@ export default function Admin() {
     }));
   };
 
+  // ✅ Helper: resolve API base URL the same way api.js does
+  const getApiBase = () =>
+    window.__VITE_API_BASE__
+    || window.__API_BASE__
+    || localStorage.getItem('apiBase')
+    || import.meta.env.VITE_API_BASE
+    || (window.location.hostname === 'localhost'
+      ? 'http://localhost/api'
+      : 'https://api.stockloyal.com/api');
+
+  // ✅ Handle logo file upload from local machine
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      alert('Please select a valid image file (PNG, JPG, GIF, WebP, or SVG)');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Image file must be less than 2MB');
+      return;
+    }
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setLogoPreview(event.target.result);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload the file to production
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      formData.append('merchant_id', selected?.merchant_id || 'new');
+      formData.append('type', 'merchant');
+
+      const response = await fetch(`${getApiBase()}/upload-logo.php`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data?.success && data?.url) {
+        setSelected((prev) => ({
+          ...prev,
+          logo_url: data.url,
+        }));
+        setLogoPreview(null);
+        console.log('✅ Merchant logo uploaded:', data.url);
+      } else {
+        alert('Upload failed: ' + (data?.error || 'Unknown error'));
+        setLogoPreview(null);
+      }
+    } catch (err) {
+      console.error('[Admin] Logo upload failed:', err);
+      alert('Upload failed: network/server error');
+      setLogoPreview(null);
+    } finally {
+      setUploadingLogo(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // ✅ Handle logo fetch from external URL — downloads it to production server
+  const handleLogoFromUrl = async () => {
+    const url = logoUrlInput.trim();
+    if (!url) {
+      alert('Please enter an image URL');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(url);
+    } catch {
+      alert('Please enter a valid URL (e.g. https://example.com/logo.png)');
+      return;
+    }
+
+    // Show the URL as preview immediately
+    setLogoPreview(url);
+    setUploadingLogo(true);
+
+    try {
+      const response = await fetch(`${getApiBase()}/upload-logo.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_url: url,
+          merchant_id: selected?.merchant_id || 'new',
+          type: 'merchant',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data?.success && data?.url) {
+        setSelected((prev) => ({
+          ...prev,
+          logo_url: data.url,
+        }));
+        setLogoPreview(null);
+        setLogoUrlInput('');
+        console.log('✅ Merchant logo fetched & saved:', data.url);
+      } else {
+        alert('Fetch failed: ' + (data?.error || 'Unknown error'));
+        setLogoPreview(null);
+      }
+    } catch (err) {
+      console.error('[Admin] Logo URL fetch failed:', err);
+      alert('Fetch failed: network/server error');
+      setLogoPreview(null);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  // ✅ Remove logo
+  const handleRemoveLogo = () => {
+    setSelected((prev) => ({
+      ...prev,
+      logo_url: '',
+    }));
+    setLogoPreview(null);
+    setLogoUrlInput('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div id="admin-container" className="app-container app-content">
       <h1 className="page-title">Merchant Admin</h1>
@@ -306,6 +453,192 @@ export default function Admin() {
                 required
               />
             </FormRow>
+
+            {/* ✅ Merchant Logo Upload Section */}
+            <div style={{ 
+              gridColumn: '1 / -1', 
+              marginTop: '0.5rem', 
+              marginBottom: '1rem',
+              padding: '1rem',
+              background: '#f9fafb',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb'
+            }}>
+              <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block' }}>
+                Merchant Logo:
+              </label>
+              
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                {/* Logo Preview */}
+                <div style={{
+                  width: '100px',
+                  height: '100px',
+                  border: '2px dashed #d1d5db',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#fff',
+                  overflow: 'hidden',
+                  position: 'relative',
+                }}>
+                  {(logoPreview || selected?.logo_url) ? (
+                    <>
+                      <img 
+                        src={logoPreview || selected?.logo_url} 
+                        alt="Merchant logo"
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '100%',
+                          objectFit: 'contain',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveLogo}
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          background: '#ef4444',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '20px',
+                          height: '20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        title="Remove logo"
+                      >
+                        <X size={12} />
+                      </button>
+                    </>
+                  ) : (
+                    <Image size={32} color="#9ca3af" />
+                  )}
+                </div>
+
+                {/* Upload Controls */}
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  {/* Option 1: Upload from local machine */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml"
+                    onChange={handleLogoUpload}
+                    style={{ display: 'none' }}
+                    id="merchant-logo-upload-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingLogo}
+                    className="btn-secondary"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.875rem',
+                      padding: '0.5rem 1rem',
+                    }}
+                  >
+                    <Upload size={16} />
+                    {uploadingLogo ? 'Saving to server...' : 'Upload from Computer'}
+                  </button>
+
+                  {/* Divider */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    margin: '0.75rem 0',
+                    color: '#9ca3af',
+                    fontSize: '0.75rem',
+                  }}>
+                    <div style={{ flex: 1, height: '1px', background: '#d1d5db' }} />
+                    OR
+                    <div style={{ flex: 1, height: '1px', background: '#d1d5db' }} />
+                  </div>
+
+                  {/* Option 2: Fetch from URL */}
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      className="form-input"
+                      type="url"
+                      placeholder="https://example.com/merchant-logo.png"
+                      value={logoUrlInput}
+                      onChange={(e) => setLogoUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleLogoFromUrl(); } }}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.8rem',
+                        fontFamily: 'monospace',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleLogoFromUrl}
+                      disabled={uploadingLogo || !logoUrlInput.trim()}
+                      className="btn-primary"
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '0.5rem 0.75rem',
+                        whiteSpace: 'nowrap',
+                        opacity: (uploadingLogo || !logoUrlInput.trim()) ? 0.5 : 1,
+                      }}
+                    >
+                      {uploadingLogo ? 'Fetching...' : 'Fetch & Save'}
+                    </button>
+                  </div>
+
+                  <p style={{ 
+                    margin: '0.5rem 0 0 0', 
+                    fontSize: '0.75rem', 
+                    color: '#6b7280',
+                    lineHeight: 1.4
+                  }}>
+                    Upload a file or paste any image URL. The image will be saved to the production server on AWS.
+                  </p>
+                  
+                  {/* Saved Logo URL display */}
+                  {selected?.logo_url && (
+                    <div style={{ 
+                      marginTop: '0.5rem',
+                      padding: '0.5rem',
+                      background: '#ecfdf5',
+                      borderRadius: '4px',
+                      border: '1px solid #a7f3d0',
+                    }}>
+                      <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 600 }}>
+                        ✅ Saved on server:
+                      </span>
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={selected.logo_url}
+                        readOnly
+                        style={{ 
+                          fontSize: '0.7rem', 
+                          fontFamily: 'monospace',
+                          background: '#fff',
+                          color: '#6b7280',
+                          marginTop: '0.25rem',
+                        }}
+                        title="Production logo URL (click to copy)"
+                        onClick={(e) => {
+                          e.target.select();
+                          navigator.clipboard?.writeText(selected.logo_url);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
             <FormRow label="Program Name">
               <input
@@ -500,7 +833,7 @@ export default function Admin() {
               />
             </FormRow>
 
-            {/* ✅ NEW: Broker Relationships Section */}
+            {/* ✅ Broker Relationships Section */}
             <div style={{ 
               gridColumn: '1 / -1', 
               marginTop: '1.5rem', 
@@ -872,6 +1205,7 @@ export default function Admin() {
           <table className="basket-table">
             <thead>
               <tr>
+                <th style={{ width: '50px' }}>Logo</th>
                 <th>Merchant ID</th>
                 <th>Name</th>
                 <th>Base Rate</th>
@@ -897,6 +1231,8 @@ export default function Admin() {
                     onClick={() => {
                       setSelected({ ...m });
                       originalRateRef.current = Number(m.conversion_rate ?? 0);
+                      setLogoPreview(null);    // ✅ Clear preview when switching merchants
+                      setLogoUrlInput('');     // ✅ Clear URL input when switching
                       // Scroll to top of page - multiple methods for compatibility
                       const container = document.getElementById('admin-container');
                       if (container) {
@@ -908,6 +1244,22 @@ export default function Admin() {
                     style={{ cursor: 'pointer' }}
                     title="Click to edit this merchant"
                   >
+                    <td style={{ textAlign: 'center' }}>
+                      {m.logo_url ? (
+                        <img 
+                          src={m.logo_url} 
+                          alt={`${m.merchant_name} logo`}
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            objectFit: 'contain',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      ) : (
+                        <Image size={24} color="#d1d5db" />
+                      )}
+                    </td>
                     <td>{m.merchant_id}</td>
                     <td>{m.merchant_name}</td>
                     <td>{m.conversion_rate || '0.01'}</td>

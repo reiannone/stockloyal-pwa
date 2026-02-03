@@ -5,48 +5,58 @@ import { useBroker } from "../context/BrokerContext";
 import { apiPost } from "../api.js";
 import { AlertTriangle, ExternalLink } from "lucide-react";
 
-const ASSET = (p) => `${import.meta.env.BASE_URL}${p.replace(/^\/+/, "")}`;
+/* ────────────────────────────────────────────
+   BrokerLogo — renders logo_url from DB,
+   falls back to styled initials if the image
+   is missing or fails to load.
+   ──────────────────────────────────────────── */
+function BrokerLogo({ broker }) {
+  const [imgError, setImgError] = useState(false);
 
-// ✅ All available brokers (master list)
-const ALL_BROKERS = [
-  {
-    id: "Public.com",
-    name: "Public.com",
-    logo: ASSET("/logos/public.png"),
-    url: "https://public.com/",
-  },
-  {
-    id: "Robinhood",
-    name: "Robinhood",
-    logo: ASSET("/logos/robinhood.png"),
-    url: "https://robinhood.com/",
-  },
-  {
-    id: "Fidelity",
-    name: "Fidelity",
-    logo: ASSET("/logos/fidelity.png"),
-    url: "https://www.fidelity.com/",
-  },
-  {
-    id: "Charles Schwab",
-    name: "Charles Schwab",
-    logo: ASSET("/logos/schwab.png"),
-    url: "https://www.schwab.com/",
-  },
-  {
-    id: "Interactive Brokers",
-    name: "Interactive Brokers",
-    logo: ASSET("/logos/ibkr.png"),
-    url: "https://www.interactivebrokers.com/",
-  },
-  {
-    id: "Betterment",
-    name: "Betterment",
-    logo: ASSET("/logos/betterment.png"),
-    url: "https://www.betterment.com/",
-  },
-];
+  if (broker.logo && !imgError) {
+    return (
+      <img
+        src={broker.logo}
+        alt={broker.name}
+        className="broker-logo"
+        onError={() => setImgError(true)}
+      />
+    );
+  }
 
+  // Fallback: first 2 initials
+  const initials = broker.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .substring(0, 2)
+    .toUpperCase();
+
+  return (
+    <div
+      className="broker-logo"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#e5e7eb",
+        borderRadius: 12,
+        fontSize: "1.25rem",
+        fontWeight: 700,
+        color: "#374151",
+        width: 80,
+        height: 80,
+      }}
+      title={broker.name}
+    >
+      {initials}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────
+   SelectBroker page
+   ──────────────────────────────────────────── */
 export default function SelectBroker() {
   const [selected, setSelected] = useState("");
   const [username, setUsername] = useState("");
@@ -59,11 +69,14 @@ export default function SelectBroker() {
   const [hasExistingPassword, setHasExistingPassword] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
 
-  // ✅ NEW: Merchant-filtered brokers
+  // ✅ Dynamic broker list fetched from broker_master via get-brokers.php
+  const [allBrokers, setAllBrokers] = useState([]);
+
+  // Merchant-filtered broker IDs
   const [allowedBrokerIds, setAllowedBrokerIds] = useState(null); // null = not loaded yet
   const [merchantId, setMerchantId] = useState(null);
 
-  // ✅ warning popup for redirect to broker site
+  // Warning popup for redirect to broker site
   const [redirectModal, setRedirectModal] = useState({
     open: false,
     brokerName: "",
@@ -76,17 +89,11 @@ export default function SelectBroker() {
 
   // ✅ Filtered brokers based on merchant relationship
   const brokers = useMemo(() => {
-    // If still loading or no restrictions set, show all brokers
-    if (allowedBrokerIds === null) {
-      return ALL_BROKERS;
-    }
-    // If merchant has no brokers configured, show all (fallback)
-    if (allowedBrokerIds.length === 0) {
-      return ALL_BROKERS;
-    }
-    // Filter to only allowed brokers
-    return ALL_BROKERS.filter((b) => allowedBrokerIds.includes(b.id));
-  }, [allowedBrokerIds]);
+    if (allBrokers.length === 0) return [];
+    if (allowedBrokerIds === null) return allBrokers;
+    if (allowedBrokerIds.length === 0) return allBrokers;
+    return allBrokers.filter((b) => allowedBrokerIds.includes(b.id));
+  }, [allBrokers, allowedBrokerIds]);
 
   const canSubmit = useMemo(
     () =>
@@ -101,23 +108,46 @@ export default function SelectBroker() {
     [selected, username, password, confirmPassword, submitting]
   );
 
-  // ✅ Load existing broker info from wallet AND merchant broker restrictions
+  // ✅ Load brokers from broker_master, wallet info, and merchant restrictions
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
+
+        // ── 1. Fetch all brokers from broker_master ──
+        try {
+          const brokerList = await apiPost("get-brokers.php", {});
+          if (brokerList?.success && Array.isArray(brokerList.brokers)) {
+            const mapped = brokerList.brokers.map((b) => ({
+              id:   b.broker_id,
+              name: b.broker_name,
+              logo: b.logo_url || "",   // ✅ from broker_master.logo_url
+              url:  b.website_url || "", // for "Open Account" redirect
+            }));
+            setAllBrokers(mapped);
+            console.log("[SelectBroker] Loaded", mapped.length, "brokers from broker_master");
+          } else {
+            console.warn("[SelectBroker] get-brokers.php returned no brokers");
+            setAllBrokers([]);
+          }
+        } catch (brokerListErr) {
+          console.error("[SelectBroker] Failed to fetch broker list:", brokerListErr);
+          setAllBrokers([]);
+        }
+
+        // ── 2. Fetch wallet + merchant restrictions ──
         const data = await apiPost("get-wallet.php", { member_id: memberId });
         if (data?.success && data.wallet) {
           const currentBroker = data.wallet.broker || "";
-          const currentMerchantId = data.wallet.merchant_id || localStorage.getItem("merchantId");
+          const currentMerchantId =
+            data.wallet.merchant_id || localStorage.getItem("merchantId");
           const creds = data.broker_credentials || {};
-          
+
           setMerchantId(currentMerchantId);
-          
+
           if (currentBroker) {
             setSelected(currentBroker);
             setUsername(creds.username || "");
-            // If there's an existing password, mark it as existing but don't set the actual value
             if (creds.password) {
               setHasExistingPassword(true);
               setPassword("");
@@ -125,7 +155,7 @@ export default function SelectBroker() {
             }
           }
 
-          // ✅ Load merchant's allowed brokers
+          // Load merchant's allowed brokers
           if (currentMerchantId) {
             try {
               const brokerData = await apiPost("get-merchant-brokers.php", {
@@ -133,15 +163,18 @@ export default function SelectBroker() {
               });
               if (brokerData?.success) {
                 setAllowedBrokerIds(brokerData.broker_ids || []);
-                console.log("[SelectBroker] Allowed brokers for merchant", currentMerchantId, ":", brokerData.broker_ids);
+                console.log(
+                  "[SelectBroker] Allowed brokers for merchant",
+                  currentMerchantId,
+                  ":",
+                  brokerData.broker_ids
+                );
               }
             } catch (brokerErr) {
               console.warn("[SelectBroker] Could not load merchant brokers:", brokerErr);
-              // On error, allow all brokers
               setAllowedBrokerIds([]);
             }
           } else {
-            // No merchant, allow all brokers
             setAllowedBrokerIds([]);
           }
         }
@@ -153,7 +186,7 @@ export default function SelectBroker() {
     })();
   }, [memberId]);
 
-  // ✅ If selected broker is no longer in the allowed list, clear selection
+  // If selected broker is no longer in the allowed list, clear selection
   useEffect(() => {
     if (allowedBrokerIds !== null && allowedBrokerIds.length > 0 && selected) {
       if (!allowedBrokerIds.includes(selected)) {
@@ -198,12 +231,12 @@ export default function SelectBroker() {
     setSubmitting(true);
 
     try {
-      const selectedBroker = brokers.find((b) => b.id === selected);
+      const broker = brokers.find((b) => b.id === selected);
 
       const payload = {
         member_id: memberId,
         broker: selected,
-        broker_url: selectedBroker?.url || "",
+        broker_url: broker?.url || "",
         username,
         password,
       };
@@ -220,9 +253,8 @@ export default function SelectBroker() {
       }
 
       updateBroker(selected);
-      // optional: keep broker in localStorage for other pages
       localStorage.setItem("broker", selected);
-      localStorage.setItem("broker_url", selectedBroker?.url || "");
+      localStorage.setItem("broker_url", broker?.url || "");
 
       navigate("/terms");
     } catch (err) {
@@ -251,18 +283,22 @@ export default function SelectBroker() {
 
   const handleOpenBrokerAccount = () => {
     const b = getDefaultBrokerForOpenAccount();
+    if (!b?.url) {
+      setError("No website URL configured for this broker.");
+      return;
+    }
     setRedirectModal({
       open: true,
-      brokerName: b?.name || "Public.com",
-      url: b?.url || "https://public.com/",
+      brokerName: b?.name || "Broker",
+      url: b?.url || "",
     });
   };
 
   const confirmRedirect = () => {
-    const url = redirectModal.url || "https://public.com/";
+    const url = redirectModal.url;
     setRedirectModal({ open: false, brokerName: "", url: "" });
     // redirect out of SPA
-    window.location.href = url;
+    if (url) window.location.href = url;
   };
 
   return (
@@ -338,14 +374,18 @@ export default function SelectBroker() {
         account to your rewards program.
       </p>
 
-      {/* ✅ Show merchant context if available */}
+      {/* Show merchant context if available */}
       {merchantId && allowedBrokerIds && allowedBrokerIds.length > 0 && (
-        <p className="caption" style={{ textAlign: "center", marginBottom: 12, color: "#6b7280" }}>
-          Showing {brokers.length} broker{brokers.length !== 1 ? "s" : ""} available for your program
+        <p
+          className="caption"
+          style={{ textAlign: "center", marginBottom: 12, color: "#6b7280" }}
+        >
+          Showing {brokers.length} broker{brokers.length !== 1 ? "s" : ""} available
+          for your program
         </p>
       )}
 
-      {/* --- Broker logos --- */}
+      {/* --- Broker logos from broker_master.logo_url --- */}
       {loading ? (
         <div style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
           Loading available brokers...
@@ -373,14 +413,14 @@ export default function SelectBroker() {
                   transition: "border 0.2s, box-shadow 0.2s",
                 }}
               >
-                <img src={b.logo} alt={b.name} className="broker-logo" />
+                <BrokerLogo broker={b} />
               </button>
             );
           })}
         </div>
       )}
 
-      {/* ✅ NEW: Open a Brokerage Account button */}
+      {/* Open a Brokerage Account button */}
       {brokers.length > 0 && (
         <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
           <button

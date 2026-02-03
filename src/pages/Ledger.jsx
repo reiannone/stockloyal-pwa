@@ -170,7 +170,7 @@ export default function Ledger() {
   return (
     <div className="transactions-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        Account Ledger
+        Transaction Ledger
       </h2>
 
       <p className="subtext" style={{ textAlign: "center", marginTop: -6, marginBottom: 12 }}>
@@ -464,14 +464,33 @@ export default function Ledger() {
           marginTop: "20px",
         }}
       >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            justifyContent: "center",
+            gap: "10px",
+            width: "90%",
+            maxWidth: "480px",
+          }}
+        >
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => navigate("/portfolio")}
+          style={{ flex: 1 }}
+        >
+          View StockLoyal Portfolio
+        </button>
         <button
           type="button"
           className="btn-secondary"
           onClick={() => navigate("/transactions")}
-          style={{ width: "90%", maxWidth: "320px" }}
+          style={{ flex: 1 }}
         >
-          View Order Transactions
+          View Order History
         </button>
+        </div>
         <button
           type="button"
           className="btn-primary"
