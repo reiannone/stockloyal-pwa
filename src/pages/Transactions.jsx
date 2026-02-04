@@ -1,10 +1,11 @@
 // src/pages/Transactions.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 
 export default function Transactions() {
   const navigate = useNavigate();
+  const location = useLocation();
   const memberId = localStorage.getItem("memberId");
 
   const [orders, setOrders] = useState([]);
@@ -13,8 +14,12 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true);
 
   // ── Filter state ────────────────────────────────────────────────────────────
-  const [filterField, setFilterField] = useState(""); // "" = all | symbol | date | status
-  const [filterValue, setFilterValue] = useState("");
+  const [filterField, setFilterField] = useState(
+    location.state?.filterStatus ? "status" : ""
+  );
+  const [filterValue, setFilterValue] = useState(
+    location.state?.filterStatus || ""
+  );
 
   // ✅ StockPicker-style slider state (NO portal)
   const [isTxOpen, setIsTxOpen] = useState(false);

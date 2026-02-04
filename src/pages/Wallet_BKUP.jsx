@@ -224,6 +224,39 @@ export default function Wallet() {
           console.warn("[Wallet] localStorage sync failed", e);
         }
 
+        // ✅ Fetch full merchant data including sweep_day
+        const walletMerchantId = w?.merchant_id || localStorage.getItem("merchantId");
+        if (walletMerchantId) {
+          try {
+            const merchantData = await apiPost("get_merchant.php", { merchant_id: walletMerchantId });
+            if (merchantData?.success && merchantData?.merchant) {
+              const m = merchantData.merchant;
+              console.log("[Wallet] Loaded merchant data:", m);
+              
+              // Store full merchant object
+              localStorage.setItem("merchant", JSON.stringify(m));
+              
+              // Store individual values for easy access
+              if (m.merchant_name) {
+                localStorage.setItem("merchantName", m.merchant_name);
+              }
+              if (m.conversion_rate) {
+                localStorage.setItem("conversion_rate", String(m.conversion_rate));
+              }
+              
+              // ✅ Store sweep_day for StockPicker and Basket pages
+              if (m.sweep_day !== undefined && m.sweep_day !== null) {
+                localStorage.setItem("sweep_day", String(m.sweep_day));
+                console.log("[Wallet] Stored sweep_day:", m.sweep_day);
+              } else {
+                localStorage.removeItem("sweep_day");
+              }
+            }
+          } catch (err) {
+            console.warn("[Wallet] Failed to fetch merchant data:", err);
+          }
+        }
+
         // ✅ checks AFTER load
         runPostLoadChecks(w);
 
@@ -304,6 +337,27 @@ export default function Wallet() {
           window.dispatchEvent(new Event("member-updated"));
         } catch (e) {
           console.warn("[Wallet] localStorage sync failed on refresh", e);
+        }
+
+        // ✅ Fetch full merchant data including sweep_day
+        const walletMerchantId = w?.merchant_id || localStorage.getItem("merchantId");
+        if (walletMerchantId) {
+          try {
+            const merchantData = await apiPost("get_merchant.php", { merchant_id: walletMerchantId });
+            if (merchantData?.success && merchantData?.merchant) {
+              const m = merchantData.merchant;
+              localStorage.setItem("merchant", JSON.stringify(m));
+              if (m.merchant_name) localStorage.setItem("merchantName", m.merchant_name);
+              if (m.conversion_rate) localStorage.setItem("conversion_rate", String(m.conversion_rate));
+              if (m.sweep_day !== undefined && m.sweep_day !== null) {
+                localStorage.setItem("sweep_day", String(m.sweep_day));
+              } else {
+                localStorage.removeItem("sweep_day");
+              }
+            }
+          } catch (err) {
+            console.warn("[Wallet] Failed to fetch merchant data on refresh:", err);
+          }
         }
 
         runPostLoadChecks(w);
@@ -548,7 +602,7 @@ export default function Wallet() {
       </p>
 
       {/* --- Summary Card --- */}
-      <div className="card" style={{ marginTop: 12 }}>
+      <div className="card card--accent" style={{ marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
@@ -645,12 +699,13 @@ export default function Wallet() {
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
           <button className="btn-secondary" onClick={() => navigate("/portfolio")}>StockLoyal Portfolio</button>
-          <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Transactions</button>
+          <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Order History</button>
+          <button className="btn-secondary" onClick={() => navigate("/ledger")}>View Transactions</button>
         </div>
       </div>
 
       {/* --- Social Media Share Card --- */}
-      <div className="card card--accent" style={{ marginTop: 14 }}>
+      <div className="card" style={{ marginTop: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div
             style={{

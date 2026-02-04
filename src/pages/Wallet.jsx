@@ -64,6 +64,7 @@ export default function Wallet() {
   // Social share
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Listen for footer Share button
   useEffect(() => {
@@ -74,7 +75,7 @@ export default function Wallet() {
     return () => window.removeEventListener("open-share-sheet", openShareFromFooter);
   }, []);
 
-  // Fetch last order
+  // Fetch last order + pending order count
   useEffect(() => {
     if (!memberId) return;
     (async () => {
@@ -83,6 +84,20 @@ export default function Wallet() {
         if (data?.success && data.order) setLastOrder(data.order);
       } catch (err) {
         console.error("[Wallet] get_last_order error:", err);
+      }
+
+      // ✅ Fetch pending orders count
+      try {
+        const ordersData = await apiPost("get_order_history.php", { member_id: memberId });
+        if (ordersData?.success && Array.isArray(ordersData.orders)) {
+          const pending = ordersData.orders.filter((o) => {
+            const s = (o.status || "").toLowerCase();
+            return s === "pending" || s === "queued";
+          });
+          setPendingCount(pending.length);
+        }
+      } catch (err) {
+        console.error("[Wallet] pending count error:", err);
       }
     })();
   }, [memberId]);
@@ -656,10 +671,29 @@ export default function Wallet() {
           </button>
 
           <button
-            className={notLinked ? "btn-primary" : "btn-secondary"}
-            onClick={() => navigate("/select-broker")}
+            className="btn-secondary"
+            onClick={() => navigate("/transactions", { state: { filterStatus: "pending" } })}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
           >
-            {notLinked ? "Link Broker" : `Active Broker: ${wallet.broker || "Unknown"}`}
+            My Pending Orders
+            <span style={{
+              background: pendingCount > 0 ? "#ef4444" : "#9ca3af",
+              color: "#fff",
+              borderRadius: "9999px",
+              padding: "1px 8px",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              lineHeight: "1.4",
+              minWidth: 20,
+              textAlign: "center",
+            }}>
+              {pendingCount}
+            </span>
           </button>
         </div>
       </div>

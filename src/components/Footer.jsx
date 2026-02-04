@@ -85,7 +85,7 @@ export default function Footer() {
     { to: "/wallet", label: "Wallet", icon: <WalletIcon className="nav-icon" /> },
     { to: "/select-broker", label: "Select Broker", icon: <Briefcase className="nav-icon" /> },
     { to: "/about", label: "About", icon: <Info className="nav-icon" /> },
-    { to: "/basket", label: "Basket", icon: <ShoppingBasket className="nav-icon" /> },
+    { to: "/stock-picker", label: "Basket", icon: <ShoppingBasket className="nav-icon" /> },
     { to: "/social", label: "Community Feed", icon: <Share2 className="nav-icon" /> },
   ];
 
@@ -107,7 +107,7 @@ export default function Footer() {
                 {icon}
 
                 {/* ✅ Show number of orders/items next to basket icon */}
-                {to === "/basket" && orderCount > 0 && (
+                {to === "/stock-picker" && orderCount > 0 && (
                   <span className="absolute -top-1 -right-2 bg-red-500 text-blue-300 text-[10px] font-bold rounded-full px-1">
                     {orderCount}
                   </span>
