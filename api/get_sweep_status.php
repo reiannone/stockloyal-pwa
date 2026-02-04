@@ -1,6 +1,14 @@
 <?php
 /**
- * get_sweep_status.php - Get sweep process status and history
+ * get_sweep_status.php — Read API for SweepAdmin dashboard
+ *
+ * Called by SweepAdmin.jsx → apiPost("get_sweep_status.php", { action })
+ *
+ * Actions:
+ *   overview          → Stats cards, pending by merchant, upcoming schedule
+ *   history           → sweep_log rows for the History tab
+ *   pending           → Pending/queued orders for the Pending tab
+ *   merchant_schedule → Merchant sweep day config for the Schedules tab
  */
 
 declare(strict_types=1);
@@ -14,274 +22,292 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-$input = json_decode(file_get_contents("php://input"), true);
-$action = $input['action'] ?? 'overview';
+$input      = json_decode(file_get_contents("php://input"), true);
+$action     = $input['action'] ?? 'overview';
 $merchantId = $input['merchant_id'] ?? null;
-$limit = min((int)($input['limit'] ?? 20), 100);
+$limit      = (int) ($input['limit'] ?? 50);
 
 try {
     switch ($action) {
+
+        // ==============================================================
+        // OVERVIEW — stat cards + pending summary + upcoming schedule
+        // ==============================================================
         case 'overview':
-            // Get overall sweep status and upcoming schedules
-            $response = getSweepOverview($conn);
+            echo json_encode(getOverview($conn));
             break;
-            
+
+        // ==============================================================
+        // HISTORY — sweep_log rows
+        // ==============================================================
         case 'history':
-            // Get sweep execution history
-            $response = getSweepHistory($conn, $limit);
+            echo json_encode(getHistory($conn, $limit));
             break;
-            
+
+        // ==============================================================
+        // PENDING — individual pending/queued orders
+        // ==============================================================
         case 'pending':
-            // Get pending orders awaiting sweep
-            $response = getPendingOrders($conn, $merchantId);
+            echo json_encode(getPendingOrders($conn, $merchantId));
             break;
-            
+
+        // ==============================================================
+        // MERCHANT_SCHEDULE — merchants with sweep_day config
+        // ==============================================================
         case 'merchant_schedule':
-            // Get merchant sweep schedules
-            $response = getMerchantSchedules($conn);
+            echo json_encode(getMerchantSchedules($conn));
             break;
-            
-        case 'batch_details':
-            // Get details for a specific batch
-            $batchId = $input['batch_id'] ?? null;
-            if (!$batchId) {
-                throw new Exception("batch_id required");
-            }
-            $response = getBatchDetails($conn, $batchId);
-            break;
-            
+
         default:
             throw new Exception("Unknown action: {$action}");
     }
-    
-    echo json_encode(['success' => true] + $response);
-    
+
 } catch (Exception $e) {
     http_response_code(400);
     echo json_encode([
         'success' => false,
-        'error' => $e->getMessage()
+        'error'   => $e->getMessage(),
     ]);
 }
 
-/**
- * Get sweep overview with upcoming schedules and stats
- */
-function getSweepOverview(PDO $conn): array {
-    $today = (int) date('j');
+
+// ==================================================================
+// OVERVIEW
+// ==================================================================
+
+function getOverview(PDO $conn): array
+{
+    $today          = date('Y-m-d');
+    $dayOfMonth     = (int) date('j');
     $lastDayOfMonth = (int) date('t');
-    
-    // Get merchants scheduled for today
+
+    // Total pending orders + amount
+    $stmt = $conn->query("
+        SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS amt
+        FROM   orders
+        WHERE  LOWER(status) IN ('pending','queued')
+    ");
+    $pending = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Today's sweep activity from sweep_log
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)                    AS sweeps_run,
+               COALESCE(SUM(orders_confirmed), 0) AS orders_confirmed,
+               COALESCE(SUM(orders_failed), 0)     AS orders_failed
+        FROM   sweep_log
+        WHERE  DATE(started_at) = ?
+    ");
+    $stmt->execute([$today]);
+    $todayStats = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Merchants scheduled for today
     $stmt = $conn->prepare("
         SELECT merchant_id, merchant_name, sweep_day
-        FROM merchant 
-        WHERE sweep_day IS NOT NULL 
-        AND (sweep_day = :today OR (sweep_day = -1 AND :today = :last_day))
+        FROM   merchant
+        WHERE  sweep_day IS NOT NULL
+          AND  (sweep_day = ? OR (sweep_day = -1 AND ? = ?))
     ");
-    $stmt->execute([':today' => $today, ':last_day' => $lastDayOfMonth]);
-    $todayMerchants = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get pending order counts by merchant
+    $stmt->execute([$dayOfMonth, $dayOfMonth, $lastDayOfMonth]);
+    $scheduledToday = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Pending orders by merchant
     $stmt = $conn->query("
-        SELECT 
-            o.merchant_id,
-            m.merchant_name,
-            m.sweep_day,
-            COUNT(*) as pending_orders,
-            SUM(o.amount) as pending_amount,
-            MIN(o.placed_at) as oldest_order
-        FROM orders o
+        SELECT o.merchant_id,
+               m.merchant_name,
+               m.sweep_day,
+               COUNT(*)             AS pending_orders,
+               SUM(o.amount)        AS pending_amount,
+               MIN(o.placed_at)     AS oldest_order
+        FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
-        WHERE o.status IN ('pending', 'Pending', 'queued')
-        GROUP BY o.merchant_id, m.merchant_name, m.sweep_day
-        ORDER BY pending_orders DESC
+        WHERE  LOWER(o.status) IN ('pending','queued')
+        GROUP  BY o.merchant_id, m.merchant_name, m.sweep_day
+        ORDER  BY pending_orders DESC
     ");
     $pendingByMerchant = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Get last sweep execution
-    $stmt = $conn->query("
-        SELECT * FROM sweep_log 
-        ORDER BY started_at DESC 
-        LIMIT 1
-    ");
-    $lastSweep = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    // Get today's stats
-    $stmt = $conn->prepare("
-        SELECT 
-            COUNT(*) as sweeps_today,
-            SUM(orders_confirmed) as orders_confirmed_today,
-            SUM(orders_failed) as orders_failed_today
-        FROM sweep_log
-        WHERE DATE(started_at) = CURDATE()
-    ");
-    $stmt->execute();
-    $todayStats = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    // Get upcoming sweep schedule for next 7 days
+
+    // Upcoming schedule (next 7 days)
     $upcoming = [];
-    for ($i = 0; $i <= 7; $i++) {
-        $date = strtotime("+{$i} days");
-        $dayOfMonth = (int) date('j', $date);
-        $lastDay = (int) date('t', $date);
-        
+    for ($d = 0; $d < 7; $d++) {
+        $date       = date('Y-m-d', strtotime("+{$d} days"));
+        $dayNum     = (int) date('j', strtotime("+{$d} days"));
+        $dayName    = date('D', strtotime("+{$d} days"));
+        $isLastDay  = ($dayNum === (int) date('t', strtotime("+{$d} days")));
+
         $stmt = $conn->prepare("
             SELECT merchant_id, merchant_name, sweep_day
-            FROM merchant 
-            WHERE sweep_day IS NOT NULL 
-            AND (sweep_day = :day OR (sweep_day = -1 AND :day = :last_day))
+            FROM   merchant
+            WHERE  sweep_day IS NOT NULL
+              AND  (sweep_day = ? OR (sweep_day = -1 AND ? = 1))
         ");
-        $stmt->execute([':day' => $dayOfMonth, ':last_day' => $lastDay]);
-        $merchants = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        if (!empty($merchants)) {
+        $stmt->execute([$dayNum, $isLastDay ? 1 : 0]);
+        $dayMerchants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($dayMerchants)) {
             $upcoming[] = [
-                'date' => date('Y-m-d', $date),
-                'day_name' => date('l', $date),
-                'day_of_month' => $dayOfMonth,
-                'merchants' => $merchants
+                'date'         => $date,
+                'day_name'     => $dayName,
+                'day_of_month' => $dayNum,
+                'merchants'    => $dayMerchants,
             ];
         }
     }
-    
+
     return [
-        'today' => [
-            'date' => date('Y-m-d'),
-            'day_of_month' => $today,
-            'scheduled_merchants' => $todayMerchants,
-            'sweeps_run' => (int) ($todayStats['sweeps_today'] ?? 0),
-            'orders_confirmed' => (int) ($todayStats['orders_confirmed_today'] ?? 0),
-            'orders_failed' => (int) ($todayStats['orders_failed_today'] ?? 0)
+        'success'              => true,
+        'total_pending_orders' => (int) $pending['cnt'],
+        'total_pending_amount' => (float) $pending['amt'],
+        'today'                => [
+            'date'                => $today,
+            'sweeps_run'          => (int) $todayStats['sweeps_run'],
+            'orders_confirmed'    => (int) $todayStats['orders_confirmed'],
+            'orders_failed'       => (int) $todayStats['orders_failed'],
+            'scheduled_merchants' => $scheduledToday,
         ],
-        'pending_by_merchant' => $pendingByMerchant,
-        'total_pending_orders' => array_sum(array_column($pendingByMerchant, 'pending_orders')),
-        'total_pending_amount' => array_sum(array_column($pendingByMerchant, 'pending_amount')),
-        'last_sweep' => $lastSweep ? [
-            'batch_id' => $lastSweep['batch_id'],
-            'started_at' => $lastSweep['started_at'],
-            'merchants_processed' => $lastSweep['merchants_processed'],
-            'orders_confirmed' => $lastSweep['orders_confirmed'],
-            'orders_failed' => $lastSweep['orders_failed']
-        ] : null,
-        'upcoming_schedule' => $upcoming
+        'pending_by_merchant'  => $pendingByMerchant,
+        'upcoming_schedule'    => $upcoming,
     ];
 }
 
-/**
- * Get sweep execution history
- */
-function getSweepHistory(PDO $conn, int $limit): array {
-    $stmt = $conn->prepare("
-        SELECT 
-            batch_id,
-            started_at,
-            completed_at,
-            TIMESTAMPDIFF(SECOND, started_at, completed_at) as duration_seconds,
-            merchants_processed,
-            orders_processed,
-            orders_confirmed,
-            orders_failed,
-            brokers_notified,
-            errors
-        FROM sweep_log
-        ORDER BY started_at DESC
-        LIMIT :limit
-    ");
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $stmt->execute();
-    $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Parse JSON fields
-    foreach ($history as &$row) {
-        $row['brokers_notified'] = json_decode($row['brokers_notified'] ?? '[]', true);
-        $row['errors'] = json_decode($row['errors'] ?? '[]', true);
-        $row['has_errors'] = !empty($row['errors']);
+
+// ==================================================================
+// HISTORY — sweep_log rows
+// ==================================================================
+
+function getHistory(PDO $conn, int $limit): array
+{
+    try {
+        // Cast limit directly into SQL (already validated as int) to avoid PDO string-binding issue
+        $safeLimit = max(1, min($limit, 200));
+        $stmt = $conn->query("
+            SELECT batch_id, started_at, completed_at,
+                   merchants_processed, orders_processed,
+                   orders_confirmed, orders_failed,
+                   brokers_notified, errors, log_data
+            FROM   sweep_log
+            ORDER  BY started_at DESC
+            LIMIT  {$safeLimit}
+        ");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // Return error details so frontend can log them for debugging
+        return ['success' => false, 'history' => [], 'error' => $e->getMessage()];
     }
-    
-    return ['history' => $history];
+
+    foreach ($rows as &$row) {
+        $row['merchants_processed'] = (int)   ($row['merchants_processed'] ?? 0);
+        $row['orders_processed']    = (int)   ($row['orders_processed'] ?? 0);
+        $row['orders_confirmed']    = (int)   ($row['orders_confirmed'] ?? 0);
+        $row['orders_failed']       = (int)   ($row['orders_failed'] ?? 0);
+
+        // Compute duration_seconds from started_at / completed_at for frontend
+        if ($row['started_at'] && $row['completed_at']) {
+            $start = strtotime($row['started_at']);
+            $end   = strtotime($row['completed_at']);
+            $row['duration_seconds'] = max(0, $end - $start);
+        } else {
+            $row['duration_seconds'] = 0;
+        }
+
+        // Decode brokers_notified JSON → array
+        if (is_string($row['brokers_notified'])) {
+            $decoded = json_decode($row['brokers_notified'], true);
+            $row['brokers_notified'] = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($row['brokers_notified'])) {
+            $row['brokers_notified'] = [];
+        }
+
+        // Decode errors JSON → array, compute has_errors boolean
+        if (is_string($row['errors'])) {
+            $decoded = json_decode($row['errors'], true);
+            $row['errors'] = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($row['errors'])) {
+            $row['errors'] = [];
+        }
+        $row['has_errors'] = !empty($row['errors']);
+
+        // Decode log_data JSON → array
+        if (is_string($row['log_data'])) {
+            $decoded = json_decode($row['log_data'], true);
+            $row['log_data'] = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($row['log_data'])) {
+            $row['log_data'] = [];
+        }
+    }
+    unset($row);
+
+    return [
+        'success' => true,
+        'history' => $rows,
+    ];
 }
 
-/**
- * Get pending orders awaiting sweep
- */
-function getPendingOrders(PDO $conn, ?string $merchantId = null): array {
+
+// ==================================================================
+// PENDING — individual orders
+// ==================================================================
+
+function getPendingOrders(PDO $conn, ?string $merchantId): array
+{
     $sql = "
-        SELECT 
-            o.order_id,
-            o.member_id,
-            o.merchant_id,
-            m.merchant_name,
-            o.basket_id,
-            o.symbol,
-            o.shares,
-            o.amount,
-            o.points_used,
-            o.status,
-            o.placed_at,
-            o.broker,
-            m.sweep_day
-        FROM orders o
+        SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
+               o.symbol, o.shares, o.amount, o.broker,
+               o.status, o.placed_at, o.order_type,
+               m.merchant_name
+        FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
-        WHERE o.status IN ('pending', 'Pending', 'queued')
+        WHERE  LOWER(o.status) IN ('pending','queued')
     ";
-    
+
     $params = [];
     if ($merchantId) {
-        $sql .= " AND o.merchant_id = :merchant_id";
-        $params[':merchant_id'] = $merchantId;
+        $sql .= " AND o.merchant_id = ? ";
+        $params[] = $merchantId;
     }
-    
-    $sql .= " ORDER BY o.placed_at ASC LIMIT 500";
-    
+    $sql .= " ORDER BY o.placed_at DESC LIMIT 500";
+
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
-    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
     return [
-        'pending_orders' => $orders,
-        'count' => count($orders)
+        'success'        => true,
+        'pending_orders' => $rows,
     ];
 }
 
-/**
- * Get merchant sweep schedules
- */
-function getMerchantSchedules(PDO $conn): array {
-    $stmt = $conn->query("
-        SELECT 
-            m.merchant_id,
-            m.merchant_name,
-            m.sweep_day,
-            m.sweep_modified_at,
-            (SELECT COUNT(*) FROM orders o 
-             WHERE o.merchant_id = m.merchant_id 
-             AND o.status IN ('pending', 'Pending', 'queued')) as pending_orders,
-            (SELECT SUM(o.amount) FROM orders o 
-             WHERE o.merchant_id = m.merchant_id 
-             AND o.status IN ('pending', 'Pending', 'queued')) as pending_amount
-        FROM merchant m
-        WHERE m.sweep_day IS NOT NULL
-        ORDER BY m.sweep_day ASC, m.merchant_name ASC
-    ");
-    
-    return ['schedules' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
-}
 
-/**
- * Get details for a specific batch
- */
-function getBatchDetails(PDO $conn, string $batchId): array {
-    $stmt = $conn->prepare("SELECT * FROM sweep_log WHERE batch_id = :batch_id");
-    $stmt->execute([':batch_id' => $batchId]);
-    $batch = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$batch) {
-        throw new Exception("Batch not found: {$batchId}");
-    }
-    
-    $batch['brokers_notified'] = json_decode($batch['brokers_notified'] ?? '[]', true);
-    $batch['errors'] = json_decode($batch['errors'] ?? '[]', true);
-    $batch['log_data'] = json_decode($batch['log_data'] ?? '[]', true);
-    
-    return ['batch' => $batch];
+// ==================================================================
+// MERCHANT SCHEDULES
+// ==================================================================
+
+function getMerchantSchedules(PDO $conn): array
+{
+    $stmt = $conn->query("
+        SELECT m.merchant_id,
+               m.merchant_name,
+               m.sweep_day,
+               m.sweep_modified_at,
+               COALESCE(p.pending_orders, 0) AS pending_orders,
+               COALESCE(p.pending_amount, 0) AS pending_amount
+        FROM   merchant m
+        LEFT JOIN (
+            SELECT merchant_id,
+                   COUNT(*)      AS pending_orders,
+                   SUM(amount)   AS pending_amount
+            FROM   orders
+            WHERE  LOWER(status) IN ('pending','queued')
+            GROUP  BY merchant_id
+        ) p ON m.merchant_id = p.merchant_id
+        ORDER  BY m.merchant_name ASC
+    ");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return [
+        'success'   => true,
+        'schedules' => $rows,
+    ];
 }

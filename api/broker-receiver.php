@@ -9,6 +9,10 @@ declare(strict_types=1);
  *   Stage 2: order.acknowledged → status "placed"
  *   Stage 3: order.confirmed → status "confirmed"
  * 
+ * Also handles:
+ *   sweep.orders → acknowledges batch of orders from sweep process
+ *   order.executed / order.rejected / order.cancelled
+ * 
  * Endpoint: https://api.stockloyal.com/api/broker-receiver.php
  */
 
@@ -130,59 +134,99 @@ function authenticateBroker(PDO $conn, string $logFile): ?array {
 // ============================================================================
 
 /**
- * Handle order.acknowledged event (Stage 2)
- * Updates order status from "pending" to "placed"
+ * Handle order.acknowledged / order.placed event (Stage 2)
+ * 
+ * Two inbound patterns:
+ *   A) Sweep engine sends order.placed with batch_id + orders[] per basket
+ *      → sweep_process.php already logs the notification with response body
+ *      → do NOT create a duplicate notification here
+ *   B) External broker sends order.acknowledged for a single basket
+ *      → log the inbound notification as before
+ *
+ * Both update pending → placed and return acknowledgement with timestamp.
  */
 function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): array {
-    $basketId = $payload['basket_id'] ?? '';
-    $memberId = $payload['member_id'] ?? '';
-    $brokerOrderId = $payload['broker_order_id'] ?? null;
-    $acknowledgedAt = $payload['acknowledged_at'] ?? gmdate('c');
-    
+    $basketId       = $payload['basket_id'] ?? '';
+    $memberId       = $payload['member_id'] ?? '';
+    $brokerOrderId  = $payload['broker_order_id'] ?? null;
+    $acknowledgedAt = gmdate('c');
+    $isSweepOrigin  = !empty($payload['batch_id']);  // sweep engine includes batch_id
+
     if (empty($basketId)) {
         throw new Exception('Missing basket_id');
     }
-    
-    logMessage($logFile, "Processing order.acknowledged: basket_id={$basketId}, member_id={$memberId}");
-    
-    // Update orders from "pending" to "placed" (case-insensitive)
+
+    logMessage($logFile, "Processing order.placed/acknowledged: basket_id={$basketId}, "
+               . "member_id={$memberId}, sweep_origin=" . ($isSweepOrigin ? 'yes' : 'no'));
+
+    // Update orders from "pending"/"queued" to "placed" (may already be placed by sweep — that's OK)
     $stmt = $conn->prepare("
         UPDATE orders 
         SET status = 'placed',
             broker_order_id = COALESCE(?, broker_order_id),
             updated_at = NOW()
         WHERE basket_id = ?
-          AND LOWER(status) = 'pending'
+          AND LOWER(status) IN ('pending','queued')
     ");
     $stmt->execute([$brokerOrderId, $basketId]);
     $rowsUpdated = $stmt->rowCount();
-    
+
     logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'placed'");
-    
-    // Log to broker_notifications if tracking
-    try {
-        $notifStmt = $conn->prepare("
-            INSERT INTO broker_notifications 
-            (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
-            VALUES (?, ?, 'order.acknowledged', 'received', ?, ?, ?, NOW())
-        ");
-        $notifStmt->execute([
-            $payload['broker_id'] ?? null,
-            $payload['broker_name'] ?? null,
-            $memberId,
-            $basketId,
-            json_encode($payload)
-        ]);
-    } catch (PDOException $e) {
-        // Non-critical, continue
-        logMessage($logFile, "⚠️ Failed to log notification: " . $e->getMessage());
+
+    // Fetch actual order rows for this basket to echo back in response
+    $detailStmt = $conn->prepare("
+        SELECT order_id, symbol, shares, amount, points_used, status, order_type
+        FROM   orders
+        WHERE  basket_id = ?
+        ORDER  BY order_id ASC
+    ");
+    $detailStmt->execute([$basketId]);
+    $orderRows = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Generate a broker-side reference ID
+    $brokerBatchId = 'BRK-' . date('Ymd-His') . '-' . substr(uniqid(), -4);
+
+    // Only log notification for NON-sweep requests (external broker callbacks)
+    // Sweep-originated requests are already logged by sweep_process.php with full response
+    if (!$isSweepOrigin) {
+        try {
+            $notifStmt = $conn->prepare("
+                INSERT INTO broker_notifications 
+                (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+                VALUES (?, ?, 'order.acknowledged', 'received', ?, ?, ?, NOW())
+            ");
+            $notifStmt->execute([
+                $payload['broker_id'] ?? null,
+                $payload['broker_name'] ?? null,
+                $memberId,
+                $basketId,
+                json_encode([
+                    'broker_batch_id'  => $brokerBatchId,
+                    'acknowledged_at'  => $acknowledgedAt,
+                    'orders_received'  => count($orderRows),
+                    'orders_in_basket' => $orderRows,
+                ])
+            ]);
+        } catch (PDOException $e) {
+            logMessage($logFile, "⚠️ Failed to log notification: " . $e->getMessage());
+        }
+    } else {
+        logMessage($logFile, "ℹ️ Sweep-origin — skipping duplicate notification (sweep_process logs it)");
     }
-    
+
+    logMessage($logFile, "✅ Acknowledged basket {$basketId} → broker_batch_id={$brokerBatchId}");
+
     return [
-        'event' => 'order.acknowledged',
-        'basket_id' => $basketId,
-        'orders_updated' => $rowsUpdated,
-        'new_status' => 'placed'
+        'event'            => 'order.acknowledged',
+        'acknowledged'     => true,
+        'acknowledged_at'  => $acknowledgedAt,
+        'broker_batch_id'  => $brokerBatchId,
+        'basket_id'        => $basketId,
+        'member_id'        => $memberId,
+        'orders_received'  => count($orderRows),
+        'orders'           => $orderRows,
+        'new_status'       => 'placed',
+        'message'          => count($orderRows) . ' order(s) acknowledged for processing',
     ];
 }
 
@@ -450,6 +494,7 @@ try {
         'order.executed', 'order_executed' => handleOrderExecuted($conn, $payload, $logFile),
         'order.rejected', 'order_rejected' => handleOrderRejected($conn, $payload, $logFile),
         'order.cancelled', 'order_cancelled' => handleOrderCancelled($conn, $payload, $logFile),
+        'sweep.orders', 'sweep_orders' => handleOrderAcknowledged($conn, $payload, $logFile),
         'test.connection', 'test' => handleTestConnection($payload, $logFile),
         default => [
             'event' => $eventType,
@@ -461,6 +506,7 @@ try {
                 'order.executed',
                 'order.rejected',
                 'order.cancelled',
+                'sweep.orders',
                 'test.connection'
             ]
         ]

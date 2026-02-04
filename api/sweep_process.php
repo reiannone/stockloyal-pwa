@@ -1,439 +1,509 @@
 <?php
-/**
- * SweepProcess - Batch processor for scheduled order sweeps
- * 
- * This class handles the automated sweep process that:
- * 1. Identifies merchants whose sweep_day matches today
- * 2. Finds all pending/queued orders for those merchants
- * 3. Submits trade orders to each broker
- * 4. Updates order status to 'confirmed' with timestamp
- */
-
 declare(strict_types=1);
 
-class SweepProcess {
-    private PDO $conn;
-    private array $log = [];
+/**
+ * sweep_process.php — Core Sweep Engine
+ *
+ * Called by trigger_sweep.php when admin clicks "Run Sweep" / "Run Sweep Now".
+ *
+ * Architecture:
+ *   merchant → member basket_id → individual broker notification
+ *
+ * Per basket:
+ *   1. Mark basket orders → status = 'placed'
+ *   2. POST order detail to broker webhook_url
+ *   3. Capture full response body (acknowledgement + timestamp)
+ *   4. Log request + response to broker_notifications
+ *   5. Return everything to admin UI
+ *
+ * Tables read:   orders, merchant, broker_master
+ * Tables write:  orders (status), broker_notifications, sweep_log
+ */
+
+class SweepProcess
+{
+    private PDO    $conn;
+    private string $logFile;
     private string $batchId;
-    
-    public function __construct(PDO $conn) {
+    private array  $errors      = [];
+    private array  $logMessages = [];
+
+    public function __construct(PDO $conn)
+    {
         $this->conn = $conn;
-        $this->batchId = 'SWEEP_' . date('Ymd_His') . '_' . substr(uniqid(), -6);
-    }
-    
-    /**
-     * Run the sweep process for all eligible merchants
-     * @param int|null $forceMerchantId - If set, only process this merchant (for manual triggers)
-     * @return array - Results of the sweep process
-     */
-    public function run(?string $forceMerchantId = null): array {
-        $startTime = microtime(true);
-        $this->log("=== Sweep Process Started ===");
-        $this->log("Batch ID: {$this->batchId}");
-        $this->log("Timestamp: " . date('Y-m-d H:i:s'));
-        
-        $results = [
-            'batch_id' => $this->batchId,
-            'started_at' => date('Y-m-d H:i:s'),
-            'merchants_processed' => 0,
-            'orders_processed' => 0,
-            'orders_confirmed' => 0,
-            'orders_failed' => 0,
-            'brokers_notified' => [],
-            'errors' => [],
-            'log' => []
-        ];
-        
-        try {
-            // Get eligible merchants
-            $merchants = $this->getEligibleMerchants($forceMerchantId);
-            $this->log("Found " . count($merchants) . " eligible merchant(s)");
-            
-            if (empty($merchants)) {
-                $this->log("No merchants to process today");
-                $results['log'] = $this->log;
-                return $results;
-            }
-            
-            foreach ($merchants as $merchant) {
-                $merchantResult = $this->processMerchant($merchant);
-                $results['merchants_processed']++;
-                $results['orders_processed'] += $merchantResult['orders_processed'];
-                $results['orders_confirmed'] += $merchantResult['orders_confirmed'];
-                $results['orders_failed'] += $merchantResult['orders_failed'];
-                
-                if (!empty($merchantResult['brokers_notified'])) {
-                    $results['brokers_notified'] = array_merge(
-                        $results['brokers_notified'], 
-                        $merchantResult['brokers_notified']
-                    );
-                }
-                
-                if (!empty($merchantResult['errors'])) {
-                    $results['errors'] = array_merge($results['errors'], $merchantResult['errors']);
-                }
-            }
-            
-        } catch (Exception $e) {
-            $this->log("FATAL ERROR: " . $e->getMessage());
-            $results['errors'][] = $e->getMessage();
+
+        $logDir = '/var/www/html/stockloyal-pwa/logs';
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
         }
-        
-        $results['completed_at'] = date('Y-m-d H:i:s');
-        $results['duration_seconds'] = round(microtime(true) - $startTime, 3);
-        $results['log'] = $this->log;
-        
-        // Log the sweep execution
-        $this->logSweepExecution($results);
-        
-        $this->log("=== Sweep Process Completed ===");
-        $this->log("Duration: {$results['duration_seconds']}s");
-        
-        return $results;
+        $this->logFile = $logDir . '/sweep-process.log';
     }
-    
-    /**
-     * Get merchants whose sweep_day matches today (or forced merchant)
-     */
-    private function getEligibleMerchants(?string $forceMerchantId = null): array {
-        $today = (int) date('j'); // Day of month (1-31)
-        $lastDayOfMonth = (int) date('t'); // Last day of current month
-        
-        if ($forceMerchantId) {
-            // Manual trigger - get specific merchant
-            $sql = "SELECT merchant_id, merchant_name, sweep_day 
-                    FROM merchant 
-                    WHERE merchant_id = :merchant_id 
-                    AND sweep_day IS NOT NULL";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute([':merchant_id' => $forceMerchantId]);
-        } else {
-            // Scheduled run - find merchants matching today
-            $sql = "SELECT merchant_id, merchant_name, sweep_day 
-                    FROM merchant 
-                    WHERE sweep_day IS NOT NULL 
-                    AND (
-                        sweep_day = :today 
-                        OR (sweep_day = -1 AND :today = :last_day)
-                    )";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute([
-                ':today' => $today,
-                ':last_day' => $lastDayOfMonth
-            ]);
-        }
-        
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    private function log(string $msg): void
+    {
+        $ts = gmdate('Y-m-d H:i:s');
+        $line = "[{$ts}] {$msg}";
+        $this->logMessages[] = $line;
+        @file_put_contents($this->logFile, "{$line}\n", FILE_APPEND);
     }
-    
-    /**
-     * Process all pending orders for a merchant
-     */
-    private function processMerchant(array $merchant): array {
-        $merchantId = $merchant['merchant_id'];
-        $merchantName = $merchant['merchant_name'] ?? $merchantId;
-        
-        $this->log("--- Processing merchant: {$merchantName} ({$merchantId}) ---");
-        
-        $result = [
-            'merchant_id' => $merchantId,
-            'orders_processed' => 0,
-            'orders_confirmed' => 0,
-            'orders_failed' => 0,
-            'brokers_notified' => [],
-            'errors' => []
-        ];
-        
-        // Get pending orders for this merchant
+
+    // ====================================================================
+    // PUBLIC — run()
+    // ====================================================================
+
+    public function run(?string $merchantId = null): array
+    {
+        $this->batchId = 'SWP-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
+        $startTime     = microtime(true);
+
+        $this->log(str_repeat('=', 80));
+        $this->log("SWEEP BATCH START: {$this->batchId}");
+        $this->log($merchantId ? "Merchant: {$merchantId}" : "All merchants");
+
+        // 1. Fetch pending orders
         $orders = $this->getPendingOrders($merchantId);
-        $this->log("Found " . count($orders) . " pending order(s)");
-        
+
         if (empty($orders)) {
-            return $result;
+            $this->log("No pending orders — nothing to sweep.");
+            return $this->buildResult(0, 0, 0, [], [], microtime(true) - $startTime);
         }
-        
-        // Group orders by broker
-        $ordersByBroker = [];
-        foreach ($orders as $order) {
-            $broker = $order['broker'] ?? 'Unknown';
-            if (!isset($ordersByBroker[$broker])) {
-                $ordersByBroker[$broker] = [];
+
+        // 2. Group: basket_id → orders[]
+        $baskets = $this->groupByBasket($orders);
+
+        $this->log("Found " . count($orders) . " order(s) in "
+                    . count($baskets) . " basket(s)");
+
+        $totalPlaced  = 0;
+        $totalFailed  = 0;
+        $merchantSet  = [];
+        $basketResults = [];
+
+        // 3. Process each basket individually
+        foreach ($baskets as $basketId => $basketOrders) {
+            $first       = $basketOrders[0];
+            $memberId    = $first['member_id'];
+            $brokerName  = $first['broker'] ?? 'unknown';
+            $merchId     = $first['merchant_id'] ?? null;
+            $merchName   = $first['merchant_name'] ?? null;
+
+            if ($merchId) $merchantSet[$merchId] = true;
+
+            $this->log("--- Basket: {$basketId}  member={$memberId}  "
+                        . "broker={$brokerName}  orders=" . count($basketOrders) . " ---");
+
+            try {
+                $result = $this->processBasket($basketId, $basketOrders);
+                $totalPlaced += $result['orders_placed'];
+                $totalFailed += $result['orders_failed'];
+                $basketResults[] = $result;
+            } catch (\Exception $e) {
+                $this->log("❌ Basket {$basketId} EXCEPTION: " . $e->getMessage());
+                $this->errors[] = "Basket {$basketId}: " . $e->getMessage();
+                $totalFailed += count($basketOrders);
+
+                $basketResults[] = [
+                    'basket_id'     => $basketId,
+                    'member_id'     => $memberId,
+                    'broker'        => $brokerName,
+                    'merchant_id'   => $merchId,
+                    'merchant_name' => $merchName,
+                    'orders_placed' => 0,
+                    'orders_failed' => count($basketOrders),
+                    'acknowledged'  => false,
+                    'error'         => $e->getMessage(),
+                    'request'       => null,
+                    'response'      => null,
+                ];
             }
-            $ordersByBroker[$broker][] = $order;
         }
-        
-        // Process each broker batch
-        foreach ($ordersByBroker as $broker => $brokerOrders) {
-            $this->log("Processing " . count($brokerOrders) . " order(s) for broker: {$broker}");
-            
-            $brokerResult = $this->submitToBroker($broker, $brokerOrders, $merchantId);
-            
-            $result['orders_processed'] += count($brokerOrders);
-            $result['orders_confirmed'] += $brokerResult['confirmed'];
-            $result['orders_failed'] += $brokerResult['failed'];
-            
-            if ($brokerResult['notified']) {
-                $result['brokers_notified'][] = $broker;
-            }
-            
-            if (!empty($brokerResult['errors'])) {
-                $result['errors'] = array_merge($result['errors'], $brokerResult['errors']);
-            }
-        }
-        
-        return $result;
+
+        $duration = microtime(true) - $startTime;
+
+        // 4. Collect unique broker names that acknowledged
+        $brokersNotified = array_values(array_unique(array_filter(
+            array_map(fn($r) => $r['acknowledged'] ? $r['broker'] : null, $basketResults)
+        )));
+
+        // 5. Log batch to sweep_log
+        $this->logSweepBatch($totalPlaced, $totalFailed,
+                             count($merchantSet), $brokersNotified, $duration);
+
+        $this->log("SWEEP DONE: placed={$totalPlaced}  failed={$totalFailed}  "
+                    . "baskets=" . count($baskets) . "  duration=" . round($duration, 2) . "s");
+        $this->log(str_repeat('-', 80));
+
+        return $this->buildResult(
+            $totalPlaced, $totalFailed, count($merchantSet),
+            $brokersNotified, $basketResults, $duration
+        );
     }
-    
-    /**
-     * Get all pending orders for a merchant
-     */
-    private function getPendingOrders(string $merchantId): array {
-        $sql = "SELECT o.*, w.member_id as wallet_member_id
-                FROM orders o
-                LEFT JOIN wallet w ON o.member_id = w.member_id
-                WHERE o.merchant_id = :merchant_id 
-                AND o.status IN ('pending', 'Pending', 'queued')
-                ORDER BY o.placed_at ASC";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([':merchant_id' => $merchantId]);
-        
+
+    // ====================================================================
+    // PRIVATE — query
+    // ====================================================================
+
+    private function getPendingOrders(?string $merchantId): array
+    {
+        $sql = "
+            SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
+                   o.symbol, o.shares, o.amount, o.points_used,
+                   o.status, o.placed_at, o.broker, o.order_type,
+                   m.merchant_name
+            FROM   orders o
+            LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
+            WHERE  LOWER(o.status) IN ('pending','queued')
+        ";
+
+        if ($merchantId) {
+            $sql .= " AND o.merchant_id = ? ";
+            $sql .= " ORDER BY o.basket_id, o.placed_at ASC";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->execute([$merchantId]);
+        } else {
+            $sql .= " ORDER BY o.merchant_id, o.basket_id, o.placed_at ASC";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->execute();
+        }
+
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
-    
-    /**
-     * Submit orders to broker and update status
-     */
-    private function submitToBroker(string $brokerName, array $orders, string $merchantId): array {
-        $result = [
-            'confirmed' => 0,
-            'failed' => 0,
-            'notified' => false,
-            'errors' => []
-        ];
-        
-        // Get broker configuration
-        $broker = $this->getBrokerConfig($brokerName, $merchantId);
-        
-        if (!$broker) {
-            $this->log("WARNING: No broker configuration found for: {$brokerName}");
-            // Still confirm orders but mark as needing manual processing
-            foreach ($orders as $order) {
-                $this->updateOrderStatus($order['order_id'], 'confirmed', 'Sweep processed - broker config missing');
-                $result['confirmed']++;
-            }
-            return $result;
+
+    private function groupByBasket(array $orders): array
+    {
+        $baskets = [];
+        foreach ($orders as $o) {
+            $bid = $o['basket_id'] ?? 'no_basket';
+            $baskets[$bid][] = $o;
         }
-        
-        // Prepare the sweep payload
-        $payload = [
-            'event_type' => 'sweep_batch',
-            'batch_id' => $this->batchId,
-            'merchant_id' => $merchantId,
-            'broker' => $brokerName,
-            'sweep_date' => date('Y-m-d'),
-            'orders' => array_map(function($order) {
-                return [
-                    'order_id' => $order['order_id'],
-                    'member_id' => $order['member_id'],
-                    'basket_id' => $order['basket_id'],
-                    'symbol' => $order['symbol'],
-                    'shares' => (float) $order['shares'],
-                    'amount' => (float) $order['amount'],
-                    'points_used' => (float) ($order['points_used'] ?? 0),
-                    'order_type' => $order['order_type'] ?? 'market'
-                ];
-            }, $orders),
-            'total_amount' => array_sum(array_column($orders, 'amount')),
-            'total_orders' => count($orders),
-            'timestamp' => date('c')
-        ];
-        
-        // Submit to broker webhook
-        $response = $this->callBrokerWebhook($broker, $payload);
-        
-        if ($response['success']) {
-            $result['notified'] = true;
-            $this->log("Broker notified successfully");
-            
-            // Update all orders to confirmed
-            foreach ($orders as $order) {
-                try {
-                    $this->updateOrderStatus(
-                        $order['order_id'], 
-                        'confirmed',
-                        $response['external_ref'] ?? null
-                    );
-                    $result['confirmed']++;
-                } catch (Exception $e) {
-                    $result['failed']++;
-                    $result['errors'][] = "Order {$order['order_id']}: " . $e->getMessage();
-                }
-            }
+        return $baskets;
+    }
+
+    private function getBrokerInfo(string $brokerName): array
+    {
+        $stmt = $this->conn->prepare("
+            SELECT broker_id, broker_name, webhook_url, api_key
+            FROM   broker_master
+            WHERE  broker_name = ? OR broker_id = ?
+            LIMIT  1
+        ");
+        $stmt->execute([$brokerName, $brokerName]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['broker_name' => $brokerName];
+    }
+
+    // ====================================================================
+    // PRIVATE — per-basket processing
+    // ====================================================================
+
+    private function processBasket(string $basketId, array $orders): array
+    {
+        $first      = $orders[0];
+        $memberId   = $first['member_id'];
+        $brokerName = $first['broker'] ?? 'unknown';
+        $merchId    = $first['merchant_id'] ?? null;
+        $merchName  = $first['merchant_name'] ?? null;
+
+        // 1. Look up broker webhook
+        $brokerInfo = $this->getBrokerInfo($brokerName);
+        $webhookUrl = $brokerInfo['webhook_url'] ?? null;
+
+        // 2. Mark orders → 'placed'
+        $placedCount = $this->markOrdersPlaced($orders);
+        $this->log("✅ {$placedCount} / " . count($orders) . " → 'placed'");
+
+        // 3. Build per-basket payload
+        $payload = $this->buildBasketPayload($basketId, $orders, $brokerInfo);
+
+        // 4. Send to broker
+        $response = null;
+        if (!empty($webhookUrl)) {
+            $this->log("📡 POST → {$webhookUrl}");
+            $response = $this->sendWebhook($webhookUrl, $payload, $brokerInfo);
         } else {
-            $this->log("ERROR: Broker notification failed - " . ($response['error'] ?? 'Unknown error'));
-            $result['errors'][] = "Broker {$brokerName}: " . ($response['error'] ?? 'Unknown error');
-            
-            // Mark orders as needing retry
-            foreach ($orders as $order) {
-                $result['failed']++;
-            }
+            $this->log("⚠️ No webhook_url for '{$brokerName}' — skipping notification");
         }
-        
-        return $result;
+
+        // 5. Log to broker_notifications (request + response)
+        $this->logNotification($brokerInfo, $basketId, $memberId, $payload, $response);
+
+        return [
+            'basket_id'       => $basketId,
+            'member_id'       => $memberId,
+            'broker'          => $brokerName,
+            'broker_id'       => $brokerInfo['broker_id'] ?? null,
+            'merchant_id'     => $merchId,
+            'merchant_name'   => $merchName,
+            'orders_placed'   => $placedCount,
+            'orders_failed'   => count($orders) - $placedCount,
+            'order_count'     => count($orders),
+            'total_amount'    => round((float) array_sum(array_column($orders, 'amount')), 2),
+            'symbols'         => implode(', ', array_unique(array_column($orders, 'symbol'))),
+            'webhook_url'     => $webhookUrl,
+            'acknowledged'    => $response['acknowledged'] ?? false,
+            'acknowledged_at' => $response['acknowledged_at'] ?? null,
+            'broker_ref'      => $response['broker_ref'] ?? null,
+            'http_status'     => $response['http_status'] ?? null,
+            'request'         => $payload,
+            'response'        => $response,
+        ];
     }
-    
-    /**
-     * Get broker configuration from broker_master table
-     */
-    private function getBrokerConfig(string $brokerName, string $merchantId): ?array {
-        // First try merchant-specific broker relationship
-        $sql = "SELECT bm.* 
-                FROM broker_master bm
-                INNER JOIN merchant_broker mb ON bm.broker_id = mb.broker_id
-                WHERE mb.merchant_id = :merchant_id
-                AND (bm.broker_name = :broker_name OR bm.broker_id = :broker_name)
-                LIMIT 1";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':merchant_id' => $merchantId,
-            ':broker_name' => $brokerName
-        ]);
-        
-        $broker = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$broker) {
-            // Fall back to global broker lookup
-            $sql = "SELECT * FROM broker_master 
-                    WHERE broker_name = :broker_name OR broker_id = :broker_name
-                    LIMIT 1";
-            $stmt = $this->conn->prepare($sql);
-            $stmt->execute([':broker_name' => $brokerName]);
-            $broker = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // ====================================================================
+    // PRIVATE — mark placed
+    // ====================================================================
+
+    private function markOrdersPlaced(array $orders): int
+    {
+        $count = 0;
+        foreach ($orders as $o) {
+            $oid = $o['order_id'] ?? null;
+            if (!$oid) continue;
+
+            $stmt = $this->conn->prepare("
+                UPDATE orders
+                SET    status = 'placed', placed_at = NOW()
+                WHERE  order_id = ?
+                  AND  LOWER(status) IN ('pending','queued')
+            ");
+            $stmt->execute([$oid]);
+            $count += $stmt->rowCount();
         }
-        
-        return $broker ?: null;
+        return $count;
     }
-    
-    /**
-     * Call broker webhook with payload
-     */
-    private function callBrokerWebhook(array $broker, array $payload): array {
-        $webhookUrl = $broker['webhook_url'] ?? null;
-        $apiKey = $broker['api_key'] ?? null;
-        
-        if (!$webhookUrl) {
-            return [
-                'success' => false,
-                'error' => 'No webhook URL configured'
+
+    // ====================================================================
+    // PRIVATE — build per-basket payload
+    // ====================================================================
+
+    private function buildBasketPayload(string $basketId, array $orders, array $brokerInfo): array
+    {
+        $items = [];
+        $totalAmount = 0.0;
+        $totalShares = 0.0;
+        $totalPoints = 0;
+
+        foreach ($orders as $o) {
+            $amt = (float)  ($o['amount']      ?? 0);
+            $shr = (float)  ($o['shares']       ?? 0);
+            $pts = (int)    ($o['points_used']  ?? 0);
+            $totalAmount += $amt;
+            $totalShares += $shr;
+            $totalPoints += $pts;
+
+            $items[] = [
+                'order_id'    => (int) $o['order_id'],
+                'symbol'      => $o['symbol'],
+                'shares'      => round($shr, 4),
+                'amount'      => round($amt, 2),
+                'points_used' => $pts,
+                'order_type'  => $o['order_type'] ?? 'market',
             ];
         }
-        
+
+        return [
+            'event_type'    => 'order.placed',
+            'batch_id'      => $this->batchId,
+            'basket_id'     => $basketId,
+            'member_id'     => $orders[0]['member_id'],
+            'merchant_id'   => $orders[0]['merchant_id'] ?? null,
+            'merchant_name' => $orders[0]['merchant_name'] ?? null,
+            'broker_id'     => $brokerInfo['broker_id'] ?? null,
+            'broker_name'   => $brokerInfo['broker_name'] ?? null,
+            'orders'        => $items,
+            'summary'       => [
+                'order_count'  => count($items),
+                'total_amount' => round($totalAmount, 2),
+                'total_shares' => round($totalShares, 6),
+                'total_points' => $totalPoints,
+                'symbols'      => array_values(array_unique(array_column($items, 'symbol'))),
+            ],
+            'placed_at'     => gmdate('c'),
+            'request_id'    => uniqid('swp_', true),
+        ];
+    }
+
+    // ====================================================================
+    // PRIVATE — send webhook & capture full response
+    // ====================================================================
+
+    private function sendWebhook(string $url, array $payload, array $brokerInfo): array
+    {
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
         $headers = [
             'Content-Type: application/json',
-            'Accept: application/json'
+            'Accept: application/json',
+            'X-Event-Type: order.placed',
+            'X-Request-Id: ' . ($payload['request_id'] ?? ''),
+            'X-Batch-Id: '   . $this->batchId,
         ];
-        
-        if ($apiKey) {
-            $headers[] = "Authorization: Bearer {$apiKey}";
-            $headers[] = "X-API-Key: {$apiKey}";
+        if (!empty($brokerInfo['api_key'])) {
+            $headers[] = 'X-API-Key: ' . $brokerInfo['api_key'];
         }
-        
-        $ch = curl_init($webhookUrl);
+
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $json,
+            CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_SSL_VERIFYPEER => true
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
         ]);
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
+
+        $raw       = curl_exec($ch);
+        $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
-        
-        if ($error) {
+
+        // cURL transport failure
+        if ($curlError) {
+            $this->log("❌ cURL: {$curlError}");
+            $this->errors[] = "Webhook {$url}: {$curlError}";
             return [
-                'success' => false,
-                'error' => "cURL error: {$error}"
+                'acknowledged' => false,
+                'http_status'  => 0,
+                'error'        => $curlError,
+                'body'         => null,
             ];
         }
-        
-        if ($httpCode >= 200 && $httpCode < 300) {
-            $decoded = json_decode($response, true);
+
+        $this->log("HTTP {$httpCode} — " . strlen((string) $raw) . " bytes");
+
+        // HTTP error
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $this->log("❌ HTTP {$httpCode}: " . substr((string) $raw, 0, 500));
+            $this->errors[] = "HTTP {$httpCode} from {$url}";
             return [
-                'success' => true,
-                'http_code' => $httpCode,
-                'response' => $decoded,
-                'external_ref' => $decoded['reference_id'] ?? $decoded['batch_id'] ?? null
+                'acknowledged' => false,
+                'http_status'  => $httpCode,
+                'error'        => "HTTP {$httpCode}",
+                'body'         => $this->safeParse($raw),
             ];
         }
-        
+
+        // Parse response JSON
+        $parsed = $this->safeParse($raw);
+
+        $acked   = (bool) ($parsed['acknowledged'] ?? $parsed['success'] ?? false);
+        $ackedAt = $parsed['acknowledged_at'] ?? $parsed['timestamp'] ?? gmdate('c');
+
+        $this->log($acked
+            ? "✅ ACK at {$ackedAt}"
+            : "⚠️ 2xx but acknowledged=false");
+
         return [
-            'success' => false,
-            'error' => "HTTP {$httpCode}: {$response}"
+            'acknowledged'    => $acked,
+            'acknowledged_at' => $ackedAt,
+            'broker_ref'      => $parsed['broker_batch_id']
+                                 ?? $parsed['broker_order_id']
+                                 ?? $parsed['request_id']
+                                 ?? null,
+            'http_status'     => $httpCode,
+            'body'            => $parsed,
         ];
     }
-    
-    /**
-     * Update order status to confirmed
-     */
-    private function updateOrderStatus(int $orderId, string $status, ?string $note = null): void {
-        $sql = "UPDATE orders 
-                SET status = :status,
-                    executed_at = NOW()
-                WHERE order_id = :order_id";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute([
-            ':status' => $status,
-            ':order_id' => $orderId
-        ]);
-        
-        $this->log("Order {$orderId} updated to '{$status}'" . ($note ? " ({$note})" : ""));
+
+    private function safeParse($raw): ?array
+    {
+        if (!$raw) return null;
+        $decoded = json_decode((string) $raw, true);
+        return (json_last_error() === JSON_ERROR_NONE) ? $decoded : ['raw' => substr((string) $raw, 0, 2000)];
     }
-    
-    /**
-     * Log sweep execution to database
-     */
-    private function logSweepExecution(array $results): void {
+
+    // ====================================================================
+    // PRIVATE — logging
+    // ====================================================================
+
+    private function logNotification(
+        array   $brokerInfo,
+        string  $basketId,
+        string  $memberId,
+        array   $payload,
+        ?array  $response
+    ): void {
+        $acked = ($response && ($response['acknowledged'] ?? false));
+
+        $status = $acked ? 'acknowledged' : ($response ? 'sent' : 'no_webhook');
+
         try {
-            $sql = "INSERT INTO sweep_log 
-                    (batch_id, started_at, completed_at, merchants_processed, 
-                     orders_processed, orders_confirmed, orders_failed, 
-                     brokers_notified, errors, log_data)
-                    VALUES 
-                    (:batch_id, :started_at, :completed_at, :merchants_processed,
-                     :orders_processed, :orders_confirmed, :orders_failed,
-                     :brokers_notified, :errors, :log_data)";
-            
-            $stmt = $this->conn->prepare($sql);
+            $stmt = $this->conn->prepare("
+                INSERT INTO broker_notifications
+                    (broker_id, broker_name, event_type, status,
+                     member_id, basket_id, payload, sent_at)
+                VALUES (?, ?, 'order.placed', ?, ?, ?, ?, NOW())
+            ");
             $stmt->execute([
-                ':batch_id' => $results['batch_id'],
-                ':started_at' => $results['started_at'],
-                ':completed_at' => $results['completed_at'] ?? date('Y-m-d H:i:s'),
-                ':merchants_processed' => $results['merchants_processed'],
-                ':orders_processed' => $results['orders_processed'],
-                ':orders_confirmed' => $results['orders_confirmed'],
-                ':orders_failed' => $results['orders_failed'],
-                ':brokers_notified' => json_encode($results['brokers_notified']),
-                ':errors' => json_encode($results['errors']),
-                ':log_data' => json_encode($results['log'])
+                $brokerInfo['broker_id']   ?? null,
+                $brokerInfo['broker_name'] ?? null,
+                $status,
+                $memberId,
+                $basketId,
+                json_encode([
+                    'batch_id'         => $this->batchId,
+                    'http_status'      => $response['http_status'] ?? null,
+                    'acknowledged'     => $acked,
+                    'acknowledged_at'  => $response['acknowledged_at'] ?? null,
+                    'broker_ref'       => $response['broker_ref'] ?? null,
+                    'request_payload'  => $payload,
+                    'response_body'    => $response['body'] ?? null,
+                    'error'            => $response['error'] ?? null,
+                ], JSON_UNESCAPED_SLASHES),
             ]);
-        } catch (Exception $e) {
-            $this->log("WARNING: Could not log sweep execution: " . $e->getMessage());
+            $this->log("📝 broker_notifications: basket={$basketId} status={$status}");
+        } catch (\PDOException $e) {
+            $this->log("⚠️ broker_notifications insert: " . $e->getMessage());
         }
     }
-    
-    /**
-     * Add message to log
-     */
-    private function log(string $message): void {
-        $timestamp = date('Y-m-d H:i:s');
-        $this->log[] = "[{$timestamp}] {$message}";
-        error_log("[SweepProcess] {$message}");
+
+    private function logSweepBatch(
+        int $placed, int $failed, int $merchants,
+        array $brokers, float $duration
+    ): void {
+        try {
+            $stmt = $this->conn->prepare("
+                INSERT INTO sweep_log
+                    (batch_id, started_at, completed_at,
+                     merchants_processed, orders_processed,
+                     orders_confirmed, orders_failed,
+                     brokers_notified, errors, log_data)
+                VALUES (?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $this->batchId,
+                $merchants,
+                $placed + $failed,
+                $placed,
+                $failed,
+                json_encode($brokers),
+                json_encode($this->errors),
+                json_encode($this->logMessages),
+            ]);
+        } catch (\PDOException $e) {
+            $this->log("⚠️ sweep_log insert: " . $e->getMessage());
+        }
+    }
+
+    // ====================================================================
+    // PRIVATE — result builder
+    // ====================================================================
+
+    private function buildResult(
+        int $placed, int $failed, int $merchants,
+        array $brokersNotified, array $basketResults, float $duration
+    ): array {
+        return [
+            'batch_id'            => $this->batchId,
+            'orders_placed'       => $placed,
+            'orders_failed'       => $failed,
+            'merchants_processed' => $merchants,
+            'baskets_processed'   => count($basketResults),
+            'brokers_notified'    => $brokersNotified,
+            'basket_results'      => $basketResults,
+            'duration_seconds'    => round($duration, 2),
+            'errors'              => $this->errors,
+        ];
     }
 }

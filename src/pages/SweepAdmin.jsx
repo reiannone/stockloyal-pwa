@@ -44,6 +44,9 @@ export default function SweepAdmin() {
       const res = await apiPost("get_sweep_status.php", { action: "history", limit: 50 });
       if (res.success) {
         setHistory(res.history || []);
+      } else {
+        console.error("History load error:", res.error || res);
+        setHistory([]);
       }
     } catch (err) {
       console.error("Failed to load history:", err);
@@ -219,15 +222,49 @@ export default function SweepAdmin() {
           background: lastResult.success ? "#d1fae5" : "#fee2e2",
           border: `1px solid ${lastResult.success ? "#10b981" : "#ef4444"}`
         }}>
-          <strong>{lastResult.success ? "✅ Sweep Completed" : "❌ Sweep Failed"}</strong>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <strong>{lastResult.success ? "✅ Sweep Completed" : "❌ Sweep Failed"}</strong>
+            {lastResult.results?.batch_id && (
+              <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
+                {lastResult.results.batch_id}
+              </span>
+            )}
+          </div>
+
           {lastResult.results && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
-              Batch: {lastResult.results.batch_id} | 
-              Orders Confirmed: {lastResult.results.orders_confirmed} | 
-              Failed: {lastResult.results.orders_failed}
+              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+                <span>📦 Orders Placed: <strong>{lastResult.results.orders_placed ?? 0}</strong></span>
+                <span>❌ Failed: <strong>{lastResult.results.orders_failed ?? 0}</strong></span>
+                <span>🏪 Merchants: <strong>{lastResult.results.merchants_processed ?? 0}</strong></span>
+                <span>🧺 Baskets: <strong>{lastResult.results.baskets_processed ?? 0}</strong></span>
+                <span>⏱ Duration: <strong>{lastResult.results.duration_seconds ?? 0}s</strong></span>
+              </div>
+
+              {/* Per-Basket Notification Results */}
+              {lastResult.results.basket_results?.length > 0 && (
+                <div style={{ marginTop: "0.75rem", borderTop: "1px solid rgba(0,0,0,0.1)", paddingTop: "0.75rem" }}>
+                  <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.8rem", textTransform: "uppercase", color: "#475569" }}>
+                    Broker Notifications — Per Basket
+                  </div>
+                  {lastResult.results.basket_results.map((br, i) => (
+                    <BasketResultRow key={i} br={br} formatCurrency={formatCurrency} />
+                  ))}
+                </div>
+              )}
+
+              {/* Errors */}
+              {lastResult.results.errors?.length > 0 && (
+                <div style={{ marginTop: "0.5rem", color: "#dc2626", fontSize: "0.8rem" }}>
+                  {lastResult.results.errors.map((e, i) => (
+                    <div key={i}>⚠️ {e}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {lastResult.error && (
+
+          {lastResult.error && !lastResult.results && (
             <div style={{ marginTop: "0.5rem", color: "#dc2626" }}>{lastResult.error}</div>
           )}
         </div>
@@ -533,37 +570,29 @@ export default function SweepAdmin() {
                       <th style={thStyle}>Started</th>
                       <th style={thStyle}>Duration</th>
                       <th style={thStyle}>Merchants</th>
-                      <th style={thStyle}>Confirmed</th>
+                      <th style={thStyle}>Placed</th>
                       <th style={thStyle}>Failed</th>
-                      <th style={thStyle}>Brokers</th>
+                      <th style={thStyle}>Brokers Notified</th>
                       <th style={thStyle}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {history.map((h) => (
-                      <tr key={h.batch_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                        <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
-                          {h.batch_id}
-                        </td>
-                        <td style={tdStyle}>{formatDate(h.started_at)}</td>
-                        <td style={tdStyle}>{h.duration_seconds}s</td>
-                        <td style={tdStyle}>{h.merchants_processed}</td>
-                        <td style={{ ...tdStyle, color: "#059669" }}>{h.orders_confirmed}</td>
-                        <td style={{ ...tdStyle, color: h.orders_failed > 0 ? "#dc2626" : "#94a3b8" }}>
-                          {h.orders_failed}
-                        </td>
-                        <td style={tdStyle}>
-                          {h.brokers_notified?.join(", ") || "-"}
-                        </td>
-                        <td style={tdStyle}>
-                          {h.has_errors ? (
-                            <span style={{ color: "#dc2626" }}>⚠️ Errors</span>
-                          ) : (
-                            <span style={{ color: "#059669" }}>✅ OK</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {history.map((h) => {
+                      // brokers_notified may come as JSON string or array
+                      let brokers = h.brokers_notified;
+                      if (typeof brokers === "string") {
+                        try { brokers = JSON.parse(brokers); } catch { brokers = [brokers]; }
+                      }
+                      return (
+                        <HistoryRow
+                          key={h.batch_id}
+                          h={h}
+                          brokers={brokers}
+                          tdStyle={tdStyle}
+                          formatDate={formatDate}
+                        />
+                      );
+                    })}
                     {history.length === 0 && (
                       <tr>
                         <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>
@@ -607,6 +636,154 @@ function StatCard({ label, value, subtext, color }) {
   );
 }
 
+// Per-Basket Result Row with expandable request/response
+function BasketResultRow({ br, formatCurrency }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div style={{ marginBottom: "0.5rem" }}>
+      {/* Summary Row */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "0.5rem 0.75rem",
+          background: br.acknowledged ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+          borderRadius: expanded ? "6px 6px 0 0" : "6px",
+          fontSize: "0.825rem",
+          cursor: "pointer",
+          userSelect: "none",
+          border: `1px solid ${br.acknowledged ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
+          borderBottom: expanded ? "none" : undefined,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+          <span>{br.acknowledged ? "✅" : "⚠️"}</span>
+          <strong>{br.broker}</strong>
+          <span style={{ color: "#64748b" }}>→</span>
+          <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "#6366f1" }}>
+            {br.basket_id}
+          </span>
+          <span style={{ color: "#64748b" }}>
+            {br.member_id} · {br.order_count} order(s) · {formatCurrency(br.total_amount)}
+          </span>
+          {br.symbols && (
+            <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>
+              [{br.symbols}]
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div style={{ textAlign: "right", fontSize: "0.75rem" }}>
+            {br.acknowledged ? (
+              <>
+                <span style={{ color: "#059669", fontWeight: 600 }}>
+                  ACK {br.acknowledged_at ? new Date(br.acknowledged_at).toLocaleTimeString() : ""}
+                </span>
+                {br.broker_ref && (
+                  <span style={{ color: "#64748b", fontFamily: "monospace", marginLeft: 6 }}>
+                    {br.broker_ref}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ color: "#dc2626" }}>
+                {br.error || "Not acknowledged"}
+              </span>
+            )}
+          </div>
+          <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+            {expanded ? "▲" : "▼"}
+          </span>
+        </div>
+      </div>
+
+      {/* Expanded Request / Response */}
+      {expanded && (
+        <div style={{
+          border: `1px solid ${br.acknowledged ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
+          borderTop: "none",
+          borderRadius: "0 0 6px 6px",
+          overflow: "hidden",
+        }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "120px" }}>
+            {/* Request */}
+            <div style={{ borderRight: "1px solid #e2e8f0" }}>
+              <div style={{
+                padding: "0.375rem 0.75rem",
+                background: "#f1f5f9",
+                fontWeight: 600,
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                color: "#475569",
+                letterSpacing: "0.05em",
+              }}>
+                📤 Request Payload
+              </div>
+              <pre style={{
+                margin: 0,
+                padding: "0.5rem 0.75rem",
+                fontSize: "0.7rem",
+                fontFamily: "monospace",
+                background: "#fafafa",
+                overflowX: "auto",
+                maxHeight: "300px",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}>
+                {br.request ? JSON.stringify(br.request, null, 2) : "— no request sent —"}
+              </pre>
+            </div>
+
+            {/* Response */}
+            <div>
+              <div style={{
+                padding: "0.375rem 0.75rem",
+                background: br.acknowledged ? "#ecfdf5" : "#fef2f2",
+                fontWeight: 600,
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                color: "#475569",
+                letterSpacing: "0.05em",
+                display: "flex",
+                justifyContent: "space-between",
+              }}>
+                <span>📥 Response Body</span>
+                {br.http_status && (
+                  <span style={{
+                    color: br.http_status >= 200 && br.http_status < 300 ? "#059669" : "#dc2626"
+                  }}>
+                    HTTP {br.http_status}
+                  </span>
+                )}
+              </div>
+              <pre style={{
+                margin: 0,
+                padding: "0.5rem 0.75rem",
+                fontSize: "0.7rem",
+                fontFamily: "monospace",
+                background: "#fafafa",
+                overflowX: "auto",
+                maxHeight: "300px",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}>
+                {br.response?.body
+                  ? JSON.stringify(br.response.body, null, 2)
+                  : br.response
+                    ? JSON.stringify(br.response, null, 2)
+                    : "— no response (webhook not configured) —"}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Styles
 const thStyle = {
   padding: "0.75rem 1rem",
@@ -632,3 +809,111 @@ const smallBtnStyle = {
   fontSize: "0.75rem",
   cursor: "pointer"
 };
+
+// Expandable History Row — shows errors and log_data on click
+function HistoryRow({ h, brokers, tdStyle, formatDate }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasErrors = h.has_errors || (Array.isArray(h.errors) && h.errors.length > 0);
+
+  return (
+    <>
+      <tr
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          borderBottom: expanded ? "none" : "1px solid #e2e8f0",
+          cursor: "pointer",
+          background: expanded ? "#f8fafc" : undefined,
+        }}
+      >
+        <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
+          {h.batch_id}
+          <span style={{ marginLeft: 6, fontSize: "0.65rem", color: "#94a3b8" }}>
+            {expanded ? "▲" : "▼"}
+          </span>
+        </td>
+        <td style={tdStyle}>{formatDate(h.started_at)}</td>
+        <td style={tdStyle}>{h.duration_seconds || 0}s</td>
+        <td style={tdStyle}>{h.merchants_processed}</td>
+        <td style={{ ...tdStyle, color: "#059669" }}>{h.orders_confirmed}</td>
+        <td style={{ ...tdStyle, color: h.orders_failed > 0 ? "#dc2626" : "#94a3b8" }}>
+          {h.orders_failed}
+        </td>
+        <td style={tdStyle}>
+          {Array.isArray(brokers) && brokers.length > 0 ? brokers.join(", ") : "-"}
+        </td>
+        <td style={tdStyle}>
+          {hasErrors ? (
+            <span style={{ color: "#dc2626" }}>⚠️ Errors</span>
+          ) : (
+            <span style={{ color: "#059669" }}>✅ OK</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
+          <td colSpan={8} style={{ padding: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "80px" }}>
+              {/* Errors */}
+              <div style={{ borderRight: "1px solid #e2e8f0" }}>
+                <div style={{
+                  padding: "0.375rem 0.75rem",
+                  background: hasErrors ? "#fef2f2" : "#f0fdf4",
+                  fontWeight: 600,
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                  color: hasErrors ? "#991b1b" : "#166534",
+                }}>
+                  {hasErrors ? `❌ Errors (${h.errors?.length || 0})` : "✅ No Errors"}
+                </div>
+                <pre style={{
+                  margin: 0,
+                  padding: "0.5rem 0.75rem",
+                  fontSize: "0.7rem",
+                  fontFamily: "monospace",
+                  background: "#fafafa",
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {Array.isArray(h.errors) && h.errors.length > 0
+                    ? h.errors.join("\n")
+                    : "— none —"}
+                </pre>
+              </div>
+
+              {/* Log Data */}
+              <div>
+                <div style={{
+                  padding: "0.375rem 0.75rem",
+                  background: "#f1f5f9",
+                  fontWeight: 600,
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                  color: "#475569",
+                }}>
+                  📋 Log ({h.log_data?.length || 0} entries)
+                </div>
+                <pre style={{
+                  margin: 0,
+                  padding: "0.5rem 0.75rem",
+                  fontSize: "0.65rem",
+                  fontFamily: "monospace",
+                  background: "#fafafa",
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                }}>
+                  {Array.isArray(h.log_data) && h.log_data.length > 0
+                    ? h.log_data.join("\n")
+                    : "— no log data —"}
+                </pre>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
