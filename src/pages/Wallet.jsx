@@ -9,8 +9,10 @@ import {
   Share2,
   XCircle,
   AlertTriangle,
+  ShoppingBasket,
 } from "lucide-react";
 import SharePointsSheet from "../components/SharePointsSheet.jsx";
+import { useBasket } from "../context/BasketContext";
 
 // Add slide-down animation
 const slideDownAnimation = `
@@ -39,6 +41,7 @@ if (typeof document !== 'undefined') {
 export default function Wallet() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
+  const { basket } = useBasket();
 
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
@@ -610,10 +613,10 @@ export default function Wallet() {
       )}
 
       <h2 className="page-title" style={{ margin: 0 }}>
-        Stock-Backed Rewards
+        Stock-Backed Rewards Wallet
       </h2>
       <p className="page-deck" style={{ marginTop: 8 }}>
-        Available Points & Cash Value
+        My Available Points & Cash Value
       </p>
 
       {/* --- Summary Card --- */}
@@ -665,9 +668,31 @@ export default function Wallet() {
             className={`btn-primary ${notLinked ? "btn-disabled" : ""}`}
             onClick={() => !notLinked && navigate("/stock-picker")}
             disabled={notLinked}
-            style={{ opacity: notLinked ? 0.6 : 1, cursor: notLinked ? "not-allowed" : "pointer" }}
+            style={{
+              opacity: notLinked ? 0.6 : 1,
+              cursor: notLinked ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
           >
-            Convert & Invest
+            <ShoppingBasket size={18} /> Convert & Invest Basket
+            {basket?.length > 0 && (
+              <span style={{
+                background: "#fff",
+                color: "#2563eb",
+                borderRadius: "9999px",
+                padding: "1px 8px",
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                lineHeight: "1.4",
+                minWidth: 20,
+                textAlign: "center",
+              }}>
+                {basket.length}
+              </span>
+            )}
           </button>
 
           <button
