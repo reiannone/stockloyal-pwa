@@ -602,8 +602,11 @@ export default function Wallet() {
   const sweepPct = wallet.sweep_percentage ?? null;
   const merchantName = wallet.merchant_name || localStorage.getItem("merchantName") || "Merchant";
 
-  // ✅ Use cash_balance from database directly (already converted)
-  const effectiveCashBalance = baseCash;
+  // ✅ Calculate spendable balance: prefer DB cash_balance, but if it's 0/stale
+  //    while points exist, recalculate from points × conversion_rate as fallback
+  const effectiveCashBalance = (baseCash > 0 || points === 0)
+    ? baseCash
+    : points * conversionRate;
 
   return (
     <div className="wallet-container">
