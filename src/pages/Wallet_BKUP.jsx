@@ -9,8 +9,11 @@ import {
   Share2,
   XCircle,
   AlertTriangle,
+  ShoppingBasket,
+  ClipboardCheck,
 } from "lucide-react";
 import SharePointsSheet from "../components/SharePointsSheet.jsx";
+import { useBasket } from "../context/BasketContext";
 
 // Add slide-down animation
 const slideDownAnimation = `
@@ -39,6 +42,7 @@ if (typeof document !== 'undefined') {
 export default function Wallet() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
+  const { basket } = useBasket();
 
   const [wallet, setWallet] = useState(null);
   const [error, setError] = useState("");
@@ -64,6 +68,7 @@ export default function Wallet() {
   // Social share
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [lastOrder, setLastOrder] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   // Listen for footer Share button
   useEffect(() => {
@@ -74,7 +79,7 @@ export default function Wallet() {
     return () => window.removeEventListener("open-share-sheet", openShareFromFooter);
   }, []);
 
-  // Fetch last order
+  // Fetch last order + pending order count
   useEffect(() => {
     if (!memberId) return;
     (async () => {
@@ -83,6 +88,20 @@ export default function Wallet() {
         if (data?.success && data.order) setLastOrder(data.order);
       } catch (err) {
         console.error("[Wallet] get_last_order error:", err);
+      }
+
+      // ✅ Fetch pending orders count
+      try {
+        const ordersData = await apiPost("get_order_history.php", { member_id: memberId });
+        if (ordersData?.success && Array.isArray(ordersData.orders)) {
+          const pending = ordersData.orders.filter((o) => {
+            const s = (o.status || "").toLowerCase();
+            return s === "pending" || s === "queued";
+          });
+          setPendingCount(pending.length);
+        }
+      } catch (err) {
+        console.error("[Wallet] pending count error:", err);
       }
     })();
   }, [memberId]);
@@ -595,10 +614,10 @@ export default function Wallet() {
       )}
 
       <h2 className="page-title" style={{ margin: 0 }}>
-        Stock-Backed Rewards
+        Stock-Backed Rewards Wallet
       </h2>
       <p className="page-deck" style={{ marginTop: 8 }}>
-        Available Points & Cash Value
+        My Available Points & Cash Value
       </p>
 
       {/* --- Summary Card --- */}
@@ -650,16 +669,57 @@ export default function Wallet() {
             className={`btn-primary ${notLinked ? "btn-disabled" : ""}`}
             onClick={() => !notLinked && navigate("/stock-picker")}
             disabled={notLinked}
-            style={{ opacity: notLinked ? 0.6 : 1, cursor: notLinked ? "not-allowed" : "pointer" }}
+            style={{
+              opacity: notLinked ? 0.6 : 1,
+              cursor: notLinked ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
           >
-            Convert & Invest
+            <ShoppingBasket size={18} /> Convert to Invest Basket
+            {basket?.length > 0 && (
+              <span style={{
+                background: "#fff",
+                color: "#2563eb",
+                borderRadius: "9999px",
+                padding: "1px 8px",
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                lineHeight: "1.4",
+                minWidth: 20,
+                textAlign: "center",
+              }}>
+                {basket.length}
+              </span>
+            )}
           </button>
 
           <button
-            className={notLinked ? "btn-primary" : "btn-secondary"}
-            onClick={() => navigate("/select-broker")}
+            className="btn-secondary"
+            onClick={() => navigate("/transactions", { state: { filterStatus: "pending" } })}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
           >
-            {notLinked ? "Link Broker" : `Active Broker: ${wallet.broker || "Unknown"}`}
+            <ClipboardCheck size={18} /> My Pending Orders
+            <span style={{
+              background: pendingCount > 0 ? "#ef4444" : "#9ca3af",
+              color: "#fff",
+              borderRadius: "9999px",
+              padding: "1px 8px",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              lineHeight: "1.4",
+              minWidth: 20,
+              textAlign: "center",
+            }}>
+              {pendingCount}
+            </span>
           </button>
         </div>
       </div>

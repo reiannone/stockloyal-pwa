@@ -10,6 +10,10 @@ declare(strict_types=1);
  *   - points_adjusted: Merchant adjusts member points (add/subtract)
  *   - member_updated: Member profile sync from merchant
  *   - tier_changed: Member tier update from merchant
+ *   - member_sync_request: SIMULATION — responds with current tier + random
+ *     points (10,000–3,000,000) so the sync round-trip works without a live merchant
+ *   - member_sync_response: Async callback with member's current points/tier
+ *     (sent by merchant in response to a member_sync_request from request-member-sync.php)
  * 
  * Endpoint: https://api.stockloyal.com/api/merchant-receiver.php
  */
@@ -525,6 +529,153 @@ function handleTestConnection(array $payload, string $logFile): array {
     ];
 }
 
+/**
+ * Handle member_sync_request / member.sync_request event
+ * 
+ * SIMULATION MODE — This handler acts as a mock merchant endpoint.
+ * When request-member-sync.php sends an outbound sync request and the
+ * merchant's webhook_url points back here, this handler responds
+ * synchronously with:
+ *   - points: random integer between 10,000 and 3,000,000
+ *   - tier:   the member's current tier from the wallet table
+ * 
+ * In production, a real merchant would handle this event and return
+ * their own authoritative points balance and tier. This simulation
+ * lets you test the full round-trip without a live merchant.
+ */
+function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): array {
+    $memberId   = $payload['member_id'] ?? null;
+    $merchantId = $payload['merchant_id'] ?? null;
+    $requestId  = $payload['request_id'] ?? null;
+
+    if (!$memberId) {
+        throw new Exception('Missing member_id');
+    }
+
+    logMessage($logFile, "🔄 SIMULATING merchant sync for member={$memberId}");
+
+    // Look up current tier from wallet
+    $currentTier = 'Standard';
+    try {
+        $stmt = $conn->prepare("SELECT member_tier FROM wallet WHERE member_id = ? LIMIT 1");
+        $stmt->execute([$memberId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row && !empty($row['member_tier'])) {
+            $currentTier = $row['member_tier'];
+        }
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ Could not look up current tier: " . $e->getMessage());
+    }
+
+    // Generate random points between 10,000 and 3,000,000
+    $simulatedPoints = random_int(10000, 3000000);
+
+    logMessage($logFile, "✅ Simulated response: points={$simulatedPoints}, tier={$currentTier}");
+
+    return [
+        'success'          => true,
+        'event'            => 'member_sync_request',
+        'simulated'        => true,
+        'member_id'        => $memberId,
+        'points'           => $simulatedPoints,
+        'tier'             => $currentTier,
+        'request_id'       => $requestId,
+        'merchant_message' => 'Simulated merchant response — random points between 10,000 and 3,000,000',
+    ];
+}
+
+/**
+ * Handle member_sync_response / member.sync_response event
+ * Async callback from merchant with current points and/or tier.
+ * Sent when the merchant could not respond synchronously to our member_sync_request.
+ */
+function handleMemberSyncResponse(PDO $conn, array $payload, string $logFile): array {
+    $memberId   = $payload['member_id'] ?? null;
+    $merchantId = $payload['merchant_id'] ?? null;
+
+    if (!$memberId) {
+        throw new Exception('Missing member_id');
+    }
+
+    logMessage($logFile, "Processing member_sync_response: member={$memberId}");
+
+    // Get current wallet row
+    $currentStmt = $conn->prepare("SELECT points, member_tier, cash_balance FROM wallet WHERE member_id = ? LIMIT 1");
+    $currentStmt->execute([$memberId]);
+    $current = $currentStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$current) {
+        throw new Exception("Member wallet not found: {$memberId}");
+    }
+
+    $setClauses = [];
+    $params     = [];
+    $changes    = [];
+
+    // --- Check points ---
+    $newPoints = $payload['points'] ?? $payload['available_points'] ?? $payload['point_balance'] ?? null;
+    if ($newPoints !== null) {
+        $newPoints = (int) $newPoints;
+        if ($newPoints !== (int) $current['points']) {
+            $setClauses[] = 'points = ?';
+            $params[]     = $newPoints;
+            $changes['points'] = ['from' => (int) $current['points'], 'to' => $newPoints];
+
+            // Recalculate cash_balance using merchant conversion_rate
+            if ($merchantId) {
+                try {
+                    $rateStmt = $conn->prepare("SELECT conversion_rate FROM merchant WHERE merchant_id = ? LIMIT 1");
+                    $rateStmt->execute([$merchantId]);
+                    $rateRow        = $rateStmt->fetch(PDO::FETCH_ASSOC);
+                    $conversionRate = (float) ($rateRow['conversion_rate'] ?? 0);
+
+                    if ($conversionRate > 0) {
+                        $newCash      = number_format($newPoints * $conversionRate, 2, '.', '');
+                        $setClauses[] = 'cash_balance = ?';
+                        $params[]     = $newCash;
+                        $changes['cash_balance'] = $newCash;
+                    }
+                } catch (PDOException $e) {
+                    logMessage($logFile, "⚠️ conversion_rate lookup failed: " . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    // --- Check tier ---
+    $newTier = $payload['tier'] ?? $payload['member_tier'] ?? $payload['loyalty_tier'] ?? null;
+    if ($newTier !== null && $newTier !== $current['member_tier']) {
+        $setClauses[] = 'member_tier = ?';
+        $params[]     = $newTier;
+        $changes['tier'] = ['from' => $current['member_tier'], 'to' => $newTier];
+    }
+
+    if (empty($setClauses)) {
+        logMessage($logFile, "✅ No changes — data already in sync");
+        return [
+            'event'     => 'member_sync_response',
+            'member_id' => $memberId,
+            'changes'   => 0,
+            'message'   => 'Data already in sync',
+        ];
+    }
+
+    // Apply updates
+    $setClauses[] = 'updated_at = NOW()';
+    $params[]     = $memberId;
+    $sql = "UPDATE wallet SET " . implode(', ', $setClauses) . " WHERE member_id = ?";
+    $conn->prepare($sql)->execute($params);
+
+    logMessage($logFile, "✅ Sync response applied: " . json_encode($changes));
+
+    return [
+        'event'     => 'member_sync_response',
+        'member_id' => $memberId,
+        'changes'   => count($changes),
+        'details'   => $changes,
+    ];
+}
+
 // ============================================================================
 // MAIN PROCESSING
 // ============================================================================
@@ -593,6 +744,8 @@ try {
         'member_updated', 'member.updated' => handleMemberUpdated($conn, $payload, $logFile),
         'tier_changed', 'tier.changed' => handleTierChanged($conn, $payload, $logFile),
         'member_enrolled', 'member.enrolled' => handleMemberEnrolled($conn, $payload, $logFile),
+        'member_sync_request', 'member.sync_request' => handleMemberSyncRequest($conn, $payload, $logFile),
+        'member_sync_response', 'member.sync_response' => handleMemberSyncResponse($conn, $payload, $logFile),
         'test.connection', 'test' => handleTestConnection($payload, $logFile),
         default => [
             'event' => $eventType,
@@ -603,6 +756,8 @@ try {
                 'member_updated',
                 'tier_changed',
                 'member_enrolled',
+                'member_sync_request',
+                'member_sync_response',
                 'test.connection'
             ]
         ]

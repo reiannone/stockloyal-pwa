@@ -53,6 +53,10 @@ export default function Wallet() {
   const [newPortfolioValue, setNewPortfolioValue] = useState(null);
   const [portfolioLastUpdated, setPortfolioLastUpdated] = useState(null);
 
+  // Merchant sync notification
+  const [merchantSynced, setMerchantSynced] = useState(false);
+  const [merchantSyncInfo, setMerchantSyncInfo] = useState(null);
+
   // Merchant program blocking popup
   const [merchantProgramError, setMerchantProgramError] = useState(false);
 
@@ -221,15 +225,7 @@ export default function Wallet() {
           if (typeof w?.broker !== "undefined") localStorage.setItem("broker", String(w.broker || ""));
           if (typeof w?.member_timezone !== "undefined") localStorage.setItem("memberTimezone", String(w.member_timezone || ""));
           if (typeof w?.election_type !== "undefined") localStorage.setItem("election_type", String(w.election_type || ""));
-          
-          // ✅ Only update merchant values if wallet returns non-empty values
-          // This prevents overwriting values set by SplashScreen with empty strings
-          console.log("[Wallet] Merchant data from API:", { 
-            merchant_id: w?.merchant_id, 
-            merchant_name: w?.merchant_name,
-            localStorage_merchantId: localStorage.getItem("merchantId"),
-            localStorage_merchantName: localStorage.getItem("merchantName")
-          });
+          if (typeof w?.member_tier !== "undefined") localStorage.setItem("memberTier", String(w.member_tier || ""));
           
           if (w?.merchant_name && String(w.merchant_name).trim()) {
             localStorage.setItem("merchantName", String(w.merchant_name).trim());
@@ -309,6 +305,48 @@ export default function Wallet() {
             // Silently fail - user still sees cached value
           }
         })();
+
+        // ✅ Background: Sync points & tier from merchant
+        (async () => {
+          try {
+            const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
+            if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
+              console.log("[Wallet] Merchant sync returned changes:", syncData);
+
+              // Update wallet state with fresh values
+              setWallet(prev => ({
+                ...prev,
+                ...(syncData.points_changed ? { points: syncData.points, cash_balance: syncData.cash_balance } : {}),
+                ...(syncData.tier_changed ? { member_tier: syncData.member_tier } : {}),
+              }));
+
+              // Update localStorage
+              if (syncData.points_changed) {
+                localStorage.setItem("points", String(syncData.points));
+                localStorage.setItem("cashBalance", Number(syncData.cash_balance || 0).toFixed(2));
+              }
+              if (syncData.tier_changed) {
+                localStorage.setItem("memberTier", String(syncData.member_tier));
+              }
+              window.dispatchEvent(new Event("member-updated"));
+
+              // Show notification
+              setMerchantSyncInfo({
+                pointsChanged: syncData.points_changed,
+                tierChanged: syncData.tier_changed,
+                newPoints: syncData.points,
+                previousPoints: syncData.previous_points,
+                newTier: syncData.member_tier,
+                previousTier: syncData.previous_tier,
+              });
+              setMerchantSynced(true);
+              setTimeout(() => setMerchantSynced(false), 5000);
+            }
+          } catch (err) {
+            console.warn("[Wallet] Merchant sync failed:", err);
+            // Silently fail — user still sees DB-cached values
+          }
+        })();
       } catch (err) {
         console.error("[Wallet] wallet fetch error:", err);
         if (!mounted) return;
@@ -344,6 +382,7 @@ export default function Wallet() {
           if (typeof w?.broker !== "undefined") localStorage.setItem("broker", String(w.broker || ""));
           if (typeof w?.member_timezone !== "undefined") localStorage.setItem("memberTimezone", String(w.member_timezone || ""));
           if (typeof w?.election_type !== "undefined") localStorage.setItem("election_type", String(w.election_type || ""));
+          if (typeof w?.member_tier !== "undefined") localStorage.setItem("memberTier", String(w.member_tier || ""));
           
           // ✅ Only update merchant values if wallet returns non-empty values
           if (w?.merchant_name && String(w.merchant_name).trim()) {
@@ -380,6 +419,44 @@ export default function Wallet() {
         }
 
         runPostLoadChecks(w);
+
+        // ✅ Background: Sync points & tier from merchant on refresh
+        (async () => {
+          try {
+            const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
+            if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
+              console.log("[Wallet] Merchant sync (refresh) returned changes:", syncData);
+
+              setWallet(prev => ({
+                ...prev,
+                ...(syncData.points_changed ? { points: syncData.points, cash_balance: syncData.cash_balance } : {}),
+                ...(syncData.tier_changed ? { member_tier: syncData.member_tier } : {}),
+              }));
+
+              if (syncData.points_changed) {
+                localStorage.setItem("points", String(syncData.points));
+                localStorage.setItem("cashBalance", Number(syncData.cash_balance || 0).toFixed(2));
+              }
+              if (syncData.tier_changed) {
+                localStorage.setItem("memberTier", String(syncData.member_tier));
+              }
+              window.dispatchEvent(new Event("member-updated"));
+
+              setMerchantSyncInfo({
+                pointsChanged: syncData.points_changed,
+                tierChanged: syncData.tier_changed,
+                newPoints: syncData.points,
+                previousPoints: syncData.previous_points,
+                newTier: syncData.member_tier,
+                previousTier: syncData.previous_tier,
+              });
+              setMerchantSynced(true);
+              setTimeout(() => setMerchantSynced(false), 5000);
+            }
+          } catch (err) {
+            console.warn("[Wallet] Merchant sync on refresh failed:", err);
+          }
+        })();
       }
     } catch (e) {
       console.error("[Wallet] refresh failed", e);
@@ -599,6 +676,56 @@ export default function Wallet() {
           </div>
           <button
             onClick={() => setPortfolioUpdated(false)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "white",
+              cursor: "pointer",
+              padding: 4,
+              marginLeft: 8
+            }}
+          >
+            <XCircle size={20} />
+          </button>
+        </div>
+      )}
+
+      {/* Merchant Sync Notification */}
+      {merchantSynced && merchantSyncInfo && (
+        <div
+          style={{
+            position: "fixed",
+            top: portfolioUpdated ? 140 : 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            backgroundColor: "#2563eb",
+            color: "white",
+            padding: "12px 24px",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            maxWidth: "90%",
+            animation: "slideDown 0.3s ease-out"
+          }}
+        >
+          <RefreshCw size={20} />
+          <div>
+            <div style={{ fontWeight: 600 }}>Merchant Sync Updated</div>
+            <div style={{ fontSize: "0.9rem", opacity: 0.9 }}>
+              {merchantSyncInfo.pointsChanged && (
+                <span>Points: {formatPoints(merchantSyncInfo.previousPoints)} → {formatPoints(merchantSyncInfo.newPoints)}</span>
+              )}
+              {merchantSyncInfo.pointsChanged && merchantSyncInfo.tierChanged && <span> · </span>}
+              {merchantSyncInfo.tierChanged && (
+                <span>Tier: {merchantSyncInfo.previousTier || "—"} → {merchantSyncInfo.newTier}</span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => setMerchantSynced(false)}
             style={{
               background: "transparent",
               border: "none",
