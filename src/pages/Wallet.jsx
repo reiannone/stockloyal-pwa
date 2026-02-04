@@ -74,6 +74,9 @@ export default function Wallet() {
   const [lastOrder, setLastOrder] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
 
+  // My Basket count (loaded independently so badge shows without visiting StockPicker)
+  const [myBasketCount, setMyBasketCount] = useState(0);
+
   // Listen for footer Share button
   useEffect(() => {
     function openShareFromFooter() {
@@ -82,6 +85,21 @@ export default function Wallet() {
     window.addEventListener("open-share-sheet", openShareFromFooter);
     return () => window.removeEventListener("open-share-sheet", openShareFromFooter);
   }, []);
+
+  // ✅ Load My Basket count so badge shows without visiting StockPicker first
+  useEffect(() => {
+    if (!memberId) return;
+    (async () => {
+      try {
+        const data = await apiPost("my-picks.php", { member_id: memberId, limit: 50 });
+        if (data?.success && Array.isArray(data.rows)) {
+          setMyBasketCount(data.rows.length);
+        }
+      } catch (err) {
+        console.error("[Wallet] My Basket count error:", err);
+      }
+    })();
+  }, [memberId]);
 
   // Fetch last order + pending order count
   useEffect(() => {
@@ -806,7 +824,7 @@ export default function Wallet() {
             }}
           >
             <ShoppingBasket size={18} /> Convert to Invest Basket
-            {basket?.length > 0 && (
+            {(basket?.length > 0 || myBasketCount > 0) && (
               <span style={{
                 background: "#fff",
                 color: "#2563eb",
@@ -818,7 +836,7 @@ export default function Wallet() {
                 minWidth: 20,
                 textAlign: "center",
               }}>
-                {basket.length}
+                {basket?.length || myBasketCount}
               </span>
             )}
           </button>

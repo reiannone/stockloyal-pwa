@@ -10,8 +10,13 @@ declare(strict_types=1);
  *   - points_adjusted: Merchant adjusts member points (add/subtract)
  *   - member_updated: Member profile sync from merchant
  *   - tier_changed: Member tier update from merchant
- *   - member_sync_request: SIMULATION — responds with current tier + random
- *     points (10,000–3,000,000) so the sync round-trip works without a live merchant
+ *   - points_redeemed: SIMULATION — member redeemed points (placed order);
+ *     since the order flow already deducts from the wallet, this handler
+ *     confirms the current wallet balance (no double deduction)
+ *   - member_sync_request: SIMULATION — responds with current tier + balance;
+ *     PRIORITY 1: if a recent redemption exists in merchant_notifications (24h),
+ *       returns the confirmed post-redemption wallet balance (no random)
+ *     PRIORITY 2: if no recent redemption, returns random 10,000–3,000,000
  *   - member_sync_response: Async callback with member's current points/tier
  *     (sent by merchant in response to a member_sync_request from request-member-sync.php)
  * 
@@ -530,18 +535,117 @@ function handleTestConnection(array $payload, string $logFile): array {
 }
 
 /**
+ * Handle points_redeemed / points.redeemed event
+ * 
+ * SIMULATION MODE — Merchant receives notification that a member has
+ * redeemed points (placed an order).
+ * 
+ * IMPORTANT: The order flow ALREADY deducts points from the wallet
+ * BEFORE this notification arrives. So the current wallet balance
+ * already reflects the deduction.
+ * 
+ * Two scenarios:
+ *   A) points_before IS in the payload (from notify-merchant-redemption.php):
+ *      → Calculate: points_before − points_used = new balance
+ *   B) points_before is NOT in the payload (from existing notification system):
+ *      → Wallet already deducted → just confirm the current wallet balance
+ *      → Do NOT subtract again (that would be a double deduction)
+ * 
+ * In production, the real merchant would deduct points on their side
+ * and return their authoritative balance.
+ */
+function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array {
+    $memberId     = $payload['member_id'] ?? null;
+    $merchantId   = $payload['merchant_id'] ?? null;
+    $pointsUsed   = isset($payload['points_used'])     ? (int) $payload['points_used']
+                  : (isset($payload['points_redeemed']) ? (int) $payload['points_redeemed'] : 0);
+    $pointsBefore = isset($payload['points_before'])    ? (int) $payload['points_before'] : null;
+    $orderId      = $payload['order_id'] ?? $payload['basket_id'] ?? null;
+    $requestId    = $payload['request_id'] ?? null;
+
+    if (!$memberId) {
+        throw new Exception('Missing member_id');
+    }
+
+    if ($pointsUsed <= 0) {
+        throw new Exception('points_used must be a positive integer');
+    }
+
+    logMessage($logFile, "🔄 SIMULATING points_redeemed: member={$memberId}, points_used={$pointsUsed}, order_id={$orderId}");
+
+    // Look up current wallet: points + tier
+    $currentTier   = 'Standard';
+    $walletPoints  = 0;
+    try {
+        $stmt = $conn->prepare("SELECT points, member_tier FROM wallet WHERE member_id = ? LIMIT 1");
+        $stmt->execute([$memberId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            $walletPoints = (int) $row['points'];
+            if (!empty($row['member_tier'])) {
+                $currentTier = $row['member_tier'];
+            }
+        }
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ Wallet lookup failed: " . $e->getMessage());
+    }
+
+    if ($pointsBefore !== null) {
+        // -----------------------------------------------------------------
+        // Scenario A: points_before was explicitly provided
+        //   → Calculate the new balance (caller has NOT yet deducted)
+        // -----------------------------------------------------------------
+        $newBalance     = max(0, $pointsBefore - $pointsUsed);
+        $reportedBefore = $pointsBefore;
+
+        logMessage($logFile, "✅ Calculated: {$pointsBefore} − {$pointsUsed} = {$newBalance}, tier={$currentTier}");
+    } else {
+        // -----------------------------------------------------------------
+        // Scenario B: points_before NOT provided (existing notification system)
+        //   → Order flow already deducted from wallet before sending this
+        //   → Current wallet balance IS the post-deduction balance
+        //   → Confirm it as-is — do NOT subtract again
+        // -----------------------------------------------------------------
+        $reportedBefore = $walletPoints + $pointsUsed;   // reconstruct what it was
+        $newBalance     = $walletPoints;                  // already correct
+
+        logMessage($logFile, "✅ Confirmed post-deduction balance: {$reportedBefore} − {$pointsUsed} = {$newBalance} (wallet already deducted), tier={$currentTier}");
+    }
+
+    return [
+        'success'          => true,
+        'event'            => 'points_redeemed',
+        'simulated'        => true,
+        'member_id'        => $memberId,
+        'points_before'    => $reportedBefore,
+        'points_used'      => $pointsUsed,
+        'points'           => $newBalance,
+        'tier'             => $currentTier,
+        'order_id'         => $orderId,
+        'request_id'       => $requestId,
+        'merchant_message' => "Simulated — {$reportedBefore} − {$pointsUsed} = {$newBalance} (confirmed)",
+    ];
+}
+
+/**
  * Handle member_sync_request / member.sync_request event
  * 
  * SIMULATION MODE — This handler acts as a mock merchant endpoint.
  * When request-member-sync.php sends an outbound sync request and the
- * merchant's webhook_url points back here, this handler responds
- * synchronously with:
- *   - points: random integer between 10,000 and 3,000,000
- *   - tier:   the member's current tier from the wallet table
+ * merchant's webhook_url points back here, this handler responds with:
  * 
- * In production, a real merchant would handle this event and return
- * their own authoritative points balance and tier. This simulation
- * lets you test the full round-trip without a live merchant.
+ *   PRIORITY 1 – Recent redemption exists (within last 24 hours):
+ *     Returns the wallet's current points balance, which already reflects
+ *     the redemption deduction. This simulates the merchant confirming
+ *     "yes, we agree with the post-order balance."
+ * 
+ *   PRIORITY 2 – No recent redemption:
+ *     Falls back to a random integer between 10,000 and 3,000,000 for
+ *     general sync testing.
+ * 
+ *   Tier is always returned from the wallet table.
+ * 
+ * In production, a real merchant would return their authoritative balance.
  */
 function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): array {
     $memberId   = $payload['member_id'] ?? null;
@@ -554,33 +658,84 @@ function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): ar
 
     logMessage($logFile, "🔄 SIMULATING merchant sync for member={$memberId}");
 
-    // Look up current tier from wallet
-    $currentTier = 'Standard';
+    // Look up current wallet: points + tier
+    $currentPoints = 0;
+    $currentTier   = 'Standard';
     try {
-        $stmt = $conn->prepare("SELECT member_tier FROM wallet WHERE member_id = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT points, member_tier FROM wallet WHERE member_id = ? LIMIT 1");
         $stmt->execute([$memberId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if ($row && !empty($row['member_tier'])) {
-            $currentTier = $row['member_tier'];
+        if ($row) {
+            $currentPoints = (int) $row['points'];
+            if (!empty($row['member_tier'])) {
+                $currentTier = $row['member_tier'];
+            }
         }
     } catch (PDOException $e) {
-        logMessage($logFile, "⚠️ Could not look up current tier: " . $e->getMessage());
+        logMessage($logFile, "⚠️ Could not look up wallet: " . $e->getMessage());
     }
 
-    // Generate random points between 10,000 and 3,000,000
+    // ------------------------------------------------------------------
+    // PRIORITY 1: Check merchant_notifications for a recent redemption
+    // (within last 24 hours). If found, return the current wallet balance
+    // as the confirmed post-redemption state — no random number.
+    // ------------------------------------------------------------------
+    $recentRedemption = null;
+    try {
+        $notifStmt = $conn->prepare("
+            SELECT basket_id, points_amount, created_at, status
+            FROM   merchant_notifications
+            WHERE  member_id = ?
+              AND  event_type = 'points_redeemed'
+              AND  created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            ORDER  BY created_at DESC
+            LIMIT  1
+        ");
+        $notifStmt->execute([$memberId]);
+        $recentRedemption = $notifStmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ merchant_notifications lookup failed: " . $e->getMessage());
+    }
+
+    if ($recentRedemption) {
+        $redeemPoints = (int) ($recentRedemption['points_amount'] ?? 0);
+        $basketId     = $recentRedemption['basket_id'] ?? '?';
+
+        logMessage($logFile, "📦 Recent redemption found: basket_id={$basketId}, points_redeemed={$redeemPoints}, status={$recentRedemption['status']}");
+        logMessage($logFile, "✅ Returning confirmed post-redemption balance: {$currentPoints} pts, tier={$currentTier}");
+
+        return [
+            'success'             => true,
+            'event'               => 'member_sync_request',
+            'simulated'           => true,
+            'simulation_mode'     => 'post_redemption',
+            'member_id'           => $memberId,
+            'points'              => $currentPoints,
+            'tier'                => $currentTier,
+            'request_id'          => $requestId,
+            'recent_basket_id'    => $basketId,
+            'recent_points_used'  => $redeemPoints,
+            'merchant_message'    => "Simulated — confirming post-redemption balance (basket {$basketId} redeemed {$redeemPoints} pts)",
+        ];
+    }
+
+    // ------------------------------------------------------------------
+    // PRIORITY 2: No recent redemption — random points fallback
+    // ------------------------------------------------------------------
     $simulatedPoints = random_int(10000, 3000000);
 
-    logMessage($logFile, "✅ Simulated response: points={$simulatedPoints}, tier={$currentTier}");
+    logMessage($logFile, "✅ No recent redemptions — returning random balance: {$simulatedPoints} pts, tier={$currentTier}");
 
     return [
         'success'          => true,
         'event'            => 'member_sync_request',
         'simulated'        => true,
+        'simulation_mode'  => 'random',
         'member_id'        => $memberId,
         'points'           => $simulatedPoints,
         'tier'             => $currentTier,
         'request_id'       => $requestId,
-        'merchant_message' => 'Simulated merchant response — random points between 10,000 and 3,000,000',
+        'merchant_message' => 'Simulated — no recent redemptions, random points between 10,000 and 3,000,000',
     ];
 }
 
@@ -744,6 +899,7 @@ try {
         'member_updated', 'member.updated' => handleMemberUpdated($conn, $payload, $logFile),
         'tier_changed', 'tier.changed' => handleTierChanged($conn, $payload, $logFile),
         'member_enrolled', 'member.enrolled' => handleMemberEnrolled($conn, $payload, $logFile),
+        'points_redeemed', 'points.redeemed' => handlePointsRedeemed($conn, $payload, $logFile),
         'member_sync_request', 'member.sync_request' => handleMemberSyncRequest($conn, $payload, $logFile),
         'member_sync_response', 'member.sync_response' => handleMemberSyncResponse($conn, $payload, $logFile),
         'test.connection', 'test' => handleTestConnection($payload, $logFile),
@@ -756,6 +912,7 @@ try {
                 'member_updated',
                 'tier_changed',
                 'member_enrolled',
+                'points_redeemed',
                 'member_sync_request',
                 'member_sync_response',
                 'test.connection'
