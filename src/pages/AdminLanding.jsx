@@ -21,6 +21,7 @@ import {
   Share2,
   ChartColumn,
   Paintbrush,
+  Briefcase,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -86,6 +87,13 @@ export default function AdminLanding() {
       to: "/sweep-admin",
       label: "Sweep Admin",
       icon: <Paintbrush size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+    {
+      to: "/admin-broker-exec",
+      label: "Broker Execution Simulator",
+      icon: <Briefcase size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },

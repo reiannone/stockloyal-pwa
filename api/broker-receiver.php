@@ -163,12 +163,11 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
     $stmt = $conn->prepare("
         UPDATE orders 
         SET status = 'placed',
-            broker_order_id = COALESCE(?, broker_order_id),
-            updated_at = NOW()
+            placed_at = NOW()
         WHERE basket_id = ?
           AND LOWER(status) IN ('pending','queued')
     ");
-    $stmt->execute([$brokerOrderId, $basketId]);
+    $stmt->execute([$basketId]);
     $rowsUpdated = $stmt->rowCount();
 
     logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'placed'");
@@ -232,42 +231,66 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
 
 /**
  * Handle order.confirmed event (Stage 3)
- * Updates order status from "placed" to "confirmed"
+ * Updates order status from "placed" to "confirmed" with execution details
  */
 function handleOrderConfirmed(PDO $conn, array $payload, string $logFile): array {
-    $basketId = $payload['basket_id'] ?? '';
-    $memberId = $payload['member_id'] ?? '';
-    $brokerOrderId = $payload['broker_order_id'] ?? null;
-    $executionPrice = $payload['execution_price'] ?? null;
-    $executedShares = $payload['executed_shares'] ?? null;
-    $confirmedAt = $payload['confirmed_at'] ?? gmdate('c');
-    
+    $basketId       = $payload['basket_id'] ?? '';
+    $memberId       = $payload['member_id'] ?? '';
+    $brokerOrderId  = $payload['broker_order_id'] ?? null;
+    $fills          = $payload['fills'] ?? [];
+
     if (empty($basketId)) {
         throw new Exception('Missing basket_id');
     }
-    
-    logMessage($logFile, "Processing order.confirmed: basket_id={$basketId}, member_id={$memberId}");
-    
-    // Update orders from "placed" to "confirmed" (case-insensitive)
-    $stmt = $conn->prepare("
-        UPDATE orders 
-        SET status = 'confirmed',
-            broker_order_id = COALESCE(?, broker_order_id),
-            confirmed_at = NOW(),
-            updated_at = NOW()
-        WHERE basket_id = ?
-          AND LOWER(status) = 'placed'
-    ");
-    $stmt->execute([$brokerOrderId, $basketId]);
-    $rowsUpdated = $stmt->rowCount();
-    
-    logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'confirmed'");
-    
+
+    logMessage($logFile, "Processing order.confirmed: basket_id={$basketId}, member_id={$memberId}, fills=" . count($fills));
+
+    $ordersUpdated = 0;
+
+    // If fills provided, update individual orders with execution prices
+    if (!empty($fills)) {
+        foreach ($fills as $fill) {
+            $symbol     = $fill['symbol'] ?? '';
+            $execPrice  = $fill['executed_price']  ?? $fill['price']  ?? null;
+            $execShares = $fill['executed_shares']  ?? $fill['shares'] ?? null;
+            $execAmount = $fill['executed_amount']  ?? null;
+
+            if (empty($symbol)) continue;
+
+            $stmt = $conn->prepare("
+                UPDATE orders
+                SET    status          = 'confirmed',
+                       executed_price  = COALESCE(?, executed_price),
+                       executed_shares = COALESCE(?, executed_shares),
+                       executed_amount = COALESCE(?, executed_amount),
+                       executed_at     = NOW()
+                WHERE  basket_id = ?
+                  AND  symbol = ?
+                  AND  LOWER(status) = 'placed'
+            ");
+            $stmt->execute([$execPrice, $execShares, $execAmount, $basketId, $symbol]);
+            $ordersUpdated += $stmt->rowCount();
+        }
+    } else {
+        // No fills — just update status for entire basket
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET    status = 'confirmed',
+                   executed_at = NOW()
+            WHERE  basket_id = ?
+              AND  LOWER(status) = 'placed'
+        ");
+        $stmt->execute([$basketId]);
+        $ordersUpdated = $stmt->rowCount();
+    }
+
+    logMessage($logFile, "✅ Updated {$ordersUpdated} orders to 'confirmed'");
+
     return [
-        'event' => 'order.confirmed',
-        'basket_id' => $basketId,
-        'orders_updated' => $rowsUpdated,
-        'new_status' => 'confirmed'
+        'event'          => 'order.confirmed',
+        'basket_id'      => $basketId,
+        'orders_updated' => $ordersUpdated,
+        'new_status'     => 'confirmed',
     ];
 }
 
@@ -290,25 +313,25 @@ function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array 
     
     // Update individual orders with execution details if provided
     foreach ($fills as $fill) {
-        $symbol = $fill['symbol'] ?? '';
-        $executedShares = $fill['shares'] ?? null;
-        $executionPrice = $fill['price'] ?? null;
-        $brokerOrderId = $fill['broker_order_id'] ?? null;
+        $symbol        = $fill['symbol'] ?? '';
+        $executedShares = $fill['shares'] ?? $fill['executed_shares'] ?? null;
+        $executedPrice  = $fill['price']  ?? $fill['executed_price']  ?? null;
+        $executedAmount = $fill['amount'] ?? $fill['executed_amount'] ?? null;
         
         if (empty($symbol)) continue;
         
         $stmt = $conn->prepare("
             UPDATE orders 
-            SET status = 'executed',
-                broker_order_id = COALESCE(?, broker_order_id),
+            SET status          = 'executed',
                 executed_shares = COALESCE(?, executed_shares),
-                execution_price = COALESCE(?, execution_price),
-                executed_at = NOW(),
-                updated_at = NOW()
+                executed_price  = COALESCE(?, executed_price),
+                executed_amount = COALESCE(?, executed_amount),
+                executed_at     = NOW()
             WHERE basket_id = ?
               AND symbol = ?
+              AND LOWER(status) IN ('placed', 'confirmed')
         ");
-        $stmt->execute([$brokerOrderId, $executedShares, $executionPrice, $basketId, $symbol]);
+        $stmt->execute([$executedShares, $executedPrice, $executedAmount, $basketId, $symbol]);
         $ordersUpdated += $stmt->rowCount();
     }
     
@@ -317,8 +340,7 @@ function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array 
         $stmt = $conn->prepare("
             UPDATE orders 
             SET status = 'executed',
-                executed_at = NOW(),
-                updated_at = NOW()
+                executed_at = NOW()
             WHERE basket_id = ?
               AND LOWER(status) IN ('placed', 'confirmed')
         ");
@@ -338,13 +360,12 @@ function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array 
 
 /**
  * Handle order.rejected event
- * Broker rejected the order
+ * Broker rejected the order — maps to 'failed' status
  */
 function handleOrderRejected(PDO $conn, array $payload, string $logFile): array {
     $basketId = $payload['basket_id'] ?? '';
     $memberId = $payload['member_id'] ?? '';
     $reason = $payload['reason'] ?? 'Unknown reason';
-    $rejectedAt = $payload['rejected_at'] ?? gmdate('c');
     
     if (empty($basketId)) {
         throw new Exception('Missing basket_id');
@@ -352,27 +373,41 @@ function handleOrderRejected(PDO $conn, array $payload, string $logFile): array 
     
     logMessage($logFile, "Processing order.rejected: basket_id={$basketId}, reason={$reason}");
     
-    // Update orders to "rejected" (case-insensitive)
+    // 'rejected' is not in status enum — use 'failed'
     $stmt = $conn->prepare("
         UPDATE orders 
-        SET status = 'rejected',
-            reject_reason = ?,
-            updated_at = NOW()
+        SET status = 'failed'
         WHERE basket_id = ?
           AND LOWER(status) IN ('pending', 'placed')
     ");
-    $stmt->execute([$reason, $basketId]);
+    $stmt->execute([$basketId]);
     $rowsUpdated = $stmt->rowCount();
     
-    logMessage($logFile, "⚠️ Rejected {$rowsUpdated} orders: {$reason}");
+    logMessage($logFile, "⚠️ Rejected/failed {$rowsUpdated} orders: {$reason}");
     
-    // TODO: Consider refunding points to member wallet
+    // Log rejection reason to broker_notifications for audit
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO broker_notifications
+                (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+            VALUES (?, ?, 'order.rejected', 'received', ?, ?, ?, NOW())
+        ");
+        $stmt->execute([
+            $payload['broker_id'] ?? null,
+            $payload['broker_name'] ?? null,
+            $memberId,
+            $basketId,
+            json_encode(['reason' => $reason, 'orders_failed' => $rowsUpdated]),
+        ]);
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ notification log: " . $e->getMessage());
+    }
     
     return [
         'event' => 'order.rejected',
         'basket_id' => $basketId,
         'orders_updated' => $rowsUpdated,
-        'new_status' => 'rejected',
+        'new_status' => 'failed',
         'reason' => $reason
     ];
 }
@@ -389,18 +424,36 @@ function handleOrderCancelled(PDO $conn, array $payload, string $logFile): array
         throw new Exception('Missing basket_id');
     }
     
-    logMessage($logFile, "Processing order.cancelled: basket_id={$basketId}");
+    logMessage($logFile, "Processing order.cancelled: basket_id={$basketId}, reason={$reason}");
     
     $stmt = $conn->prepare("
         UPDATE orders 
-        SET status = 'cancelled',
-            cancel_reason = ?,
-            updated_at = NOW()
+        SET status = 'cancelled'
         WHERE basket_id = ?
           AND LOWER(status) IN ('pending', 'placed', 'queued')
     ");
-    $stmt->execute([$reason, $basketId]);
+    $stmt->execute([$basketId]);
     $rowsUpdated = $stmt->rowCount();
+    
+    logMessage($logFile, "✅ Cancelled {$rowsUpdated} orders");
+    
+    // Log cancellation reason to broker_notifications for audit
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO broker_notifications
+                (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+            VALUES (?, ?, 'order.cancelled', 'received', ?, ?, ?, NOW())
+        ");
+        $stmt->execute([
+            $payload['broker_id'] ?? null,
+            $payload['broker_name'] ?? null,
+            $memberId,
+            $basketId,
+            json_encode(['reason' => $reason, 'orders_cancelled' => $rowsUpdated]),
+        ]);
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ notification log: " . $e->getMessage());
+    }
     
     logMessage($logFile, "✅ Cancelled {$rowsUpdated} orders");
     

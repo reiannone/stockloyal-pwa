@@ -35,6 +35,7 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
+import BrokerExecAdmin from "./pages/BrokerExecAdmin.jsx";
 import SocialPostsAdmin from "./pages/SocialPostsAdmin.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import WebhookAdmin from "./pages/WebhookAdmin.jsx";
@@ -341,6 +342,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <SweepAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/admin-broker-exec"
+                element={
+                  <PageWrapper>
+                    <BrokerExecAdmin />
                   </PageWrapper>
                 }
               />
