@@ -10,6 +10,7 @@ import {
   XCircle,
   AlertTriangle,
   ShoppingBasket,
+  ClipboardCheck,
 } from "lucide-react";
 import SharePointsSheet from "../components/SharePointsSheet.jsx";
 import { useBasket } from "../context/BasketContext";
@@ -705,7 +706,7 @@ export default function Wallet() {
               gap: 6,
             }}
           >
-            My Pending Orders
+            <ClipboardCheck size={18} /> My Pending Orders
             <span style={{
               background: pendingCount > 0 ? "#ef4444" : "#9ca3af",
               color: "#fff",
