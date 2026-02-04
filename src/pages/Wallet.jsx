@@ -678,7 +678,7 @@ export default function Wallet() {
               gap: 6,
             }}
           >
-            <ShoppingBasket size={18} /> Convert & Invest Basket
+            <ShoppingBasket size={18} /> Convert to Invest Basket
             {basket?.length > 0 && (
               <span style={{
                 background: "#fff",
