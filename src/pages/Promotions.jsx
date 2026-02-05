@@ -10,20 +10,15 @@ function Promotions() {
 
   useEffect(() => {
     console.log("✅ Start Promotions.jsx");
-    console.log("API_BASE:", API_BASE);
 
-    // -------------------------------
-    // NEW: Read memberEmail too
-    // -------------------------------
     const merchantId = localStorage.getItem("merchantId");
     const memberEmail =
       localStorage.getItem("memberEmail") ||
-      localStorage.getItem("memberId"); // fallback compatibility
+      localStorage.getItem("memberId");
 
     console.log("[Promotions] merchantId:", merchantId);
     console.log("[Promotions] memberEmail:", memberEmail);
 
-    // Save fallback → forward compatibility
     if (memberEmail) {
       localStorage.setItem("memberEmail", memberEmail);
     }
@@ -68,37 +63,35 @@ function Promotions() {
       .finally(() => setLoading(false));
   }, []);
 
-  // ------------------------------------
-  // Routes to Wallet if logged in, otherwise Login
-  // ------------------------------------
+  // ───────────────────────────────────────────────────
+  // Routes to Wallet if logged in, otherwise Login.
+  // Points were already applied server-side by demo-inbound.php
+  // for existing members, so no client-side wallet mutations needed.
+  // ───────────────────────────────────────────────────
   const handleGetStarted = async () => {
     const memberId = localStorage.getItem("memberId");
-    const memberEmail = localStorage.getItem("memberEmail");
-    
-    // ✅ If user has memberId, verify they actually have a wallet
+
     if (memberId) {
       console.log("[Promotions] Checking if user has wallet...");
-      
+
       try {
         const walletCheck = await apiPost("get-wallet.php", { member_id: memberId });
-        
+
         if (walletCheck?.success && walletCheck?.wallet) {
-          // User has a wallet - they're fully registered
+          // Existing user — wallet already updated server-side
           console.log("[Promotions] User has wallet, navigating to wallet");
           navigate("/wallet");
           return;
         } else {
-          // Wallet not found - user needs to complete registration
-          // ✅ DON'T clear memberId - Login needs it to pre-fill the username field!
           console.log("[Promotions] No wallet found - user needs to register");
         }
       } catch (err) {
         console.log("[Promotions] Wallet check failed:", err);
-        // ✅ DON'T clear memberId on error - Login needs it!
       }
     }
-    
-    // Go to login to complete registration (with memberId preserved for pre-fill)
+
+    // New user or no wallet → go to login
+    // Login will call apply-pending-inbound.php after account creation
     console.log("[Promotions] Navigating to login");
     navigate("/login");
   };

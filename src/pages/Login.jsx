@@ -9,7 +9,7 @@ const normUsername = (s) => String(s || "").trim().toLowerCase();
 export default function Login() {
   const navigate = useNavigate();
 
-  const [mode, setMode] = useState("checking"); // checking | login | create
+  const [mode, setMode] = useState("checking"); // checking | login | create | forgot | reset
 
   // Login identifier (username OR email)
   const [identifier, setIdentifier] = useState("");
@@ -22,6 +22,11 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  // Forgot / Reset password
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
 
   const [merchantId, setMerchantId] = useState("");
   const [points, setPoints] = useState(0);
@@ -33,8 +38,6 @@ export default function Login() {
   }, []);
 
   const persistSession = (payload = {}) => {
-    // Payload may come from login.php/create_member.php.
-    // We preserve existing LS values when payload doesn’t include them.
     const existing = {
       memberId: localStorage.getItem("memberId") || "",
       memberEmail: localStorage.getItem("memberEmail") || "",
@@ -53,7 +56,6 @@ export default function Login() {
       memberTimezone: payload.member_timezone ?? payload.memberTimezone ?? existing.memberTimezone,
     };
 
-    // Always set canonical keys (even if empty)
     localStorage.setItem("memberId", next.memberId || "");
     localStorage.setItem("memberEmail", next.memberEmail || "");
     localStorage.setItem("merchantId", next.merchantId || "");
@@ -62,38 +64,29 @@ export default function Login() {
     localStorage.setItem("memberTimezone", next.memberTimezone || "");
     localStorage.setItem("lastLoginAt", new Date().toISOString());
 
-    // Let Header / other components refresh in same tab
     window.dispatchEvent(new Event("member-updated"));
   };
 
   useEffect(() => {
     const lsMerchantId = localStorage.getItem("merchantId") || "";
     const lsMemberId = localStorage.getItem("memberId") || "";
-    const lsEmail = localStorage.getItem("memberEmail") || "";
     const lsPoints = parseInt(localStorage.getItem("points") || "0", 10);
-
-    console.log("[Login] useEffect - lsMemberId:", lsMemberId);
-    console.log("[Login] useEffect - lsEmail:", lsEmail);
-    console.log("[Login] useEffect - username state:", username);
 
     setMerchantId(lsMerchantId);
     setPoints(Number.isFinite(lsPoints) ? lsPoints : 0);
     setConversionRate(detectedConv);
 
-    // ✅ Check if user actually has a wallet (is fully registered)
-    // Don't just check localStorage - verify with API
-    
     (async () => {
       try {
-        // ✅ Always check wallet first if we have a memberId
+        // If we have a memberId, check whether they already have a wallet
         if (lsMemberId) {
           console.log("[Login] memberId found, checking wallet for:", lsMemberId);
-          
+
           try {
             const walletCheck = await apiPost("get-wallet.php", { member_id: lsMemberId });
-            
+
             if (walletCheck?.success && walletCheck?.wallet) {
-              // User has a wallet - they're fully registered
+              // Existing user with wallet — points already applied server-side
               console.log("[Login] User has wallet, redirecting to wallet");
               navigate("/wallet");
               return;
@@ -101,31 +94,17 @@ export default function Login() {
           } catch (walletErr) {
             console.log("[Login] Wallet check failed - new user");
           }
-          
-          // ✅ No wallet found - this is a new user
-          // Pre-populate the username field and show create form
+
+          // No wallet → new user, pre-fill username, show create form
           console.log("[Login] No wallet found, pre-filling username with:", lsMemberId);
-          console.log("[Login] Setting username state to:", lsMemberId);
           setUsername(lsMemberId);
-          
-          console.log("[Login] Setting mode to: create");
           setMode("create");
-          
-          // Verify state was set
-          setTimeout(() => {
-            console.log("[Login] After setState - username:", username);
-            console.log("[Login] After setState - mode:", mode);
-          }, 100);
-          
-          // Don't clear memberId yet - we need it for the form
-          // It will be properly set after account creation
           return;
         }
-        
-        // No memberId at all - show login form
+
+        // No memberId at all → show login form
         console.log("[Login] No memberId, showing login form");
         setMode("login");
-        
       } catch {
         console.log("[Login] Exception caught, showing login form");
         setMode("login");
@@ -133,58 +112,173 @@ export default function Login() {
     })();
   }, [detectedConv, navigate]);
 
-  const applyPointsIfAny = async (memberIdToUse) => {
-    if (!points || points <= 0) return;
-    const conv = conversionRate > 0 ? conversionRate : 0.01;
-    const cashBalance = Number((points * conv).toFixed(2));
-
+  // ───────────────────────────────────────────────────
+  // Apply any pending inbound points after account creation.
+  // Called once after create_member succeeds.
+  // ───────────────────────────────────────────────────
+  const applyPendingInbound = async (memberIdToUse) => {
     try {
-      // ✅ Update points and cash balance
-      await apiPost("update_points.php", {
+      const data = await apiPost("apply-pending-inbound.php", {
         member_id: memberIdToUse,
-        points,
-        cash_balance: cashBalance,
       });
 
-      // ✅ Populate localStorage with wallet data
-      localStorage.setItem("points", String(points));
-      localStorage.setItem("cashBalance", cashBalance.toFixed(2));
-      localStorage.setItem("conversion_rate", String(conv));
-      
-      console.log("[Login] Populated localStorage - points:", points, "cashBalance:", cashBalance);
+      if (data?.success && data?.applied > 0) {
+        console.log("[Login] Applied", data.applied, "pending inbound record(s)");
+        console.log("[Login] Points:", data.points, "Cash:", data.cash_balance, "Tier:", data.tier);
 
-      // ✅ Log transaction to ledger
-      const clientTxId = `initial_points_${memberIdToUse}_${Date.now()}`;
-      const memberTimezone = localStorage.getItem("memberTimezone") || 
-                            Intl.DateTimeFormat().resolvedOptions().timeZone || 
-                            "America/New_York";
-      
-      try {
-        await apiPost("log-ledger.php", {
-          member_id: memberIdToUse,
-          merchant_id: merchantId || "",
-          points: points,
-          // ✅ DON'T send amount_cash - constraint requires only ONE amount field
-          action: "earn",
-          client_tx_id: clientTxId,
-          member_timezone: memberTimezone,
-          note: "Initial points from merchant referral"
-        });
-        console.log("[Login] Transaction logged to ledger:", clientTxId);
-      } catch (ledgerErr) {
-        console.error("[Login] Failed to log transaction to ledger:", ledgerErr);
-        // Don't fail the whole flow if ledger logging fails
+        // Update localStorage with the applied values
+        if (data.points !== undefined) localStorage.setItem("points", String(data.points));
+        if (data.cash_balance !== undefined) localStorage.setItem("cashBalance", String(data.cash_balance));
+        if (data.tier) localStorage.setItem("memberTier", data.tier);
+      } else {
+        console.log("[Login] No pending inbound records to apply");
       }
     } catch (err) {
-      console.error("[Login] update_points.php error:", err);
+      console.error("[Login] apply-pending-inbound failed:", err);
+      // Non-blocking: account is created, points can be applied later
+    }
+  };
+
+  // ───────────────────────────────────────────────────
+  // Hydrate merchant data into localStorage.
+  // Same data SplashScreen normally sets (name, logo,
+  // sweep_day, conversion_rate, full merchant JSON).
+  // Called after login/create when SplashScreen was skipped.
+  // ───────────────────────────────────────────────────
+  const hydrateMerchant = async (mId) => {
+    if (!mId) return;
+
+    try {
+      console.log("[Login] Hydrating merchant data for:", mId);
+      const resp = await apiPost("get_merchant.php", { merchant_id: mId });
+
+      if (resp?.success && resp?.merchant) {
+        const m = resp.merchant;
+        localStorage.setItem("merchant", JSON.stringify(m));
+
+        if (m.merchant_name) localStorage.setItem("merchantName", m.merchant_name);
+        if (m.logo_url) {
+          localStorage.setItem("merchantLogo", m.logo_url);
+        } else {
+          localStorage.removeItem("merchantLogo");
+        }
+        if (m.sweep_day !== undefined && m.sweep_day !== null) {
+          localStorage.setItem("sweep_day", String(m.sweep_day));
+        } else {
+          localStorage.removeItem("sweep_day");
+        }
+
+        // Conversion rate (base → tier override)
+        let rate = parseFloat(m.conversion_rate || "0");
+        if (!rate || rate <= 0) rate = 0.01;
+
+        const memberTier = localStorage.getItem("memberTier");
+        if (memberTier) {
+          for (let i = 1; i <= 6; i++) {
+            const tierName = m[`tier${i}_name`];
+            if (tierName && tierName.toLowerCase() === memberTier.toLowerCase()) {
+              const tierRate = parseFloat(m[`tier${i}_conversion_rate`] || 0);
+              if (tierRate > 0) rate = tierRate;
+              break;
+            }
+          }
+        }
+        localStorage.setItem("conversion_rate", rate.toString());
+
+        console.log("[Login] Merchant hydrated:", m.merchant_name, "rate:", rate);
+      }
+    } catch (err) {
+      console.error("[Login] hydrateMerchant failed:", err);
     }
   };
 
   const toggleMode = () => {
     setError("");
+    setSuccessMsg("");
     setPassword("");
     setConfirmPassword("");
+    setResetEmail("");
+    setResetCode("");
     setMode((m) => (m === "login" ? "create" : "login"));
+  };
+
+  // ───────────────────────────────────────────────────
+  // Forgot Password — request a reset code via email
+  // ───────────────────────────────────────────────────
+  const handleForgotRequest = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+
+    const emailRaw = String(resetEmail || "").trim().toLowerCase();
+    if (!isEmail(emailRaw)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    try {
+      const data = await apiPost("forgot-password.php", {
+        email: emailRaw,
+        merchant_id: merchantId || "",
+      });
+
+      if (!data?.success) {
+        setError(data?.error || "Unable to send reset code. Please try again.");
+        return;
+      }
+
+      setSuccessMsg("A reset code has been sent to your email. Check your inbox (and spam folder).");
+      setMode("reset");
+    } catch (err) {
+      console.error("[Login] Forgot password error:", err);
+      setError(err?.error || err?.message || "Unable to connect to server. Please try again.");
+    }
+  };
+
+  // ───────────────────────────────────────────────────
+  // Reset Password — verify code and set new password
+  // ───────────────────────────────────────────────────
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMsg("");
+
+    const code = String(resetCode || "").trim();
+    if (!code) {
+      setError("Please enter the reset code from your email.");
+      return;
+    }
+    if (!password) {
+      setError("Please enter a new password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    try {
+      const data = await apiPost("reset-password.php", {
+        email: resetEmail.trim().toLowerCase(),
+        code,
+        new_password: password,
+      });
+
+      if (!data?.success) {
+        setError(data?.error || "Password reset failed. Please try again.");
+        return;
+      }
+
+      setSuccessMsg("Password reset successfully! You can now log in.");
+      setPassword("");
+      setConfirmPassword("");
+      setResetCode("");
+      setResetEmail("");
+      setMode("login");
+    } catch (err) {
+      console.error("[Login] Reset password error:", err);
+      setError(err?.error || err?.message || "Unable to connect to server. Please try again.");
+    }
   };
 
   const handleLogin = async (e) => {
@@ -209,29 +303,27 @@ export default function Login() {
       console.log("[Login] API response:", data);
 
       if (!data?.success) {
-        // ✅ Show specific error from server
         setError(data?.error || "Invalid username or password. Please try again.");
         return;
       }
 
-      // ✅ Persist full session bundle
       persistSession({
         ...data,
-        merchant_id: data.merchant_id ?? merchantId, // fallback to pre-known merchantId
+        merchant_id: data.merchant_id ?? merchantId,
       });
 
-      await applyPointsIfAny(data.member_id);
+      // Hydrate merchant data if SplashScreen was skipped
+      const effectiveMerchantId = data.merchant_id ?? merchantId;
+      await hydrateMerchant(effectiveMerchantId);
+
       navigate("/wallet");
     } catch (err) {
       console.error("[Login] Error caught:", err);
-      
-      // ✅ Check if error has a message from the API
       if (err?.error) {
         setError(err.error);
       } else if (err?.message) {
         setError(err.message);
       } else {
-        // Only show network error if there's an actual network/server failure
         setError("Unable to connect to server. Please check your internet connection and try again.");
       }
     }
@@ -278,46 +370,32 @@ export default function Login() {
       console.log("[Login] Create account response:", data);
 
       if (!data?.success) {
-        // ✅ Show specific error from server (e.g., "Username already exists")
         setError(data?.error || "Account creation failed. Please try again.");
         return;
       }
 
-      // ✅ Persist session bundle after create as well
       persistSession({
         ...data,
         merchant_id: data.merchant_id ?? merchantId,
       });
 
-      // ✅ Apply points and populate localStorage
-      await applyPointsIfAny(data.member_id);
+      // Apply any queued pending_inbound points for this member
+      await applyPendingInbound(data.member_id);
 
-      // ✅ Fetch and store merchant name if we have merchantId
-      if (merchantId) {
-        try {
-          const merchantData = await apiPost("get_merchant.php", { merchant_id: merchantId });
-          if (merchantData?.success && merchantData?.merchant) {
-            localStorage.setItem("merchantName", merchantData.merchant.merchant_name || "");
-            console.log("[Login] Set merchantName:", merchantData.merchant.merchant_name);
-          }
-        } catch (err) {
-          console.error("[Login] Failed to fetch merchant name:", err);
-        }
-      }
+      // Hydrate merchant data if SplashScreen was skipped
+      const effectiveMerchantId = data.merchant_id ?? merchantId;
+      await hydrateMerchant(effectiveMerchantId);
 
       navigate("/member-onboard", {
         state: { memberId: data.member_id, memberEmail: data.member_email },
       });
     } catch (err) {
       console.error("[Login] Error caught:", err);
-      
-      // ✅ Check if error has a message from the API
       if (err?.error) {
         setError(err.error);
       } else if (err?.message) {
         setError(err.message);
       } else {
-        // Only show network error if there's an actual network/server failure
         setError("Unable to connect to server. Please check your internet connection and try again.");
       }
     }
@@ -332,12 +410,18 @@ export default function Login() {
           ? "Checking your account..."
           : mode === "login"
           ? "Login to StockLoyal"
+          : mode === "forgot"
+          ? "Forgot Password"
+          : mode === "reset"
+          ? "Reset Password"
           : "Create StockLoyal Account"}
       </h2>
 
+      {successMsg && <p className="form-success" style={{ color: "#2e7d32", textAlign: "center", marginBottom: 12 }}>{successMsg}</p>}
+
       {!isChecking && mode === "create" && points > 0 && (
         <p className="welcome-points">
-          Welcome! You’ve earned <strong>{points}</strong> points — worth $
+          Welcome! You've earned <strong>{points}</strong> points — worth $
           {(points * conversionRate).toFixed(2)}. Create your account to claim them.
         </p>
       )}
@@ -381,8 +465,112 @@ export default function Login() {
 
           <button type="submit" className="btn-primary">Login</button>
 
+          <button
+            type="button"
+            className="btn-link"
+            style={{ background: "none", border: "none", color: "#1976d2", cursor: "pointer", textDecoration: "underline", padding: "4px 0", fontSize: "0.9rem" }}
+            onClick={() => { setError(""); setSuccessMsg(""); setPassword(""); setMode("forgot"); }}
+          >
+            Forgot Password?
+          </button>
+
           <button type="button" className="btn-secondary" onClick={toggleMode}>
             Need an account?
+          </button>
+        </form>
+      ) : mode === "forgot" ? (
+        <form className="form member-form-grid" onSubmit={handleForgotRequest}>
+          <p style={{ marginBottom: 12, fontSize: "0.95rem", color: "#555" }}>
+            Enter the email address associated with your account and we'll send you a reset code.
+          </p>
+
+          <div className="member-form-row">
+            <label className="member-form-label">Email:</label>
+            <input
+              type="email"
+              className="member-form-input"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              autoComplete="email"
+              placeholder="e.g., robert@email.com"
+            />
+          </div>
+
+          {error && <p className="form-error">{error}</p>}
+
+          <button type="submit" className="btn-primary">Send Reset Code</button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => { setError(""); setSuccessMsg(""); setMode("login"); }}
+          >
+            Back to Login
+          </button>
+        </form>
+      ) : mode === "reset" ? (
+        <form className="form member-form-grid" onSubmit={handleResetPassword}>
+          <div className="member-form-row">
+            <label className="member-form-label">Reset Code:</label>
+            <input
+              type="text"
+              className="member-form-input"
+              value={resetCode}
+              onChange={(e) => setResetCode(e.target.value)}
+              autoComplete="one-time-code"
+              placeholder="Enter the code from your email"
+            />
+          </div>
+
+          <div className="member-form-row">
+            <label className="member-form-label">New Password:</label>
+            <div className="password-wrapper-inline" style={{ flex: 1 }}>
+              <input
+                type={showPw ? "text" : "password"}
+                className="member-form-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+              <img
+                src={`${import.meta.env.BASE_URL}icons/${showPw ? "hide.png" : "show.png"}`}
+                alt={showPw ? "Hide password" : "Show password"}
+                className="pw-toggle-icon"
+                onClick={() => setShowPw(!showPw)}
+              />
+            </div>
+          </div>
+
+          <div className="member-form-row">
+            <label className="member-form-label">Confirm Password:</label>
+            <input
+              type={showPw ? "text" : "password"}
+              className="member-form-input"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+
+          {error && <p className="form-error">{error}</p>}
+
+          <button type="submit" className="btn-primary">Reset Password</button>
+
+          <button
+            type="button"
+            className="btn-link"
+            style={{ background: "none", border: "none", color: "#1976d2", cursor: "pointer", textDecoration: "underline", padding: "4px 0", fontSize: "0.9rem" }}
+            onClick={() => { setError(""); setSuccessMsg(""); handleForgotRequest({ preventDefault: () => {} }); }}
+          >
+            Didn't get a code? Resend
+          </button>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => { setError(""); setSuccessMsg(""); setMode("login"); }}
+          >
+            Back to Login
           </button>
         </form>
       ) : (

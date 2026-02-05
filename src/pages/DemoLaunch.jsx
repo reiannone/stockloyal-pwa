@@ -6,26 +6,33 @@ export default function DemoLaunch() {
   const [merchants, setMerchants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lastResult, setLastResult] = useState(null);
 
   // Read optional preset values from query string
-  const { presetMerchantId, presetMemberId, presetPoints } = useMemo(() => {
+  const { presetMerchantId, presetMemberId, presetPoints, presetTier } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
       presetMerchantId: params.get("merchant_id") || "",
       presetMemberId: params.get("member_id") || "",
       presetPoints: params.get("points") || "100",
+      presetTier: params.get("tier") || "",
     };
   }, []);
 
   const [selectedMerchantId, setSelectedMerchantId] = useState(presetMerchantId);
   const [memberId, setMemberId] = useState(presetMemberId);
   const [points, setPoints] = useState(presetPoints);
+  const [tier, setTier] = useState(presetTier);
+  const [launching, setLaunching] = useState(false);
 
-  // NEW: bulk refresh state (force overlay)
+  // Bulk refresh state
   const [bulkPoints, setBulkPoints] = useState("100");
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // Fetch merchants (use same helper as WalletAdmin)
+  // Tier options for selected merchant
+  const [tierOptions, setTierOptions] = useState([]);
+
+  // Fetch merchants
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -47,59 +54,30 @@ export default function DemoLaunch() {
     })();
   }, [presetMerchantId]);
 
-  // Helpers
-  function findSelectedMerchant(merchantId) {
-    return merchants.find((m) => String(m.merchant_id) === String(merchantId)) || null;
-  }
+  // Update tier options when selected merchant changes
+  useEffect(() => {
+    const merchant = merchants.find((m) => String(m.merchant_id) === String(selectedMerchantId));
+    if (!merchant) {
+      setTierOptions([]);
+      return;
+    }
 
-  function normalizeRate(raw) {
-    let r = Number(raw || 0);
-    if (!Number.isFinite(r) || r <= 0) return 0;
-    // Support either 0.05 or 5 (i.e., 5%)
-    if (r >= 1) r = r / 100;
-    return r;
-  }
+    const tiers = [];
+    for (let i = 1; i <= 6; i++) {
+      const name = merchant[`tier${i}_name`];
+      if (name) tiers.push(name);
+    }
+    setTierOptions(tiers);
 
-  // Accurate cents rounding
-  function calcCashFromPoints(p, rate) {
-    const cents = Math.round(Number(p) * Number(rate) * 100);
-    return cents / 100;
-  }
+    // Default to first tier if none selected
+    if (tiers.length > 0 && !tier) {
+      setTier(tiers[0]);
+    }
+  }, [selectedMerchantId, merchants]);
 
-  // Log to transactions_ledger
-  async function logLedger({ memberId, merchantId, points, action }) {
-    const clientTxId =
-      `demo_${memberId}_${merchantId}_` + `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    const payload = {
-      member_id: memberId,
-      merchant_id: merchantId,
-      points: Number(points),
-      action, // 'earn' or 'redeem'
-      client_tx_id: clientTxId,
-    };
-
-    const data = await apiPost("log-ledger.php", payload);
-    if (!data?.success) throw new Error(data?.error || "Failed to log ledger");
-    return data;
-  }
-
-  // Upsert wallet with points + computed cash_balance
-  async function updateWalletBalance({ memberId, merchantId, points }) {
-    const merchant = findSelectedMerchant(merchantId);
-    const rate = normalizeRate(merchant?.conversion_rate);
-    const cash_balance = rate > 0 ? calcCashFromPoints(points, rate) : 0;
-
-    const data = await apiPost("update-wallet-balance.php", {
-      member_id: memberId,
-      merchant_id: merchantId,
-      points: Number(points),
-      cash_balance, // already rounded to cents
-    });
-    if (!data?.success) throw new Error(data?.error || "Failed to update wallet balance");
-    return data;
-  }
-
+  // ───────────────────────────────────────────────────
+  // Launch: POST webhook to backend, then open redirect URL
+  // ───────────────────────────────────────────────────
   const launchDemo = async () => {
     const trimmedMember = memberId.trim();
     const pts = Number(points);
@@ -108,38 +86,40 @@ export default function DemoLaunch() {
     if (!trimmedMember) return alert("Please enter a Member ID");
     if (!Number.isFinite(pts) || pts <= 0) return alert("Points must be a positive number");
 
+    setLaunching(true);
+    setLastResult(null);
+    setError("");
+
     try {
-      // 1) Log the demo earn in the ledger
-      await logLedger({
-        memberId: trimmedMember,
-        merchantId: selectedMerchantId,
+      // POST to webhook endpoint (backend handles wallet + ledger)
+      const data = await apiPost("demo-inbound.php", {
+        merchant_id: selectedMerchantId,
+        member_id: trimmedMember,
         points: pts,
+        tier: tier || undefined,
         action: "earn",
       });
 
-      // 2) Update wallet.points and wallet.cash_balance (derived from merchant.conversion_rate)
-      await updateWalletBalance({
-        memberId: trimmedMember,
-        merchantId: selectedMerchantId,
-        points: pts,
-      });
-    } catch (err) {
-      console.warn("[DemoLaunch] pre-launch update failed:", err?.message || err);
-      // Optionally early-return if you want to require success:
-      // return;
+      if (!data?.success) {
+        throw new Error(data?.error || "Webhook call failed");
+      }
+
+      console.log("[DemoLaunch] Webhook response:", data);
+      setLastResult(data);
+
+      // Open the redirect URL returned by the backend
+      const redirectPath = data.redirect_url || `/?member_id=${encodeURIComponent(trimmedMember)}&merchant_id=${encodeURIComponent(selectedMerchantId)}`;
+      const fullUrl = window.location.origin + redirectPath;
+      window.open(fullUrl, "_blank");
+    } catch (e) {
+      console.error("[DemoLaunch] webhook error:", e);
+      setError(e?.message || "Failed to send webhook");
+    } finally {
+      setLaunching(false);
     }
-
-    const url =
-      window.location.origin +
-      `/?member_id=${encodeURIComponent(trimmedMember)}` +
-      `&merchant_id=${encodeURIComponent(selectedMerchantId)}` +
-      `&points=${encodeURIComponent(pts)}` +
-      `&action=earn`;
-
-    window.open(url, "_blank");
   };
 
-  // Bulk refresh handler (FORCE OVERLAY)
+  // Bulk refresh handler (admin tool – separate concern)
   const refreshAllMembers = async () => {
     const merchantId = selectedMerchantId;
     const target = Number(bulkPoints);
@@ -176,8 +156,8 @@ export default function DemoLaunch() {
     <div className="app-container app-content">
       <h1 className="page-title">Launch Demo</h1>
       <p className="page-deck">
-        Simulate a member arriving from a merchant by selecting a merchant, entering a Member ID, and reward points.
-        You can also force-overlay points for all members of a merchant.
+        Simulate a merchant webhook that sends member data + reward points to StockLoyal.
+        The backend processes the wallet update and ledger entry before the member lands in the PWA.
       </p>
 
       <div className="card">
@@ -194,7 +174,11 @@ export default function DemoLaunch() {
               <select
                 className="form-input"
                 value={selectedMerchantId}
-                onChange={(e) => setSelectedMerchantId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedMerchantId(e.target.value);
+                  setTier(""); // reset tier when merchant changes
+                  setLastResult(null);
+                }}
               >
                 {merchants.map((m) => (
                   <option key={m.merchant_id} value={m.merchant_id}>
@@ -210,9 +194,27 @@ export default function DemoLaunch() {
                 className="form-input"
                 placeholder="Enter Member ID"
                 value={memberId}
-                onChange={(e) => setMemberId(e.target.value)}
+                onChange={(e) => { setMemberId(e.target.value); setLastResult(null); }}
               />
             </div>
+
+            {tierOptions.length > 0 && (
+              <div className="form-row">
+                <label className="form-label">Member Tier:</label>
+                <select
+                  className="form-input"
+                  value={tier}
+                  onChange={(e) => { setTier(e.target.value); setLastResult(null); }}
+                >
+                  <option value="">— No tier —</option>
+                  {tierOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="form-row">
               <label className="form-label">Reward Points:</label>
@@ -220,15 +222,41 @@ export default function DemoLaunch() {
                 className="form-input"
                 type="number"
                 value={points}
-                onChange={(e) => setPoints(e.target.value)}
+                onChange={(e) => { setPoints(e.target.value); setLastResult(null); }}
               />
             </div>
 
             <div className="card-actions">
-              <button className="btn-primary" onClick={launchDemo}>
-                Launch StockLoyal PWA
+              <button className="btn-primary" onClick={launchDemo} disabled={launching}>
+                {launching ? "Sending webhook…" : "Launch StockLoyal PWA"}
               </button>
             </div>
+
+            {/* Webhook result feedback */}
+            {lastResult && (
+              <div
+                style={{
+                  marginTop: "1rem",
+                  padding: "0.75rem 1rem",
+                  fontSize: "0.85rem",
+                  backgroundColor: lastResult.member_exists ? "#e8f5e9" : "#fff3e0",
+                  border: `1px solid ${lastResult.member_exists ? "#a5d6a7" : "#ffcc80"}`,
+                  borderRadius: "8px",
+                }}
+              >
+                <strong>
+                  {lastResult.member_exists
+                    ? "✅ Existing member — wallet updated"
+                    : "🕐 New member — points queued for registration"}
+                </strong>
+                <br />
+                Points: {lastResult.points} &nbsp;|&nbsp; Cash: ${lastResult.cash_balance?.toFixed(2)}
+                {lastResult.tier && <> &nbsp;|&nbsp; Tier: {lastResult.tier}</>}
+                {lastResult.conversion_rate && (
+                  <> &nbsp;|&nbsp; Rate: {lastResult.conversion_rate}</>
+                )}
+              </div>
+            )}
 
             {/* Force overlay bulk refresh */}
             <hr className="my-4" />
