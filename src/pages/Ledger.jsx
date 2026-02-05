@@ -6,6 +6,8 @@ import { apiPost } from "../api.js";
 export default function Ledger() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
+  const merchantName = localStorage.getItem("merchantName");
+  const broker = localStorage.getItem("broker");
 
   const [entries, setEntries] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
@@ -173,8 +175,9 @@ export default function Ledger() {
         Transaction Ledger
       </h2>
 
-      <p className="subtext" style={{ textAlign: "center", marginTop: -6, marginBottom: 12 }}>
-        Showing times in <strong>{memberTimezone || detectedTz}</strong>
+      {/* --- Page Notice --- */}
+      <p className="form-disclosure mt-4">
+        <strong>Note:</strong> This page displays points and cash related transactions with {merchantName} and  {broker}. Times are shown in <strong>{memberTimezone || detectedTz}</strong>.
       </p>
 
       {/* Filter bar */}
@@ -491,7 +494,6 @@ export default function Ledger() {
           View Order History
         </button>
         </div>
-      <div>
         <button
           type="button"
           className="btn-primary"
@@ -500,7 +502,6 @@ export default function Ledger() {
         >
           Back to Wallet
         </button>
-        </div>
       </div>
     </div>
   );

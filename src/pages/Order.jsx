@@ -382,8 +382,26 @@ export default function Order() {
         <p className="basket-empty">Your basket is empty.</p>
       ) : (
         <div className="basket-table-wrapper">
-          <p className="basket-intro">Total Investment: ${Number(totalAmount).toFixed(2)}</p>
-          <p className="basket-intro">Points Used: {pointsUsed}</p>
+          {/* ✅ Basket investment summary */}
+          {enrichedBasket.length > 0 && totalAmount > 0 && (
+            <div style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: "8px",
+              padding: "0.6rem 1rem",
+              marginBottom: "0.75rem",
+              textAlign: "center",
+              fontSize: "0.875rem",
+              color: "#1e40af",
+            }}>
+              Investing <strong>${Number(totalAmount).toFixed(2)}</strong> across{" "}
+              {enrichedBasket.length} stock{enrichedBasket.length !== 1 ? "s" : ""}, using{" "}
+              <strong>{Number(pointsUsed).toLocaleString()}</strong> points
+              {enrichedBasket.length > 0 && (
+                <> — <strong>${(totalAmount / enrichedBasket.length).toFixed(2)}</strong> per stock</>
+              )}
+            </div>
+          )}
 
           <table className="basket-table">
             <thead>

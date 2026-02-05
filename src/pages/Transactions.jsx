@@ -7,6 +7,7 @@ export default function Transactions() {
   const navigate = useNavigate();
   const location = useLocation();
   const memberId = localStorage.getItem("memberId");
+  const broker = localStorage.getItem("broker");
 
   const [orders, setOrders] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
@@ -164,8 +165,9 @@ export default function Transactions() {
         Buy Order Transaction History
       </h2>
 
-      <p className="subtext" style={{ textAlign: "center", marginTop: -6, marginBottom: 12 }}>
-        Showing times in <strong>{memberTimezone || detectedTz}</strong>
+      {/* --- Page Notice --- */}
+      <p className="form-disclosure mt-4">
+        <strong>Note:</strong> This page displays trade orders submitted to and executed by your broker {broker}. Times are shown in <strong>{memberTimezone || detectedTz}</strong>.
       </p>
 
       {/* Filter bar */}
@@ -193,7 +195,40 @@ export default function Transactions() {
                 <option value="order_type">Order Type</option>
               </select>
 
-              {filterField && (
+              {filterField && filterField === "status" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="placed">Placed</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="executed">Executed</option>
+                  <option value="failed">Failed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              )}
+
+              {filterField && filterField === "order_type" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Order Types</option>
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                  <option value="sweep">Sweep</option>
+                  <option value="market">Market</option>
+                  <option value="gtc">GTC</option>
+                </select>
+              )}
+
+              {filterField && filterField !== "status" && filterField !== "order_type" && (
                 <input
                   className="form-input"
                   type={filterField === "date" ? "date" : "text"}
@@ -202,10 +237,6 @@ export default function Transactions() {
                       ? "e.g. AAPL"
                       : filterField === "date"
                       ? "Select date"
-                      : filterField === "status"
-                      ? "e.g. executed"
-                      : filterField === "order_type"
-                      ? "e.g. market, limit"
                       : ""
                   }
                   value={filterValue}
@@ -294,7 +325,7 @@ export default function Transactions() {
                     <td style={{ textAlign: "center", lineHeight: "1.3" }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                         <span style={{ fontWeight: "600", color: "#1e3a8a", fontSize: "0.9rem" }}>
-                          {order.order_type ? `bought ${order.order_type}` : "bought"}
+                          {order.order_type ? `buy ${order.order_type}` : "buy"}
                         </span>
                         <span style={getStatusPillStyle(order.status)}>
                           {order.status || "-"}
