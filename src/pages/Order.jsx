@@ -3,9 +3,20 @@ import React, { useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useBasket } from "../context/BasketContext";
 import { apiPost } from "../api.js";
+import {
+  CreditCard,
+  BarChart2,
+  RefreshCw,
+  Share2,
+  XCircle,
+  AlertTriangle,
+  ShoppingBasket,
+  ClipboardCheck,
+} from "lucide-react";
 
 // ⭐ NEW: import audio as module so bundler manages path
 import pingSound from "../assets/sounds/mixkit-confirmation-tone-2867.wav";
+import { color } from "framer-motion";
 
 console.log("[Order] start localStorage item broker:", localStorage.getItem("broker"));
 
@@ -21,6 +32,20 @@ export default function Order() {
   const broker = localStorage.getItem("broker");
   const memberId = localStorage.getItem("memberId");
   const merchantId = localStorage.getItem("merchantId");
+  const merchantName = localStorage.getItem("merchantName") || "your merchant";
+  const sweepDayRaw = localStorage.getItem("sweep_day");
+
+  // Helper: ordinal suffix for day numbers (1st, 2nd, 3rd, 15th, etc.)
+  const ordinal = (n) => {
+    const num = parseInt(n, 10);
+    if (isNaN(num)) return n;
+    const s = ["th", "st", "nd", "rd"];
+    const v = num % 100;
+    return num + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  // Format number with commas (e.g., 513007 → "513,007")
+  const fmt = (n) => Number(n).toLocaleString();
 
   // basket state
   const enrichedBasket = location.state?.basket || [];
@@ -311,11 +336,48 @@ export default function Order() {
 
   return (
     <div className="order-container">
-      <h2 className="page-title">Place Buy Order with {broker || "Broker"}</h2>
-      <p className="order-subtext">
-        These orders will be executed as <span className="highlight">Market Orders</span>.
-      </p>
+      <h2 className="page-title">My Buy Order with {broker || "Broker"}</h2>
+      <p className="order-subtext"></p>
+      {enrichedBasket.length > 0 && (
+        <div className="order-info-banner" style={{
+          background: "#fff8e1",
+          border: "1px solid #ffe082",
+          borderRadius: 8,
+          padding: "12px 16px",
+          marginBottom: 16,
+          fontSize: "0.93rem",
+          lineHeight: 1.5,
+          color: "#5d4037",
+        }}>
+          {(() => {
+            const sweepDay = localStorage.getItem("sweep_day");
+            const isImmediate = !sweepDay || sweepDay === "T+1";
+            const brokerName = broker || "your broker";
 
+            if (isImmediate) {
+              return (
+                <>
+                  <strong>Buy Order — Immediate Processing</strong>
+                  <span> — Your order will be submitted to {brokerName} for execution.
+                  {merchantName} will be notified that {fmt(pointsUsed)} points
+                  were redeemed from your loyalty account.</span>
+                </>
+              );
+            } else {
+              return (
+                <>
+                  <strong>Submitting Buy Order</strong>
+                  <span> — Your order will be queued for processing on
+                  the {ordinal(sweepDay)} of the month, when {merchantName} converts
+                  redeemed loyalty points and submits trade orders to {brokerName}.
+                  {" "}{merchantName} will be notified that {fmt(pointsUsed)} points
+                  were redeemed from your loyalty account.</span>
+                </>
+              );
+            }
+          })()}
+        </div>
+      )}
       {enrichedBasket.length === 0 ? (
         <p className="basket-empty">Your basket is empty.</p>
       ) : (
@@ -347,13 +409,13 @@ export default function Order() {
       )}
 
       <div className="basket-actions" style={{ display: "flex", gap: 12 }}>
-        <button
+        <button style={{backgroundColor: "#21b140"}}
           type="button"
           onClick={handlePlaceOrder}
           className="btn-primary"
           disabled={placing}
         >
-          {placing ? "Placing orders…" : `Place Buy Order with ${broker || "Broker"}`}
+         <ClipboardCheck size={18} />  {placing ? " Placing orders…" : ` Submit Buy Order with ${broker || "Broker"}`}
         </button>
 
         <button
@@ -362,14 +424,14 @@ export default function Order() {
           className="btn-secondary"
           disabled={placing}
         >
-          Back to Basket
+          <ShoppingBasket size={18} /> Back to Basket
         </button>
       </div>
 
       <p className="form-disclosure">
-        This order is submitted to your broker as a <strong>market order</strong> and is subject to
+        This order is submitted to {broker || "your broker"} as a <strong>{localStorage.getItem("default_order_type") || "market"} order</strong> and is subject to
         the broker's ability to execute it at market price. Orders not filled today will roll to the
-        next trading day. For sell orders, please contact your broker directly.
+        next trading day. For sell orders, please contact {broker || "your broker"} directly.
       </p>
 
       {error && (

@@ -293,6 +293,29 @@ export default function Wallet() {
         // ✅ checks AFTER load
         runPostLoadChecks(w);
 
+        // ✅ Background: Fetch broker details from broker_master (default_order_type, etc.)
+        (async () => {
+          const brokerName = w?.broker || localStorage.getItem("broker");
+          if (brokerName && brokerName.toLowerCase() !== "not linked") {
+            try {
+              const brokerData = await apiPost("get-brokers.php", {});
+              if (brokerData?.success && Array.isArray(brokerData.brokers)) {
+                const match = brokerData.brokers.find(
+                  (b) => b.broker_name?.toLowerCase() === brokerName.toLowerCase()
+                );
+                if (match) {
+                  if (match.default_order_type) {
+                    localStorage.setItem("default_order_type", match.default_order_type);
+                  }
+                  console.log("[Wallet] Broker data loaded:", match.broker_name, "order_type:", match.default_order_type);
+                }
+              }
+            } catch (err) {
+              console.warn("[Wallet] Failed to fetch broker data:", err);
+            }
+          }
+        })();
+
         // ✅ Background: Update portfolio value with real-time prices
         (async () => {
           try {
@@ -437,6 +460,26 @@ export default function Wallet() {
         }
 
         runPostLoadChecks(w);
+
+        // ✅ Background: Fetch broker details on refresh
+        (async () => {
+          const brokerName = w?.broker || localStorage.getItem("broker");
+          if (brokerName && brokerName.toLowerCase() !== "not linked") {
+            try {
+              const brokerData = await apiPost("get-brokers.php", {});
+              if (brokerData?.success && Array.isArray(brokerData.brokers)) {
+                const match = brokerData.brokers.find(
+                  (b) => b.broker_name?.toLowerCase() === brokerName.toLowerCase()
+                );
+                if (match?.default_order_type) {
+                  localStorage.setItem("default_order_type", match.default_order_type);
+                }
+              }
+            } catch (err) {
+              console.warn("[Wallet] Failed to fetch broker data on refresh:", err);
+            }
+          }
+        })();
 
         // ✅ Background: Sync points & tier from merchant on refresh
         (async () => {
@@ -891,7 +934,10 @@ export default function Wallet() {
             </div>
             <div>
               <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Portfolio Value</div>
-              <div className="caption">Market value of investments</div>
+              <div className="caption">Market value of investments held at{" "}
+                <strong style={{ color: "#2563eb" }}>{wallet.broker || localStorage.getItem("broker") || "your broker"}</strong>.
+                <br />Purchased through StockLoyal.
+              </div>
             </div>
           </div>
 

@@ -1913,7 +1913,7 @@ export default function StockPicker() {
             cursor: (!basket || basket.length === 0 || isCashOutsideLimits) ? "not-allowed" : "pointer",
           }}
         >
-           <ClipboardCheck size={16} style={{ verticalAlign: "middle", marginRight: 4 }} />{" "}Place Buy Order with {brokerName} {basket?.length > 0 && `(${basket.length})`}
+           <ClipboardCheck size={16} style={{ verticalAlign: "middle", marginRight: 4 }} />{" "} Submit Buy Order with {brokerName} {basket?.length > 0 && `(${basket.length})`}
         </button>
         <button
           type="button"

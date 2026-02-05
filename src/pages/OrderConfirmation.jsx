@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, ShoppingBasket } from "lucide-react";
 
 export default function OrderConfirmation() {
   const navigate = useNavigate();
@@ -210,7 +210,7 @@ export default function OrderConfirmation() {
 
   return (
     <div className="order-container">
-      <h2 className="page-title">StockLoyal Portfolio of Buy Orders</h2>
+      <h2 className="page-title">Buy Order Confirmation</h2>
 
       {basketId && (
         <p style={{ fontSize: "0.8rem", color: "#555", marginTop: 4 }}>
@@ -218,11 +218,7 @@ export default function OrderConfirmation() {
         </p>
       )}
 
-      <p className="page-deck">Below are the orders placed in this checkout.</p>
-
-      <p className="subtext" style={{ marginTop: -6, marginBottom: 12 }}>
-        Showing times in <strong>{memberTimezone || detectedTz}</strong>
-      </p>
+      <p className="page-deck">Below are the orders submitted in this checkout.</p>
 
       {/* ✅ Success banner + green check - different message for queued vs placed */}
       {showSuccess && (
@@ -249,36 +245,11 @@ export default function OrderConfirmation() {
             <span>
               {isImmediateProcessing 
                 ? `Buy Orders Successfully Placed — your buy order submitted to ${brokerName}!`
-                : `Buy Orders Pending — your order is queued for processing on the ${getSweepDayDisplay(sweepDay)} of the month.`
+                : `Buy Orders Pending — your order is submitted to ${merchantName} and queued for processing on the ${getSweepDayDisplay(sweepDay)} of the month.`
               }
             </span>
           </div>
         </>
-      )}
-
-      {/* ✅ Sweep Schedule Banner for queued/batched orders */}
-      {showSuccess && !isImmediateProcessing && sweepDay && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            background: "#e0f2fe",
-            border: "2px solid #0284c7",
-            color: "#0c4a6e",
-            borderRadius: 12,
-            padding: "12px 16px",
-            marginBottom: 16,
-            fontWeight: 600,
-            fontSize: "0.9rem",
-            textAlign: "center",
-          }}
-        >
-          <span>
-            📅 {merchantName} processes points conversion and trade orders on the {getSweepDayDisplay(sweepDay)} of each month.
-          </span>
-        </div>
       )}
 
       {/* ✅ Broker Notification Banner (only for immediate/T+1 processing when broker confirmed) */}
@@ -326,7 +297,7 @@ export default function OrderConfirmation() {
         >
           <CheckCircle size={24} color="#f59e0b" />
           <span>
-            ✅ Merchant Notified: {pointsUsed.toLocaleString()} points redeemed from your loyalty account
+            ✅ ${merchantName} Notified: {pointsUsed.toLocaleString()} points redeemed from your loyalty account
           </span>
         </div>
       )}
@@ -343,7 +314,7 @@ export default function OrderConfirmation() {
                 <th>Order Type</th>
                 <th>Status</th>
                 <th>Amount</th>
-                <th>Date (Local)</th>
+                <th>Date & Time (Local)</th>
               </tr>
             </thead>
             <tbody>
@@ -364,7 +335,7 @@ export default function OrderConfirmation() {
 
       <div className="basket-actions">
         <button type="button" className="btn-primary" onClick={() => navigate("/wallet")}>
-          Back to Wallet
+          <ShoppingBasket size={18} /> Back to Wallet
         </button>
       </div>
 
