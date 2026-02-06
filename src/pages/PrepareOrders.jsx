@@ -24,6 +24,7 @@ export default function PrepareOrders() {
   // ── Preview state ──
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
   const [filterMerchant, setFilterMerchant] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [prepareResult, setPrepareResult] = useState(null);
@@ -31,6 +32,7 @@ export default function PrepareOrders() {
   // ── Batches state ──
   const [batches, setBatches] = useState([]);
   const [batchesLoading, setBatchesLoading] = useState(false);
+  const [batchesError, setBatchesError] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState(null);
   const [batchStats, setBatchStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -52,13 +54,20 @@ export default function PrepareOrders() {
   // ── Load preview ──
   const loadPreview = useCallback(async () => {
     setPreviewLoading(true);
+    setPreviewError(null);
     try {
       const payload = { action: "preview" };
       if (filterMerchant) payload.merchant_id = filterMerchant;
       const res = await apiPost("prepare_orders.php", payload);
-      if (res.success) setPreview(res);
+      if (res.success) {
+        setPreview(res);
+      } else {
+        setPreviewError(res.error || "Preview failed — check PHP response.");
+        console.error("Preview failed:", res);
+      }
     } catch (err) {
-      console.error("Preview error:", err);
+      setPreviewError("Network/API error: " + err.message);
+      console.error("Preview exception:", err);
     }
     setPreviewLoading(false);
   }, [filterMerchant]);
@@ -66,11 +75,18 @@ export default function PrepareOrders() {
   // ── Load batches ──
   const loadBatches = useCallback(async () => {
     setBatchesLoading(true);
+    setBatchesError(null);
     try {
       const res = await apiPost("prepare_orders.php", { action: "batches", limit: 50 });
-      if (res.success) setBatches(res.batches || []);
+      if (res.success) {
+        setBatches(res.batches || []);
+      } else {
+        setBatchesError(res.error || "Failed to load batches.");
+        console.error("Batches failed:", res);
+      }
     } catch (err) {
-      console.error("Batches error:", err);
+      setBatchesError("Network/API error: " + err.message);
+      console.error("Batches exception:", err);
     }
     setBatchesLoading(false);
   }, []);
@@ -341,6 +357,23 @@ export default function PrepareOrders() {
 
           {previewLoading ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "#64748b" }}>Loading preview...</div>
+          ) : previewError ? (
+            <div style={{
+              padding: "1rem",
+              borderRadius: "8px",
+              background: "#fee2e2",
+              border: "1px solid #ef4444",
+              color: "#991b1b",
+              fontSize: "0.875rem",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            }}>
+              <strong>❌ Preview Error</strong>
+              <div style={{ marginTop: "0.5rem" }}>{previewError}</div>
+              <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#6b7280" }}>
+                Check: 1) prepare_staging_tables.sql was run, 2) prepare_orders.php is deployed, 3) Browser console / Network tab for details.
+              </div>
+            </div>
           ) : !preview ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>
               Click Refresh to load preview counts.
@@ -424,7 +457,24 @@ export default function PrepareOrders() {
             </button>
           </div>
 
-          {batches.length === 0 ? (
+          {batchesError && (
+            <div style={{
+              padding: "1rem",
+              marginBottom: "1rem",
+              borderRadius: "8px",
+              background: "#fee2e2",
+              border: "1px solid #ef4444",
+              color: "#991b1b",
+              fontSize: "0.875rem",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            }}>
+              <strong>❌ Batches Error</strong>
+              <div style={{ marginTop: "0.5rem" }}>{batchesError}</div>
+            </div>
+          )}
+
+          {batches.length === 0 && !batchesError ? (
             <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
               No batches yet. Use the Preview tab to stage orders.
             </div>

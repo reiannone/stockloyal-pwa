@@ -58,7 +58,7 @@ class PrepareOrdersProcess
         for ($i = 1; $i <= 6; $i++) {
             $cases[] = "WHEN w.member_tier IS NOT NULL "
                      . "AND w.member_tier != '' "
-                     . "AND w.member_tier = m.tier{$i}_name "
+                     . "AND w.member_tier COLLATE utf8mb4_unicode_ci = m.tier{$i}_name COLLATE utf8mb4_unicode_ci "
                      . "AND m.tier{$i}_conversion_rate > 0 "
                      . "THEN m.tier{$i}_conversion_rate";
         }
@@ -125,9 +125,9 @@ class PrepareOrdersProcess
                         FLOOR(({$sweepPts}) / pc.cnt)
                     ), 0) AS est_total_points
                 FROM member_stock_picks msp
-                JOIN wallet w          ON w.member_id = msp.member_id
-                LEFT JOIN merchant m   ON w.merchant_id = m.merchant_id
-                JOIN {$pcSub} pc       ON pc.member_id  = msp.member_id
+                JOIN wallet w          ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN merchant m   ON w.merchant_id COLLATE utf8mb4_unicode_ci = m.merchant_id COLLATE utf8mb4_unicode_ci
+                JOIN {$pcSub} pc       ON pc.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1
                   AND w.points > 0
                   {$merchantW}
@@ -140,7 +140,7 @@ class PrepareOrdersProcess
             $skipSql = "
                 SELECT COUNT(DISTINCT msp.member_id)
                 FROM member_stock_picks msp
-                JOIN wallet w ON w.member_id = msp.member_id
+                JOIN wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1 AND w.points <= 0
             ";
             $skipped = (int) ($this->conn->query($skipSql)->fetchColumn() ?: 0);
@@ -152,8 +152,8 @@ class PrepareOrdersProcess
                        COUNT(DISTINCT msp.member_id) AS members,
                        COUNT(*) AS picks
                 FROM member_stock_picks msp
-                JOIN wallet w          ON w.member_id = msp.member_id
-                LEFT JOIN merchant m2  ON w.merchant_id = m2.merchant_id
+                JOIN wallet w          ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN merchant m2  ON w.merchant_id COLLATE utf8mb4_unicode_ci = m2.merchant_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1 AND w.points > 0
                 {$merchantW}
                 GROUP BY w.merchant_id, merchant_name
@@ -220,8 +220,8 @@ class PrepareOrdersProcess
                      amount, points_used, broker, member_timezone,
                      member_tier, conversion_rate, sweep_percentage, status)
                 SELECT
-                    :bid,
-                    CONCAT(:bid2, '-', msp.member_id),
+                    ?,
+                    CONCAT(?, '-', msp.member_id),
                     msp.member_id,
                     w.merchant_id,
                     msp.symbol,
@@ -234,15 +234,12 @@ class PrepareOrdersProcess
                     ({$pct}),
                     'staged'
                 FROM member_stock_picks msp
-                JOIN wallet w          ON w.member_id = msp.member_id
-                LEFT JOIN merchant m   ON w.merchant_id = m.merchant_id
-                JOIN {$pcSub} pc       ON pc.member_id  = msp.member_id
+                JOIN wallet w          ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN merchant m   ON w.merchant_id COLLATE utf8mb4_unicode_ci = m.merchant_id COLLATE utf8mb4_unicode_ci
+                JOIN {$pcSub} pc       ON pc.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE {$where}
             ";
 
-            // Use named params for batch_id (appears twice), positional for filters
-            // Easier to go all-positional:
-            $sql = str_replace(':bid2', '?', str_replace(':bid', '?', $sql));
             array_unshift($params, $batchId, $batchId);
 
             $stmt = $this->conn->prepare($sql);
@@ -255,7 +252,7 @@ class PrepareOrdersProcess
             $skipSql = "
                 SELECT COUNT(DISTINCT msp.member_id)
                 FROM member_stock_picks msp
-                JOIN wallet w ON w.member_id = msp.member_id
+                JOIN wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1 AND w.points <= 0
             ";
             $skipped = (int) ($this->conn->query($skipSql)->fetchColumn() ?: 0);
@@ -327,7 +324,7 @@ class PrepareOrdersProcess
                 return ['success' => false, 'error' => 'Batch not found.'];
             }
 
-            $staged = "batch_id = ? AND status = 'staged'";
+            $filter = "batch_id = ?";
 
             // ── By merchant ──
             $s1 = $this->conn->prepare("
@@ -336,7 +333,7 @@ class PrepareOrdersProcess
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
                        SUM(points_used)          AS total_points
-                FROM prepared_orders WHERE {$staged}
+                FROM prepared_orders WHERE {$filter}
                 GROUP BY merchant_id ORDER BY total_amount DESC
             ");
             $s1->execute([$batchId]);
@@ -348,7 +345,7 @@ class PrepareOrdersProcess
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
                        SUM(points_used)          AS total_points
-                FROM prepared_orders WHERE {$staged}
+                FROM prepared_orders WHERE {$filter}
                 GROUP BY broker ORDER BY total_amount DESC
             ");
             $s2->execute([$batchId]);
@@ -360,7 +357,7 @@ class PrepareOrdersProcess
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
                        SUM(points_used)          AS total_points
-                FROM prepared_orders WHERE {$staged}
+                FROM prepared_orders WHERE {$filter}
                 GROUP BY member_tier, conversion_rate ORDER BY total_amount DESC
             ");
             $s3->execute([$batchId]);
@@ -371,7 +368,7 @@ class PrepareOrdersProcess
                        COUNT(*)         AS order_count,
                        SUM(amount)      AS total_amount,
                        SUM(points_used) AS total_points
-                FROM prepared_orders WHERE {$staged}
+                FROM prepared_orders WHERE {$filter}
                 GROUP BY symbol ORDER BY order_count DESC LIMIT 20
             ");
             $s4->execute([$batchId]);
@@ -399,7 +396,7 @@ class PrepareOrdersProcess
                               ?string $merchantId = null, ?string $broker = null): array
     {
         try {
-            $wheres = ["po.batch_id = ?", "po.status = 'staged'"];
+            $wheres = ["po.batch_id = ?"];
             $params = [$batchId];
 
             if ($merchantId) {
@@ -422,6 +419,8 @@ class PrepareOrdersProcess
             $totalMembers = (int) $cStmt->fetchColumn();
 
             // Paginated member rollup
+            $limitInt  = (int) $perPage;
+            $offsetInt = (int) $offset;
             $mStmt = $this->conn->prepare("
                 SELECT po.member_id, po.merchant_id, po.broker,
                        po.member_tier, po.conversion_rate, po.sweep_percentage,
@@ -434,9 +433,9 @@ class PrepareOrdersProcess
                 GROUP BY po.member_id, po.merchant_id, po.broker,
                          po.member_tier, po.conversion_rate, po.sweep_percentage
                 ORDER BY total_amount DESC
-                LIMIT ? OFFSET ?
+                LIMIT {$limitInt} OFFSET {$offsetInt}
             ");
-            $mStmt->execute(array_merge($params, [$perPage, $offset]));
+            $mStmt->execute($params);
 
             return [
                 'success'       => true,
@@ -572,15 +571,16 @@ class PrepareOrdersProcess
     public function batches(int $limit = 50): array
     {
         try {
+            $limitInt = (int) $limit;
             $stmt = $this->conn->prepare("
                 SELECT batch_id, status, filter_merchant, filter_member,
                        total_members, total_orders, total_amount, total_points,
                        members_skipped, created_at, approved_at, discarded_at, notes
                 FROM prepare_batches
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT {$limitInt}
             ");
-            $stmt->execute([$limit]);
+            $stmt->execute();
             return ['success' => true, 'batches' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
         } catch (\Exception $e) {
             return ['success' => true, 'batches' => [], 'note' => $e->getMessage()];

@@ -22,6 +22,8 @@ import {
   ChartColumn,
   Paintbrush,
   Briefcase,
+  ShoppingBasket,
+  ClipboardCheck,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -86,7 +88,7 @@ export default function AdminLanding() {
     {
       to: "/prepare-orders",
       label: "Prepare Batch Orders",
-      icon: <Paintbrush size={32} />,
+      icon: <ClipboardCheck size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },
@@ -127,8 +129,8 @@ export default function AdminLanding() {
     },
     {
       to: "/orders-admin",
-      label: "Orders Admin",
-      icon: <ShoppingCart size={32} />,
+      label: "Baskets and Orders Admin",
+      icon: <ShoppingBasket size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },

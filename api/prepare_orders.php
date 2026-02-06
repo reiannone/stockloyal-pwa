@@ -17,6 +17,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// Catch fatal errors and return JSON
+set_error_handler(function ($severity, $message, $file, $line) {
+    throw new \ErrorException($message, 0, $severity, $file, $line);
+});
+
+try {
+
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/prepare_orders_process.php';
 
@@ -73,4 +80,13 @@ switch ($action) {
             'error'   => 'Invalid action. Use: preview, prepare, stats, drilldown, approve, discard, batches',
         ]);
         break;
+}
+
+} catch (\Throwable $e) {
+    echo json_encode([
+        'success' => false,
+        'error'   => $e->getMessage(),
+        'file'    => basename($e->getFile()),
+        'line'    => $e->getLine(),
+    ]);
 }

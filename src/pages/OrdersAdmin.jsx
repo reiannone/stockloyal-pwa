@@ -13,6 +13,24 @@ function FormRow({ label, children }) {
   );
 }
 
+/* ── Status pill (shared by table + basket header) ── */
+function getStatusPillStyle(statusRaw) {
+  const status = (statusRaw || "").toString().toLowerCase();
+  let bg = "#fef3c7", color = "#92400e";
+  if (status === "executed") { bg = "#d1fae5"; color = "#065f46"; }
+  else if (status === "confirmed") { bg = "#dbeafe"; color = "#1e40af"; }
+  else if (status === "placed") { bg = "#dcfce7"; color = "#166534"; }
+  else if (status === "failed" || status === "cancelled") { bg = "#fee2e2"; color = "#991b1b"; }
+  else if (status === "pending") { bg = "#fef3c7"; color = "#92400e"; }
+  else if (status === "partial" || status === "mixed") { bg = "#f3e8ff"; color = "#6b21a8"; }
+  return {
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    padding: "2px 8px", borderRadius: 999,
+    fontSize: "0.75rem", fontWeight: 600,
+    backgroundColor: bg, color, textTransform: "capitalize",
+  };
+}
+
 export default function OrdersAdmin() {
   const location = useLocation();
 
@@ -31,6 +49,10 @@ export default function OrdersAdmin() {
   const [filterField, setFilterField] = useState("member_id");
   const [filterValue, setFilterValue] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+
+  // ── View mode: "orders" (individual) or "baskets" (rollup) ──
+  const [viewMode, setViewMode] = useState("baskets");
+  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
 
   const editPanelRef = useRef(null);
 
@@ -123,7 +145,7 @@ export default function OrdersAdmin() {
     return f;
   }, [filterField, filterValue, filterStatus]);
 
-  // ✅ Single “source of truth” load:
+  // ✅ Single "source of truth" load:
   // If navigated from DQ with order_ids, fetch only those. Otherwise normal load.
   useEffect(() => {
     const dq = Boolean(location.state?.fromDataQuality);
@@ -170,7 +192,6 @@ export default function OrdersAdmin() {
   };
 
   const handleClearDQBanner = () => {
-    // ✅ FIX: setAffectedRecords (not setAffectedMembers)
     setFromDataQuality(false);
     setAffectedRecords([]);
     setFieldName("");
@@ -220,6 +241,77 @@ export default function OrdersAdmin() {
       setSaving(false);
     }
   };
+
+  // ── Basket rollup: group orders by basket_id ──
+  const basketRollup = useMemo(() => {
+    const map = new Map();
+    for (const o of orders) {
+      const bid = o.basket_id || "unknown";
+      if (!map.has(bid)) {
+        map.set(bid, {
+          basket_id: bid,
+          orders: [],
+          totalAmount: 0,
+          totalPoints: 0,
+          totalShares: 0,
+          symbols: [],
+          members: new Set(),
+          merchants: new Set(),
+          broker: o.broker || "-",
+          placed_at: o.placed_at,
+          statuses: new Set(),
+          hasAffected: false,
+        });
+      }
+      const b = map.get(bid);
+      b.orders.push(o);
+      b.totalAmount += parseFloat(o.amount) || 0;
+      b.totalPoints += parseInt(o.points_used) || 0;
+      b.totalShares += parseFloat(o.shares) || 0;
+      if (o.symbol && !b.symbols.includes(o.symbol)) b.symbols.push(o.symbol);
+      if (o.member_id) b.members.add(o.member_id);
+      if (o.merchant_id) b.merchants.add(o.merchant_id);
+      if (o.status) b.statuses.add(o.status.toLowerCase());
+      // Track DQ affected
+      if (fromDataQuality && affectedRecords.includes(String(o.order_id))) {
+        b.hasAffected = true;
+      }
+      // Use earliest placed_at
+      if (o.placed_at && (!b.placed_at || o.placed_at < b.placed_at)) {
+        b.placed_at = o.placed_at;
+      }
+    }
+    // Convert to array, sorted newest first
+    return Array.from(map.values()).sort((a, b) => {
+      if (!a.placed_at) return 1;
+      if (!b.placed_at) return -1;
+      return b.placed_at.localeCompare(a.placed_at);
+    });
+  }, [orders, fromDataQuality, affectedRecords]);
+
+  const toggleBasketExpand = (basketId) => {
+    setExpandedBaskets((prev) => {
+      const next = new Set(prev);
+      if (next.has(basketId)) next.delete(basketId);
+      else next.add(basketId);
+      return next;
+    });
+  };
+
+  // Derive a single status label for a basket
+  const getBasketStatus = (statuses) => {
+    const s = Array.from(statuses);
+    if (s.length === 1) return s[0];
+    if (s.includes("failed")) return "partial";
+    if (s.includes("pending") || s.includes("queued")) return "pending";
+    if (s.every((x) => x === "executed" || x === "confirmed")) return "executed";
+    return "mixed";
+  };
+
+  const formatDollars = (val) =>
+    (parseFloat(val) || 0).toLocaleString("en-US", {
+      style: "currency", currency: "USD", minimumFractionDigits: 2,
+    });
 
   // UI helpers for filter input (match Ledger style)
   const inputPlaceholder =
@@ -534,11 +626,227 @@ export default function OrdersAdmin() {
         </div>
       )}
 
-      {/* Orders Table */}
-      <h2 className="subheading">Orders List</h2>
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* VIEW MODE TOGGLE                                                   */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {!loading && orders.length > 0 && (
+        <div style={{ display: "flex", gap: 0, marginBottom: "1rem", borderRadius: 8, overflow: "hidden", border: "1px solid #d1d5db" }}>
+          <button
+            type="button"
+            onClick={() => setViewMode("baskets")}
+            style={{
+              flex: 1,
+              padding: "8px 16px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              background: viewMode === "baskets" ? "#2563eb" : "#f9fafb",
+              color: viewMode === "baskets" ? "#fff" : "#374151",
+            }}
+          >
+            Basket Summary ({basketRollup.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("orders")}
+            style={{
+              flex: 1,
+              padding: "8px 16px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              border: "none",
+              borderLeft: "1px solid #d1d5db",
+              cursor: "pointer",
+              background: viewMode === "orders" ? "#2563eb" : "#f9fafb",
+              color: viewMode === "orders" ? "#fff" : "#374151",
+            }}
+          >
+            Individual Orders ({orders.length})
+          </button>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ORDERS LIST HEADING                                                */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      <h2 className="subheading">
+        {viewMode === "baskets" ? "Baskets" : "Orders List"}
+      </h2>
+
       {loading ? (
         <p>Loading...</p>
+      ) : orders.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+          No orders found
+        </div>
+      ) : viewMode === "baskets" ? (
+        /* ═══════════════════════════════════════════════════════════════════ */
+        /* BASKET ROLLUP VIEW                                                 */
+        /* ═══════════════════════════════════════════════════════════════════ */
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {basketRollup.map((b) => {
+            const isExpanded = expandedBaskets.has(b.basket_id);
+            const status = getBasketStatus(b.statuses);
+            const memberList = Array.from(b.members);
+            const merchantList = Array.from(b.merchants);
+
+            return (
+              <div
+                key={b.basket_id}
+                className="card"
+                style={{
+                  padding: 0,
+                  overflow: "hidden",
+                  border: b.hasAffected ? "2px solid #f59e0b" : undefined,
+                }}
+              >
+                {/* Basket header — clickable to expand */}
+                <div
+                  onClick={() => toggleBasketExpand(b.basket_id)}
+                  style={{
+                    padding: "12px 16px",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    background: isExpanded ? "#f0f9ff" : b.hasAffected ? "#fffbeb" : "#fff",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {/* Top row: symbols + status */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827" }}>
+                        {b.symbols.join(", ")}
+                      </span>
+                      <span style={{
+                        fontSize: "0.75rem",
+                        color: "#6b7280",
+                        background: "#f3f4f6",
+                        borderRadius: 4,
+                        padding: "1px 6px",
+                      }}>
+                        {b.orders.length} order{b.orders.length !== 1 ? "s" : ""}
+                      </span>
+                      {b.hasAffected && (
+                        <span style={{ fontSize: "0.75rem", color: "#92400e", fontWeight: 600 }}>⚠️ DQ</span>
+                      )}
+                    </div>
+                    <span style={getStatusPillStyle(status)}>{status}</span>
+                  </div>
+
+                  {/* Summary row */}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.85rem", color: "#374151" }}>
+                    <span>Total: <strong>{formatDollars(b.totalAmount)}</strong></span>
+                    <span>Points: <strong>{Number(b.totalPoints).toLocaleString()}</strong></span>
+                    <span>Shares: <strong>{Number(b.totalShares.toFixed(6))}</strong></span>
+                    <span>Broker: <strong>{b.broker}</strong></span>
+                  </div>
+
+                  {/* Members + merchant row */}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.8rem", color: "#6b7280" }}>
+                    <span>
+                      {memberList.length === 1
+                        ? `Member: ${memberList[0]}`
+                        : `${memberList.length} members`}
+                    </span>
+                    <span>
+                      {merchantList.length === 1
+                        ? `Merchant: ${merchantList[0]}`
+                        : `${merchantList.length} merchants`}
+                    </span>
+                  </div>
+
+                  {/* Date + basket ID row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6b7280" }}>
+                    <span>{b.placed_at ? new Date(b.placed_at).toLocaleString() : "-"}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {isExpanded ? "▲" : "▼"} {b.basket_id}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded: individual orders table */}
+                {isExpanded && (
+                  <div style={{ borderTop: "1px solid #e5e7eb", overflowX: "auto" }}>
+                    <table
+                      className="basket-table"
+                      style={{ width: "100%", minWidth: "800px", borderCollapse: "collapse", fontSize: "0.85rem" }}
+                    >
+                      <thead>
+                        <tr>
+                          <th>Order ID</th>
+                          <th>Member</th>
+                          <th>Symbol</th>
+                          <th>Shares</th>
+                          <th style={{ textAlign: "right" }}>Amount</th>
+                          <th style={{ textAlign: "right" }}>Points</th>
+                          <th style={{ textAlign: "center" }}>Status</th>
+                          <th>Placed</th>
+                          <th>Executed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.orders.map((order) => {
+                          const isAffected =
+                            fromDataQuality && affectedRecords.includes(String(order.order_id));
+                          return (
+                            <tr
+                              key={order.order_id}
+                              onClick={() => handleEditClick(order)}
+                              style={{
+                                cursor: "pointer",
+                                backgroundColor: isAffected ? "#fef2f2" : "transparent",
+                              }}
+                              title={isAffected ? `⚠️ Missing ${fieldName} - Click to fix` : "Click to edit"}
+                            >
+                              <td style={{ fontWeight: 500 }}>{order.order_id}</td>
+                              <td>{order.member_id}</td>
+                              <td><strong>{order.symbol}</strong></td>
+                              <td>
+                                {order.shares == null
+                                  ? "-"
+                                  : parseFloat(order.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ textAlign: "right" }}>
+                                {order.amount == null ? "-" : formatDollars(order.amount)}
+                              </td>
+                              <td style={{ textAlign: "right" }}>
+                                {order.points_used != null ? Number(order.points_used).toLocaleString() : "-"}
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                <span style={getStatusPillStyle(order.status)}>
+                                  {order.status || "-"}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: "0.8rem" }}>
+                                {order.placed_at ? new Date(order.placed_at).toLocaleString() : "-"}
+                              </td>
+                              <td>
+                                {order.executed_at ? (
+                                  <span style={{ color: "#059669", fontSize: "0.8rem" }}>
+                                    ✓ {new Date(order.executed_at).toLocaleString()}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: "#9ca3af", fontSize: "0.8rem" }}>—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       ) : (
+        /* ═══════════════════════════════════════════════════════════════════ */
+        /* INDIVIDUAL ORDERS TABLE                                            */
+        /* ═══════════════════════════════════════════════════════════════════ */
         <div className="card" style={{ overflowX: "auto" }}>
           <table className="basket-table">
             <thead>
@@ -554,81 +862,50 @@ export default function OrdersAdmin() {
               </tr>
             </thead>
             <tbody>
-              {orders.length === 0 ? (
-                <tr>
-                  <td colSpan="8" style={{ textAlign: "center", padding: "2rem" }}>
-                    No orders found
-                  </td>
-                </tr>
-              ) : (
-                orders.map((order) => {
-                  const isAffected =
-                    fromDataQuality && affectedRecords.includes(String(order.order_id));
-                  return (
-                    <tr
-                      key={order.order_id}
-                      onClick={() => handleEditClick(order)}
-                      style={{
-                        cursor: "pointer",
-                        backgroundColor: isAffected ? "#fef2f2" : "transparent",
-                      }}
-                      title={isAffected ? `⚠️ Missing ${fieldName} - Click to fix` : "Click to edit"}
-                    >
-                      <td>{order.order_id}</td>
-                      <td>{order.member_id}</td>
-                      <td>
-                        <strong>{order.symbol}</strong>
-                      </td>
-                      <td>
-                        {order.shares == null
-                          ? "-"
-                          : parseFloat(order.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                      <td>
-                        {order.amount == null ? "-" : `$${parseFloat(order.amount).toFixed(2)}`}
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            padding: "0.25rem 0.5rem",
-                            borderRadius: "4px",
-                            fontSize: "0.85rem",
-                            fontWeight: "600",
-                            backgroundColor:
-                              order.status === "executed"
-                                ? "#d1fae5"
-                                : order.status === "failed" || order.status === "cancelled"
-                                ? "#fee2e2"
-                                : order.status === "confirmed"
-                                ? "#dbeafe"
-                                : "#fef3c7",
-                            color:
-                              order.status === "executed"
-                                ? "#065f46"
-                                : order.status === "failed" || order.status === "cancelled"
-                                ? "#991b1b"
-                                : order.status === "confirmed"
-                                ? "#1e40af"
-                                : "#92400e",
-                          }}
-                        >
-                          {order.status}
+              {orders.map((order) => {
+                const isAffected =
+                  fromDataQuality && affectedRecords.includes(String(order.order_id));
+                return (
+                  <tr
+                    key={order.order_id}
+                    onClick={() => handleEditClick(order)}
+                    style={{
+                      cursor: "pointer",
+                      backgroundColor: isAffected ? "#fef2f2" : "transparent",
+                    }}
+                    title={isAffected ? `⚠️ Missing ${fieldName} - Click to fix` : "Click to edit"}
+                  >
+                    <td>{order.order_id}</td>
+                    <td>{order.member_id}</td>
+                    <td>
+                      <strong>{order.symbol}</strong>
+                    </td>
+                    <td>
+                      {order.shares == null
+                        ? "-"
+                        : parseFloat(order.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td>
+                      {order.amount == null ? "-" : formatDollars(order.amount)}
+                    </td>
+                    <td>
+                      <span style={getStatusPillStyle(order.status)}>
+                        {order.status || "-"}
+                      </span>
+                    </td>
+                    <td>{order.placed_at ? new Date(order.placed_at).toLocaleString() : "-"}</td>
+                    <td>
+                      {order.executed_at ? (
+                        <span style={{ color: "#059669", fontSize: "0.85rem" }}>
+                          ✓ {new Date(order.executed_at).toLocaleString()}
                         </span>
-                      </td>
-                      <td>{order.placed_at ? new Date(order.placed_at).toLocaleString() : "-"}</td>
-                      <td>
-                        {order.executed_at ? (
-                          <span style={{ color: "#059669", fontSize: "0.85rem" }}>
-                            ✓ {new Date(order.executed_at).toLocaleString()}
-                          </span>
-                        ) : (
-                          <span style={{ color: "#9ca3af", fontSize: "0.85rem" }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+                      ) : (
+                        <span style={{ color: "#9ca3af", fontSize: "0.85rem" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
