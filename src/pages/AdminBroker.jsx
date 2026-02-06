@@ -1,5 +1,5 @@
 // src/pages/AdminBroker.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
 import { Upload, X, Image } from "lucide-react";
 
@@ -45,6 +45,7 @@ export default function AdminBroker() {
   const [logoPreview, setLogoPreview] = useState(null);
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const fileInputRef = useRef(null);
+  const editPanelRef = useRef(null);
 
   // Load all brokers
   const fetchBrokers = async () => {
@@ -55,20 +56,12 @@ export default function AdminBroker() {
         const list = data.brokers || [];
         setBrokers(list);
 
-        if (!selected && list.length > 0) {
-          setSelected({ ...list[0] });
-        } else if (selected) {
-          // refresh selected from the latest list if it exists
+        // If editing, refresh selected from updated list
+        if (selected) {
           const ref = list.find(
             (b) => String(b.broker_id) === String(selected.broker_id)
           );
-          if (ref) {
-            setSelected({ ...ref });
-          } else if (list.length > 0) {
-            setSelected({ ...list[0] });
-          } else {
-            setSelected(null);
-          }
+          if (ref) setSelected({ ...ref });
         }
       } else {
         console.warn("[AdminBroker] get-brokers error:", data?.error);
@@ -105,7 +98,7 @@ export default function AdminBroker() {
         const current = list.find(
           (b) => String(b.broker_id) === String(selected.broker_id)
         );
-        setSelected(current || list[0] || null);
+        setSelected(current || null);
       }
 
       alert("Broker saved!");
@@ -126,7 +119,7 @@ export default function AdminBroker() {
           (b) => String(b.broker_id) !== String(broker_id)
         );
         setBrokers(updated);
-        setSelected(updated[0] || null);
+        setSelected(null);
       } else {
         alert("Delete failed: " + (res?.error || "Unknown error"));
       }
@@ -295,6 +288,21 @@ export default function AdminBroker() {
 
   const startNewBroker = () => {
     setSelected({ ...BROKER_TEMPLATE });
+    setLogoPreview(null);
+    setLogoUrlInput('');
+    setTimeout(() => {
+      editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
+
+  // ✅ Click row to edit — SocialPostsAdmin pattern
+  const handleEditClick = (broker) => {
+    setSelected({ ...broker });
+    setLogoPreview(null);
+    setLogoUrlInput('');
+    setTimeout(() => {
+      editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   };
 
   return (
@@ -305,15 +313,13 @@ export default function AdminBroker() {
         <code>broker_master</code> data, including ACH routing and order limits.
       </p>
 
-      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
-        <div className="card-actions" style={{ marginBottom: "1rem" }}>
-          <button type="button" className="btn-secondary" onClick={startNewBroker}>
-            + New Broker
-          </button>
-        </div>
-
-        {selected ? (
-          <form onSubmit={saveBroker} className="form-grid" style={{ maxWidth: "100%" }}>
+      {/* Edit Panel — only visible when a row is clicked or New Broker */}
+      {selected && (
+      <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%", marginBottom: "1rem" }}>
+        <h2 className="subheading" style={{ marginTop: 0 }}>
+          {selected.broker_id ? `Edit Broker: ${selected.broker_name || selected.broker_id}` : "New Broker"}
+        </h2>
+        <form onSubmit={saveBroker} className="form-grid" style={{ maxWidth: "100%" }}>
             {/* Core IDs */}
             <FormRow label="Broker ID">
               <input
@@ -799,15 +805,21 @@ export default function AdminBroker() {
                   Delete Broker
                 </button>
               )}
+              <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
+                Close
+              </button>
             </div>
           </form>
-        ) : (
-          <p className="body-text">Select a broker from the table below to edit, or create a new one.</p>
-        )}
       </div>
+      )}
 
       {/* Broker Records Table */}
-      <h2 className="subheading">Broker Records</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <h2 className="subheading" style={{ margin: 0 }}>Broker Records</h2>
+        <button type="button" className="btn-secondary" onClick={startNewBroker}>
+          + New Broker
+        </button>
+      </div>
       {loading ? (
         <p>Loading...</p>
       ) : (
@@ -826,17 +838,7 @@ export default function AdminBroker() {
               {brokers.map((b) => (
                 <tr 
                   key={b.broker_id}
-                  onClick={() => {
-                    setSelected({ ...b });
-                    setLogoPreview(null); // Clear any preview when switching brokers
-                    // Scroll to top of page - multiple methods for compatibility
-                    const container = document.getElementById('admin-broker-container');
-                    if (container) {
-                      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                    document.documentElement.scrollTop = 0;
-                  }}
+                  onClick={() => handleEditClick(b)}
                   style={{ cursor: 'pointer' }}
                   title="Click to edit this broker"
                 >

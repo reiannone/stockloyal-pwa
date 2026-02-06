@@ -204,20 +204,7 @@ export default function WalletAdmin() {
             }
           }
 
-          // ✅ Priority 2: Use active member from localStorage
-          if (!initialWallet) {
-            const activeMemberId = localStorage.getItem("memberId");
-            if (activeMemberId) {
-              initialWallet = (data.wallets || []).find(
-                (w) => String(w.member_id) === String(activeMemberId)
-              );
-            }
-          }
-
-          // ✅ Priority 3: Fallback to first wallet
-          if (!initialWallet && (data.wallets || []).length > 0) {
-            initialWallet = data.wallets[0];
-          }
+          // No auto-select — table shows first, user clicks row to edit
 
           if (initialWallet) {
             // merchant lookup for rate
@@ -563,26 +550,7 @@ export default function WalletAdmin() {
     return result;
   }, [wallets, filterMerchantId, searchTerm, fromDataQuality, affectedMembers, fieldName]);
 
-  // ✨ Auto-load first filtered wallet when search/filter changes
-  useEffect(() => {
-    // Only auto-load if we have filtered results and an active filter
-    const hasActiveFilter = searchTerm.trim() !== '' || filterMerchantId !== '';
-    
-    if (hasActiveFilter && filteredWallets.length > 0) {
-      const firstWallet = filteredWallets[0];
-      
-      // Only auto-load if currently selected wallet is NOT in the filtered results
-      // (this prevents overriding when user clicks a row in the filtered list)
-      const currentlySelectedIsInResults = selected && 
-        filteredWallets.some(w => w.record_id === selected.record_id);
-      
-      if (!currentlySelectedIsInResults) {
-        console.log('[WalletAdmin] Auto-loading first filtered wallet:', firstWallet.member_id);
-        handleEditClick(firstWallet);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, filterMerchantId, filteredWallets.length]); // Track length to avoid comparing array references
+
   
   return (
     <div className="app-container app-content">
@@ -685,9 +653,13 @@ export default function WalletAdmin() {
         </div>
       )}
 
-      <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%" }}>
-        {selected ? (
-          <form onSubmit={saveWallet} className="form-grid" style={{ maxWidth: "100%" }}>
+      {/* Edit Panel — only visible when a row is clicked */}
+      {selected && (
+      <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%", marginBottom: "1rem" }}>
+        <h2 className="subheading" style={{ marginTop: 0 }}>
+          Edit Wallet: {selected.member_id}
+        </h2>
+        <form onSubmit={saveWallet} className="form-grid" style={{ maxWidth: "100%" }}>
             <input type="hidden" name="record_id" value={selected?.record_id || ""} />
 
             {/* Member details */}
@@ -1042,12 +1014,13 @@ export default function WalletAdmin() {
                   Delete Wallet
                 </button>
               )}
+              <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
+                Close
+              </button>
             </div>
           </form>
-        ) : (
-          <p className="body-text">Select a wallet from the table below to edit.</p>
-        )}
       </div>
+      )}
 
       {/* Wallets table */}
       <h2 className="subheading">Wallet Records</h2>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
@@ -47,6 +47,14 @@ export default function AdminFAQ() {
   const [faqs, setFaqs] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const editPanelRef = useRef(null);
+
+  const handleEditClick = useCallback((faq) => {
+    setSelected({ ...faq });
+    setTimeout(() => {
+      editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }, []);
 
   const fetchFaqs = async () => {
     setLoading(true);
@@ -54,9 +62,7 @@ export default function AdminFAQ() {
       const data = await apiGet("get-faqs.php");
       if (data?.success) {
         setFaqs(data.faqs || []);
-        if (!selected && data.faqs?.length) {
-          setSelected({ ...data.faqs[0] });
-        } else if (selected) {
+        if (selected) {
           const ref = (data.faqs || []).find(
             (f) => String(f.faq_id) === String(selected.faq_id)
           );
@@ -93,7 +99,7 @@ export default function AdminFAQ() {
       const current = (data.faqs || []).find(
         (f) => String(f.faq_id) === String(res.faq?.faq_id ?? selected.faq_id)
       );
-      setSelected(current || data.faqs?.[0] || null);
+      setSelected(current || null);
     }
 
     alert("FAQ saved!");
@@ -109,7 +115,7 @@ export default function AdminFAQ() {
       }
       const updated = faqs.filter((f) => String(f.faq_id) !== String(faq_id));
       setFaqs(updated);
-      setSelected(updated[0] || null);
+      setSelected(null);
       alert("Deleted");
     } catch (e) {
       console.error("[AdminFAQ] delete-faq failed:", e);
@@ -135,6 +141,9 @@ export default function AdminFAQ() {
       sort_order: 0,
       is_active: 1,
     });
+    setTimeout(() => {
+      editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   };
 
   return (
@@ -142,8 +151,12 @@ export default function AdminFAQ() {
       <h1 className="page-title">FAQ Admin</h1>
       <p className="page-deck">Create and manage FAQs to present on a public FAQ page later.</p>
 
-      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
-        {selected ? (
+      {/* Edit Panel — only visible when a row is clicked */}
+      {selected && (
+        <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%", marginBottom: "1rem" }}>
+          <h2 className="subheading" style={{ marginTop: 0 }}>
+            {selected.faq_id ? `Edit FAQ #${selected.faq_id}` : "New FAQ"}
+          </h2>
           <form onSubmit={saveFaq} className="form-grid" style={{ maxWidth: "100%" }}>
             <FormRow label="FAQ ID">
               <input
@@ -276,21 +289,21 @@ export default function AdminFAQ() {
                   Delete FAQ
                 </button>
               )}
-              <button type="button" className="btn-secondary" onClick={newFaq}>
-                + New FAQ
+              <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
+                Close
               </button>
             </div>
           </form>
-        ) : (
-          <div>
-            <p className="body-text">Select a FAQ from the table below to edit, or create a new one.</p>
-            <button className="btn-secondary" onClick={newFaq}>+ New FAQ</button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* FAQ Records Table */}
-      <h2 className="subheading">FAQ Records</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <h2 className="subheading" style={{ margin: 0 }}>FAQ Records</h2>
+        <button type="button" className="btn-secondary" onClick={newFaq}>
+          + New FAQ
+        </button>
+      </div>
       {loading ? (
         <p>Loading...</p>
       ) : (
@@ -309,16 +322,7 @@ export default function AdminFAQ() {
               {(faqs || []).map((f) => (
                 <tr 
                   key={f.faq_id}
-                  onClick={() => {
-                    setSelected({ ...f });
-                    // Scroll to top of page - multiple methods for compatibility
-                    const container = document.getElementById('adminfaq-container');
-                    if (container) {
-                      container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                    document.documentElement.scrollTop = 0;
-                  }}
+                  onClick={() => handleEditClick(f)}
                   style={{ cursor: 'pointer' }}
                   title="Click to edit this FAQ"
                 >

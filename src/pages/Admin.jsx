@@ -1,5 +1,5 @@
 // src/pages/Admin.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
@@ -57,6 +57,7 @@ export default function Admin() {
 
   // Track the original (pre-edit) conversion rate to detect changes on save
   const originalRateRef = useRef(null);
+  const editPanelRef = useRef(null);
 
   // ✅ Logo upload state (same pattern as AdminBroker.jsx)
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -71,21 +72,16 @@ export default function Admin() {
       const data = await apiGet("get-merchants.php");
       if (data?.success) {
         setMerchants(data.merchants || []);
-        let next = selected;
 
-        if (!next && data.merchants.length > 0) {
-          next = { ...data.merchants[0] };
-        } else if (next) {
-          // refresh the selected from the list if it exists
+        // If editing, refresh selected from updated list
+        if (selected) {
           const ref = data.merchants.find(
-            (m) => String(m.merchant_id) === String(next.merchant_id)
+            (m) => String(m.merchant_id) === String(selected.merchant_id)
           );
-          if (ref) next = { ...ref };
-        }
-
-        if (next) {
-          setSelected(next);
-          originalRateRef.current = Number(next.conversion_rate ?? 0);
+          if (ref) {
+            setSelected({ ...ref });
+            originalRateRef.current = Number(ref.conversion_rate ?? 0);
+          }
         }
       } else {
         console.warn("[Admin] get-merchants error:", data?.error);
@@ -209,7 +205,7 @@ export default function Admin() {
       const current = (data.merchants || []).find(
         (m) => String(m.merchant_id) === String(selected.merchant_id)
       );
-      setSelected(current || data.merchants?.[0] || null);
+      setSelected(current || null);
       if (current) {
         originalRateRef.current = Number(current.conversion_rate ?? 0);
       }
@@ -260,10 +256,7 @@ export default function Admin() {
           (m) => String(m.merchant_id) !== String(merchant_id)
         );
         setMerchants(updated);
-        setSelected(updated[0] || null);
-        if (updated[0]) {
-          originalRateRef.current = Number(updated[0].conversion_rate ?? 0);
-        }
+        setSelected(null);
       } else {
         alert("Delete failed: " + (res?.error || "Unknown error"));
       }
@@ -422,6 +415,17 @@ export default function Admin() {
     }
   };
 
+  // ✅ Click row to edit — SocialPostsAdmin pattern
+  const handleEditClick = (merchant) => {
+    setSelected({ ...merchant });
+    originalRateRef.current = Number(merchant.conversion_rate ?? 0);
+    setLogoPreview(null);
+    setLogoUrlInput('');
+    setTimeout(() => {
+      editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
+
   return (
     <div id="admin-container" className="app-container app-content">
       <h1 className="page-title">Merchant Admin</h1>
@@ -429,19 +433,23 @@ export default function Admin() {
         This page is used for administrative purposes to manage Merchant related data.
       </p>
 
-      <div className="card" style={{ overflowX: "hidden", maxWidth: "100%" }}>
-        {selected ? (
-          <form onSubmit={saveMerchant} className="form-grid" style={{ maxWidth: "100%" }}>
-            <FormRow label="Merchant ID">
-              <input
-                className="form-input"
-                type="text"
-                name="merchant_id"
-                value={selected?.merchant_id || ""}
-                onChange={handleChange}
-                required
-              />
-            </FormRow>
+      {/* Edit Panel — only visible when a row is clicked */}
+      {selected && (
+      <div className="card" ref={editPanelRef} style={{ overflowX: "hidden", maxWidth: "100%", marginBottom: "1rem" }}>
+        <h2 className="subheading" style={{ marginTop: 0 }}>
+          Edit Merchant: {selected.merchant_name || selected.merchant_id}
+        </h2>
+        <form onSubmit={saveMerchant} className="form-grid" style={{ maxWidth: "100%" }}>
+          <FormRow label="Merchant ID">
+            <input
+              className="form-input"
+              type="text"
+              name="merchant_id"
+              value={selected?.merchant_id || ""}
+              onChange={handleChange}
+              required
+            />
+          </FormRow>
 
             <FormRow label="Merchant Name">
               <input
@@ -1189,12 +1197,13 @@ export default function Admin() {
                   Delete Merchant
                 </button>
               )}
+              <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
+                Close
+              </button>
             </div>
           </form>
-        ) : (
-          <p className="body-text">Select a merchant from the table below to edit.</p>
-        )}
       </div>
+      )}
 
       {/* Merchant Records Table */}
       <h2 className="subheading">Merchant Records</h2>
@@ -1228,19 +1237,7 @@ export default function Admin() {
                 return (
                   <tr 
                     key={m.merchant_id}
-                    onClick={() => {
-                      setSelected({ ...m });
-                      originalRateRef.current = Number(m.conversion_rate ?? 0);
-                      setLogoPreview(null);    // ✅ Clear preview when switching merchants
-                      setLogoUrlInput('');     // ✅ Clear URL input when switching
-                      // Scroll to top of page - multiple methods for compatibility
-                      const container = document.getElementById('admin-container');
-                      if (container) {
-                        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                      document.documentElement.scrollTop = 0;
-                    }}
+                    onClick={() => handleEditClick(m)}
                     style={{ cursor: 'pointer' }}
                     title="Click to edit this merchant"
                   >
