@@ -29,6 +29,7 @@ import Ledger from "./pages/Ledger.jsx";
 import Admin from "./pages/Admin.jsx";
 import AdminBroker from "./pages/AdminBroker.jsx";
 import PaymentsProcessing from "./pages/PaymentsProcessing.jsx";
+import FeeAdmin from "./pages/FeeAdmin.jsx";
 import PaymentsBroker from "./pages/PaymentsBroker.jsx";
 import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
@@ -295,6 +296,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <PaymentsProcessing />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/fee-admin"
+                element={
+                  <PageWrapper>
+                    <FeeAdmin />
                   </PageWrapper>
                 }
               />

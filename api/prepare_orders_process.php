@@ -9,6 +9,8 @@ declare(strict_types=1);
  * Workflow:
  *   1. previewCounts() → Read-only aggregate estimate (no rows written)
  *   2. prepare()       → INSERT...SELECT into prepared_orders (staged)
+ *                         → fetch live prices from Yahoo Finance
+ *                         → UPDATE shares = amount / price
  *   3. stats()         → Aggregated breakdowns for a staged batch
  *   4. drilldown()     → Paginated member-level detail for a batch
  *   5. approve()       → INSERT...SELECT from prepared_orders → orders
@@ -99,6 +101,123 @@ class PrepareOrdersProcess
 
 
     // ====================================================================
+    // PRICE FETCHING — Yahoo Finance (same API as proxy.php)
+    //
+    // Fetches live prices for up to 100 symbols in one HTTP call.
+    // Returns: ['AAPL' => 185.50, 'MSFT' => 415.20, ...]
+    // ====================================================================
+
+    /**
+     * Fetch live stock prices from Yahoo Finance v7 quote API.
+     * Falls back to chart API per-symbol if v7 fails.
+     *
+     * @param  string[] $symbols  Array of ticker symbols
+     * @return array    symbol => price (float), only symbols with valid prices
+     */
+    private function fetchPrices(array $symbols): array
+    {
+        if (empty($symbols)) return [];
+
+        $prices = [];
+        $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            . "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+        $timeout = 20;
+
+        // Clean and deduplicate
+        $clean = [];
+        foreach ($symbols as $s) {
+            $s = strtoupper(trim($s));
+            if ($s !== '' && strlen($s) <= 16 && preg_match('/^[A-Z0-9.\-^=]+$/', $s)) {
+                $clean[$s] = true;
+            }
+        }
+        $clean = array_keys($clean);
+
+        if (empty($clean)) return [];
+
+        // ── Batch in chunks of 50 (Yahoo limit) ──
+        $chunks = array_chunk($clean, 50);
+
+        foreach ($chunks as $chunk) {
+            $symbolKey = implode(',', $chunk);
+            $url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" . urlencode($symbolKey);
+
+            $this->log("PRICE FETCH: {$url}");
+
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL            => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_USERAGENT      => $ua,
+                CURLOPT_TIMEOUT        => $timeout,
+                CURLOPT_HTTPHEADER     => [
+                    'Accept: application/json',
+                    'Accept-Language: en-US,en;q=0.9',
+                ],
+            ]);
+
+            $resp = curl_exec($ch);
+            $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($resp !== false && $http === 200) {
+                $data = json_decode($resp, true);
+                $results = $data['quoteResponse']['result'] ?? [];
+
+                foreach ($results as $q) {
+                    $sym   = $q['symbol'] ?? null;
+                    $price = $q['regularMarketPrice'] ?? null;
+                    if ($sym && $price !== null && $price > 0) {
+                        $prices[$sym] = (float) $price;
+                    }
+                }
+            }
+
+            // ── Fallback: chart API for any missing symbols ──
+            $missing = array_diff($chunk, array_keys($prices));
+            if (!empty($missing)) {
+                $this->log("PRICE FALLBACK for " . count($missing) . " symbols: " . implode(',', $missing));
+
+                foreach ($missing as $sym) {
+                    $chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/{$sym}?interval=1d&range=5d";
+
+                    $ch = curl_init();
+                    curl_setopt_array($ch, [
+                        CURLOPT_URL            => $chartUrl,
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_FOLLOWLOCATION => true,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_USERAGENT      => $ua,
+                        CURLOPT_TIMEOUT        => $timeout,
+                    ]);
+
+                    $chartResp = curl_exec($ch);
+                    curl_close($ch);
+
+                    if ($chartResp) {
+                        $cj   = json_decode($chartResp, true);
+                        $meta = $cj['chart']['result'][0]['meta'] ?? null;
+                        if ($meta) {
+                            $p = $meta['regularMarketPrice'] ?? null;
+                            if ($p !== null && $p > 0) {
+                                $prices[$sym] = (float) $p;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        $this->log("PRICES RESOLVED: " . count($prices) . " of " . count($clean)
+                  . " — " . substr(json_encode($prices), 0, 300));
+
+        return $prices;
+    }
+
+
+    // ====================================================================
     // PUBLIC — previewCounts()
     // Quick read-only totals before preparing. No rows written.
     // ====================================================================
@@ -179,6 +298,7 @@ class PrepareOrdersProcess
     // ====================================================================
     // PUBLIC — prepare()
     // Bulk INSERT...SELECT into prepared_orders staging table.
+    // Then fetch live prices and calculate shares.
     // ====================================================================
 
     public function prepare(?string $memberId = null, ?string $merchantId = null): array
@@ -212,12 +332,13 @@ class PrepareOrdersProcess
 
             $where = implode(' AND ', $wheres);
 
-            // ── Single INSERT...SELECT ──
+            // ── Single INSERT...SELECT (price + shares populated in step 2) ──
             // basket_id = batchId + '-' + member_id  (one basket per member per batch)
             $sql = "
                 INSERT INTO prepared_orders
                     (batch_id, basket_id, member_id, merchant_id, symbol,
-                     amount, points_used, broker, member_timezone,
+                     amount, price, shares, points_used,
+                     broker, member_timezone,
                      member_tier, conversion_rate, sweep_percentage, status)
                 SELECT
                     ?,
@@ -226,6 +347,8 @@ class PrepareOrdersProcess
                     w.merchant_id,
                     msp.symbol,
                     ROUND(({$sweepPts}) * ({$rate}) / pc.cnt, 2),
+                    NULL,
+                    0,
                     FLOOR(({$sweepPts}) / pc.cnt),
                     w.broker,
                     COALESCE(w.member_timezone, 'America/New_York'),
@@ -248,6 +371,55 @@ class PrepareOrdersProcess
 
             $this->log("INSERT...SELECT: {$rowsInserted} staged rows");
 
+            // ══════════════════════════════════════════════════════════════
+            // STEP 2: Fetch live prices and calculate shares
+            // ══════════════════════════════════════════════════════════════
+
+            $pricesFetched = 0;
+            $pricesFailed  = 0;
+
+            if ($rowsInserted > 0) {
+                // Get distinct symbols for this batch
+                $symStmt = $this->conn->prepare(
+                    "SELECT DISTINCT symbol FROM prepared_orders WHERE batch_id = ?"
+                );
+                $symStmt->execute([$batchId]);
+                $symbols = $symStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                $this->log("FETCHING PRICES for " . count($symbols) . " symbols: " . implode(', ', $symbols));
+
+                // Fetch live prices from Yahoo Finance
+                $prices = $this->fetchPrices($symbols);
+
+                $pricesFetched = count($prices);
+                $pricesFailed  = count($symbols) - $pricesFetched;
+
+                $this->log("PRICES: {$pricesFetched} fetched, {$pricesFailed} failed");
+
+                // UPDATE prepared_orders with price + shares for each symbol
+                if (!empty($prices)) {
+                    $updateStmt = $this->conn->prepare("
+                        UPDATE prepared_orders
+                        SET price  = ?,
+                            shares = ROUND(amount / ?, 6)
+                        WHERE batch_id = ? AND symbol = ? AND status = 'staged'
+                    ");
+
+                    foreach ($prices as $sym => $price) {
+                        $updateStmt->execute([$price, $price, $batchId, $sym]);
+                        $updated = $updateStmt->rowCount();
+                        $this->log("  {$sym}: \${$price} -> {$updated} rows updated");
+                    }
+                }
+
+                // Log any symbols that couldn't get a price
+                $missingPrices = array_diff($symbols, array_keys($prices));
+                if (!empty($missingPrices)) {
+                    $this->log("WARNING: NO PRICE for: " . implode(', ', $missingPrices)
+                             . " — shares will remain 0");
+                }
+            }
+
             // ── Skipped members count ──
             $skipSql = "
                 SELECT COUNT(DISTINCT msp.member_id)
@@ -262,7 +434,9 @@ class PrepareOrdersProcess
                 SELECT COUNT(DISTINCT member_id) AS total_members,
                        COUNT(*)                  AS total_orders,
                        COALESCE(SUM(amount), 0)      AS total_amount,
-                       COALESCE(SUM(points_used), 0)  AS total_points
+                       COALESCE(SUM(points_used), 0)  AS total_points,
+                       COALESCE(SUM(shares), 0)       AS total_shares,
+                       SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END) AS missing_prices
                 FROM prepared_orders
                 WHERE batch_id = ?
             ");
@@ -287,7 +461,8 @@ class PrepareOrdersProcess
 
             $dur = round(microtime(true) - $startTime, 2);
             $this->log("PREPARE DONE: {$agg['total_members']} members, "
-                      . "{$agg['total_orders']} orders, \${$agg['total_amount']} — {$dur}s");
+                      . "{$agg['total_orders']} orders, \${$agg['total_amount']}, "
+                      . "{$agg['total_shares']} total shares — {$dur}s");
 
             return [
                 'success'  => true,
@@ -297,12 +472,14 @@ class PrepareOrdersProcess
                     'total_orders'     => (int)   $agg['total_orders'],
                     'total_amount'     => (float) $agg['total_amount'],
                     'total_points'     => (int)   $agg['total_points'],
+                    'total_shares'     => (float) ($agg['total_shares'] ?? 0),
+                    'missing_prices'   => (int)   ($agg['missing_prices'] ?? 0),
                     'members_skipped'  => $skipped,
                     'duration_seconds' => $dur,
                 ],
             ];
         } catch (\Exception $e) {
-            $this->log("❌ PREPARE EXCEPTION: " . $e->getMessage());
+            $this->log("PREPARE EXCEPTION: " . $e->getMessage());
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -332,7 +509,8 @@ class PrepareOrdersProcess
                        COUNT(DISTINCT member_id) AS members,
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
-                       SUM(points_used)          AS total_points
+                       SUM(points_used)          AS total_points,
+                       SUM(shares)               AS total_shares
                 FROM prepared_orders WHERE {$filter}
                 GROUP BY merchant_id ORDER BY total_amount DESC
             ");
@@ -344,7 +522,8 @@ class PrepareOrdersProcess
                        COUNT(DISTINCT member_id) AS members,
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
-                       SUM(points_used)          AS total_points
+                       SUM(points_used)          AS total_points,
+                       SUM(shares)               AS total_shares
                 FROM prepared_orders WHERE {$filter}
                 GROUP BY broker ORDER BY total_amount DESC
             ");
@@ -356,30 +535,41 @@ class PrepareOrdersProcess
                        COUNT(DISTINCT member_id) AS members,
                        COUNT(*)                  AS orders,
                        SUM(amount)               AS total_amount,
-                       SUM(points_used)          AS total_points
+                       SUM(points_used)          AS total_points,
+                       SUM(shares)               AS total_shares
                 FROM prepared_orders WHERE {$filter}
                 GROUP BY member_tier, conversion_rate ORDER BY total_amount DESC
             ");
             $s3->execute([$batchId]);
 
-            // ── Top 20 symbols ──
+            // ── Top 20 symbols (now includes price + shares) ──
             $s4 = $this->conn->prepare("
                 SELECT symbol,
+                       price,
                        COUNT(*)         AS order_count,
                        SUM(amount)      AS total_amount,
-                       SUM(points_used) AS total_points
+                       SUM(points_used) AS total_points,
+                       SUM(shares)      AS total_shares
                 FROM prepared_orders WHERE {$filter}
-                GROUP BY symbol ORDER BY order_count DESC LIMIT 20
+                GROUP BY symbol, price ORDER BY order_count DESC LIMIT 20
             ");
             $s4->execute([$batchId]);
 
+            // ── Missing prices count ──
+            $mpStmt = $this->conn->prepare(
+                "SELECT COUNT(*) FROM prepared_orders WHERE batch_id = ? AND price IS NULL"
+            );
+            $mpStmt->execute([$batchId]);
+            $missingPrices = (int) $mpStmt->fetchColumn();
+
             return [
-                'success'     => true,
-                'batch'       => $batch,
-                'by_merchant' => $s1->fetchAll(PDO::FETCH_ASSOC),
-                'by_broker'   => $s2->fetchAll(PDO::FETCH_ASSOC),
-                'by_tier'     => $s3->fetchAll(PDO::FETCH_ASSOC),
-                'by_symbol'   => $s4->fetchAll(PDO::FETCH_ASSOC),
+                'success'        => true,
+                'batch'          => $batch,
+                'by_merchant'    => $s1->fetchAll(PDO::FETCH_ASSOC),
+                'by_broker'      => $s2->fetchAll(PDO::FETCH_ASSOC),
+                'by_tier'        => $s3->fetchAll(PDO::FETCH_ASSOC),
+                'by_symbol'      => $s4->fetchAll(PDO::FETCH_ASSOC),
+                'missing_prices' => $missingPrices,
             ];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
@@ -427,6 +617,7 @@ class PrepareOrdersProcess
                        COUNT(*)                                  AS order_count,
                        SUM(po.amount)                            AS total_amount,
                        SUM(po.points_used)                       AS total_points,
+                       SUM(po.shares)                            AS total_shares,
                        GROUP_CONCAT(DISTINCT po.symbol ORDER BY po.symbol) AS symbols
                 FROM prepared_orders po
                 WHERE {$where}
@@ -454,6 +645,7 @@ class PrepareOrdersProcess
     // ====================================================================
     // PUBLIC — approve()
     // INSERT...SELECT from prepared_orders → orders, mark batch approved.
+    // Now uses real shares from staging (calculated during prepare).
     // ====================================================================
 
     public function approve(string $batchId): array
@@ -477,16 +669,27 @@ class PrepareOrdersProcess
                 return ['success' => false, 'error' => "Batch is '{$batch['status']}', cannot approve."];
             }
 
+            // ── Check for missing prices ──
+            $mpStmt = $this->conn->prepare(
+                "SELECT COUNT(*) FROM prepared_orders WHERE batch_id = ? AND status = 'staged' AND price IS NULL"
+            );
+            $mpStmt->execute([$batchId]);
+            $missingPrices = (int) $mpStmt->fetchColumn();
+
+            if ($missingPrices > 0) {
+                $this->log("WARNING: APPROVE with {$missingPrices} orders missing price (shares=0)");
+            }
+
             $this->conn->beginTransaction();
 
-            // ── INSERT...SELECT → orders ──
+            // ── INSERT...SELECT → orders (uses real shares from staging) ──
             $ins = $this->conn->prepare("
                 INSERT INTO orders
                     (member_id, merchant_id, basket_id, symbol, shares, amount,
                      points_used, status, order_type, broker, member_timezone)
                 SELECT
                     po.member_id, po.merchant_id, po.basket_id, po.symbol,
-                    0, po.amount, po.points_used,
+                    po.shares, po.amount, po.points_used,
                     'pending', 'sweep', po.broker, po.member_timezone
                 FROM prepared_orders po
                 WHERE po.batch_id = ? AND po.status = 'staged'
@@ -513,11 +716,12 @@ class PrepareOrdersProcess
                 'success'          => true,
                 'batch_id'         => $batchId,
                 'orders_created'   => $ordersCreated,
+                'missing_prices'   => $missingPrices,
                 'duration_seconds' => $dur,
             ];
         } catch (\Exception $e) {
             if ($this->conn->inTransaction()) $this->conn->rollBack();
-            $this->log("❌ APPROVE EXCEPTION: " . $e->getMessage());
+            $this->log("APPROVE EXCEPTION: " . $e->getMessage());
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }

@@ -155,7 +155,8 @@ export default function PrepareOrders() {
     try {
       const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batchId });
       if (res.success) {
-        alert(`✅ Approved! ${res.orders_created} orders created in ${res.duration_seconds}s.`);
+        const mp = res.missing_prices ? `\n⚠️ ${res.missing_prices} orders had no price (shares=0).` : "";
+        alert(`✅ Approved! ${res.orders_created} orders created in ${res.duration_seconds}s.${mp}`);
         await loadBatches();
         setActiveBatchId(null);
         setBatchStats(null);
@@ -279,9 +280,13 @@ export default function PrepareOrders() {
               <span>Members: <strong>{fmtN(prepareResult.results.total_members)}</strong></span>
               <span>Orders: <strong>{fmtN(prepareResult.results.total_orders)}</strong></span>
               <span>Amount: <strong>{fmt$(prepareResult.results.total_amount)}</strong></span>
+              <span>Shares: <strong>{Number(prepareResult.results.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</strong></span>
               <span>Points: <strong>{fmtN(prepareResult.results.total_points)}</strong></span>
               <span>Skipped: <strong>{fmtN(prepareResult.results.members_skipped)}</strong></span>
               <span>Time: <strong>{prepareResult.results.duration_seconds}s</strong></span>
+              {(prepareResult.results.missing_prices || 0) > 0 && (
+                <span style={{ color: "#dc2626" }}>⚠️ {prepareResult.results.missing_prices} orders missing price</span>
+              )}
             </div>
           )}
           {prepareResult.error && !prepareResult.results && (
@@ -570,6 +575,27 @@ export default function PrepareOrders() {
                         ) : !batchStats ? null : (
                           <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
 
+                            {/* ── Missing prices warning ── */}
+                            {(batchStats.missing_prices || 0) > 0 && (
+                              <div style={{
+                                padding: "0.75rem 1rem",
+                                background: "#fef3c7",
+                                border: "1px solid #f59e0b",
+                                borderRadius: 6,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontSize: "0.85rem",
+                                color: "#92400e",
+                              }}>
+                                <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                                <span>
+                                  <strong>{batchStats.missing_prices}</strong> orders have no price data (shares = 0).
+                                  Yahoo Finance may not have returned prices for those symbols.
+                                </span>
+                              </div>
+                            )}
+
                             {/* ── Stats grids ── */}
                             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
 
@@ -608,8 +634,10 @@ export default function PrepareOrders() {
                                     <thead>
                                       <tr>
                                         <th style={thStyleSm}>Symbol</th>
+                                        <th style={thStyleSm}>Price</th>
                                         <th style={thStyleSm}>Orders</th>
                                         <th style={thStyleSm}>Amount</th>
+                                        <th style={thStyleSm}>Shares</th>
                                         <th style={thStyleSm}>Points</th>
                                       </tr>
                                     </thead>
@@ -617,8 +645,12 @@ export default function PrepareOrders() {
                                       {batchStats.by_symbol.map((s, i) => (
                                         <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                           <td style={{ ...tdStyleSm, fontWeight: 600 }}>{s.symbol}</td>
+                                          <td style={tdStyleSm}>
+                                            {s.price ? fmt$(s.price) : <span style={{ color: "#ef4444", fontSize: "0.75rem" }}>No price</span>}
+                                          </td>
                                           <td style={tdStyleSm}>{fmtN(s.order_count)}</td>
                                           <td style={tdStyleSm}>{fmt$(s.total_amount)}</td>
+                                          <td style={tdStyleSm}>{Number(s.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
                                           <td style={tdStyleSm}>{fmtN(s.total_points)}</td>
                                         </tr>
                                       ))}
@@ -684,6 +716,7 @@ export default function PrepareOrders() {
                                           <th style={thStyleSm}>Sweep %</th>
                                           <th style={thStyleSm}>Orders</th>
                                           <th style={thStyleSm}>Amount</th>
+                                          <th style={thStyleSm}>Shares</th>
                                           <th style={thStyleSm}>Points</th>
                                           <th style={thStyleSm}>Symbols</th>
                                         </tr>
@@ -699,6 +732,7 @@ export default function PrepareOrders() {
                                             <td style={tdStyleSm}>{m.sweep_percentage}%</td>
                                             <td style={tdStyleSm}>{fmtN(m.order_count)}</td>
                                             <td style={tdStyleSm}>{fmt$(m.total_amount)}</td>
+                                            <td style={tdStyleSm}>{Number(m.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
                                             <td style={tdStyleSm}>{fmtN(m.total_points)}</td>
                                             <td style={{ ...tdStyleSm, fontSize: "0.72rem", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                               {m.symbols}
@@ -788,6 +822,7 @@ function BreakdownTable({ title, rows, labelKey, labelName }) {
             <th style={thStyleSm}>Members</th>
             <th style={thStyleSm}>Orders</th>
             <th style={thStyleSm}>Amount</th>
+            <th style={thStyleSm}>Shares</th>
             <th style={thStyleSm}>Points</th>
           </tr>
         </thead>
@@ -798,6 +833,7 @@ function BreakdownTable({ title, rows, labelKey, labelName }) {
               <td style={tdStyleSm}>{fmtN(r.members)}</td>
               <td style={tdStyleSm}>{fmtN(r.orders)}</td>
               <td style={tdStyleSm}>{fmt$(r.total_amount)}</td>
+              <td style={tdStyleSm}>{Number(r.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
               <td style={tdStyleSm}>{fmtN(r.total_points)}</td>
             </tr>
           ))}

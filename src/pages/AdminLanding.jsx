@@ -24,6 +24,7 @@ import {
   Briefcase,
   ShoppingBasket,
   ClipboardCheck,
+  CircleDollarSign,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -110,6 +111,13 @@ export default function AdminLanding() {
       to: "/payments-processing",
       label: "Payments Processing",
       icon: <CreditCard size={32} />,
+      color: "#3b82f6",
+      bgColor: "#eff6ff",
+    },
+    {
+      to: "/fee-admin",
+      label: "Fee Structure",
+      icon: <CircleDollarSign size={32} />,
       color: "#3b82f6",
       bgColor: "#eff6ff",
     },
