@@ -1,0 +1,31 @@
+MySQL [stockloyal]> describe broker_master;
++--------------------------+--------------------------------------------------+------+-----+-------------------+-----------------------------------------------+
+| Field                    | Type                                             | Null | Key | Default           | Extra                                         |
++--------------------------+--------------------------------------------------+------+-----+-------------------+-----------------------------------------------+
+| broker_id                | varchar(64)                                      | NO   | PRI | NULL              |                                               |
+| broker_name              | varchar(255)                                     | NO   |     | NULL              |                                               |
+| logo_url                 | varchar(500)                                     | YES  |     | NULL              |                                               |
+| ach_bank_name            | varchar(255)                                     | NO   |     | NULL              |                                               |
+| ach_routing_num          | varchar(20)                                      | NO   |     | NULL              |                                               |
+| ach_account_num          | varchar(50)                                      | NO   |     | NULL              |                                               |
+| ach_account_type         | enum('checking','savings','other')               | YES  |     | checking          |                                               |
+| address_line1            | varchar(255)                                     | YES  |     | NULL              |                                               |
+| address_line2            | varchar(255)                                     | YES  |     | NULL              |                                               |
+| address_city             | varchar(120)                                     | YES  |     | NULL              |                                               |
+| address_state            | varchar(50)                                      | YES  |     | NULL              |                                               |
+| address_zip              | varchar(20)                                      | YES  |     | NULL              |                                               |
+| address_country          | varchar(50)                                      | YES  |     | USA               |                                               |
+| min_order_amount         | decimal(12,2)                                    | YES  |     | 1.00              |                                               |
+| max_order_amount         | decimal(12,2)                                    | YES  |     | 100000.00         |                                               |
+| max_securities_per_order | int                                              | YES  |     | 5                 |                                               |
+| default_order_type       | enum('market','limit','stop','stop_limit','gtc') | YES  |     | market            |                                               |
+| support_phone            | varchar(50)                                      | YES  |     | NULL              |                                               |
+| support_email            | varchar(255)                                     | YES  |     | NULL              |                                               |
+| contact_name             | varchar(255)                                     | YES  |     | NULL              |                                               |
+| webhook_url              | varchar(500)                                     | YES  |     | NULL              |                                               |
+| api_key                  | varchar(255)                                     | YES  |     | NULL              |                                               |
+| broker_created_at        | datetime                                         | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED                             |
+| broker_modified_at       | datetime                                         | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP |
+| created_at               | timestamp                                        | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED                             |
+| updated_at               | timestamp                                        | YES  |     | CURRENT_TIMESTAMP | DEFAULT_GENERATED on update CURRENT_TIMESTAMP |
++--------------------------+--------------------------------------------------+------+-----+-------------------+-----------------------------------------------+

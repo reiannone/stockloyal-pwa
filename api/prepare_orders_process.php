@@ -17,7 +17,7 @@ declare(strict_types=1);
  *   6. discard()       → Mark batch discarded (rows kept for audit)
  *   7. batches()       → List all preparation batches
  *
- * Tables read:   member_stock_picks, wallet, merchant
+ * Tables read:   member_stock_picks, wallet, merchant, broker_master
  * Tables write:  prepared_orders, prepare_batches, orders
  */
 
@@ -280,14 +280,51 @@ class PrepareOrdersProcess
             ");
             $byMerch->execute($params);
 
+            // ── Broker limit estimates ──
+            // Estimate members whose total basket falls below broker min or above max
+            $blSql = "
+                SELECT
+                    SUM(CASE WHEN basket_total < broker_min THEN 1 ELSE 0 END) AS bypassed_below_min,
+                    SUM(CASE WHEN basket_total > broker_max THEN 1 ELSE 0 END) AS capped_at_max,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN basket_total < broker_min THEN 0
+                            WHEN basket_total > broker_max THEN broker_max
+                            ELSE basket_total
+                        END
+                    ), 0) AS total_amount_capped
+                FROM (
+                    SELECT
+                        msp_inner.member_id,
+                        SUM(ROUND(({$sweepPts}) * ({$rate}) / pc2.cnt, 2)) AS basket_total,
+                        COALESCE(bm.min_order_amount, 1.00) AS broker_min,
+                        COALESCE(bm.max_order_amount, 100000.00) AS broker_max
+                    FROM member_stock_picks msp_inner
+                    JOIN wallet w          ON w.member_id COLLATE utf8mb4_unicode_ci = msp_inner.member_id COLLATE utf8mb4_unicode_ci
+                    LEFT JOIN merchant m   ON w.merchant_id COLLATE utf8mb4_unicode_ci = m.merchant_id COLLATE utf8mb4_unicode_ci
+                    JOIN {$pcSub} pc2      ON pc2.member_id COLLATE utf8mb4_unicode_ci = msp_inner.member_id COLLATE utf8mb4_unicode_ci
+                    LEFT JOIN broker_master bm
+                        ON w.broker COLLATE utf8mb4_unicode_ci = bm.broker_id COLLATE utf8mb4_unicode_ci
+                    WHERE msp_inner.is_active = 1 AND w.points > 0
+                    {$merchantW}
+                    GROUP BY msp_inner.member_id, bm.min_order_amount, bm.max_order_amount
+                ) member_baskets
+            ";
+            $blStmt = $this->conn->prepare($blSql);
+            $blStmt->execute($params);
+            $brokerLimits = $blStmt->fetch(PDO::FETCH_ASSOC);
+
             return [
-                'success'          => true,
-                'eligible_members' => (int)   ($counts['eligible_members'] ?? 0),
-                'total_picks'      => (int)   ($counts['total_picks'] ?? 0),
-                'est_total_amount' => (float) ($counts['est_total_amount'] ?? 0),
-                'est_total_points' => (int)   ($counts['est_total_points'] ?? 0),
-                'members_skipped'  => $skipped,
-                'by_merchant'      => $byMerch->fetchAll(PDO::FETCH_ASSOC),
+                'success'            => true,
+                'eligible_members'   => (int)   ($counts['eligible_members'] ?? 0),
+                'total_picks'        => (int)   ($counts['total_picks'] ?? 0),
+                'est_total_amount'   => (float) ($counts['est_total_amount'] ?? 0),
+                'est_total_points'   => (int)   ($counts['est_total_points'] ?? 0),
+                'members_skipped'    => $skipped,
+                'bypassed_below_min' => (int)   ($brokerLimits['bypassed_below_min'] ?? 0),
+                'capped_at_max'      => (int)   ($brokerLimits['capped_at_max'] ?? 0),
+                'total_amount_capped' => (float) ($brokerLimits['total_amount_capped'] ?? 0),
+                'by_merchant'        => $byMerch->fetchAll(PDO::FETCH_ASSOC),
             ];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
@@ -420,6 +457,91 @@ class PrepareOrdersProcess
                 }
             }
 
+            // ══════════════════════════════════════════════════════════════
+            // STEP 3: Enforce broker min/max order limits
+            //
+            // - basket total < broker min_order_amount → remove member rows
+            // - basket total > broker max_order_amount → scale down pro-rata
+            // ══════════════════════════════════════════════════════════════
+
+            $bypassedBelowMin = 0;
+            $cappedAtMax      = 0;
+            $amountBeforeCaps = 0;
+
+            if ($rowsInserted > 0) {
+                $this->log("BROKER LIMITS: checking min/max order amounts");
+
+                // Get each member's basket total + their broker limits
+                $blStmt = $this->conn->prepare("
+                    SELECT po.member_id,
+                           po.broker,
+                           SUM(po.amount)                AS basket_total,
+                           COALESCE(bm.min_order_amount, 1.00)      AS broker_min,
+                           COALESCE(bm.max_order_amount, 100000.00) AS broker_max
+                    FROM prepared_orders po
+                    LEFT JOIN broker_master bm
+                        ON po.broker COLLATE utf8mb4_unicode_ci = bm.broker_id COLLATE utf8mb4_unicode_ci
+                    WHERE po.batch_id = ? AND po.status = 'staged'
+                    GROUP BY po.member_id, po.broker, bm.min_order_amount, bm.max_order_amount
+                ");
+                $blStmt->execute([$batchId]);
+                $memberBaskets = $blStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Track original total before caps for reporting
+                $amountBeforeCaps = array_sum(array_column($memberBaskets, 'basket_total'));
+
+                // ── Members below broker minimum: remove their staged rows ──
+                $belowMinMembers = [];
+                foreach ($memberBaskets as $mb) {
+                    if ((float) $mb['basket_total'] < (float) $mb['broker_min']) {
+                        $belowMinMembers[] = $mb['member_id'];
+                    }
+                }
+
+                if (!empty($belowMinMembers)) {
+                    $bypassedBelowMin = count($belowMinMembers);
+                    $placeholders = implode(',', array_fill(0, count($belowMinMembers), '?'));
+                    $delParams = array_merge([$batchId], $belowMinMembers);
+
+                    $this->conn->prepare("
+                        DELETE FROM prepared_orders
+                        WHERE batch_id = ? AND member_id IN ({$placeholders}) AND status = 'staged'
+                    ")->execute($delParams);
+
+                    $this->log("BROKER MIN: bypassed {$bypassedBelowMin} members (basket below broker minimum)");
+                }
+
+                // ── Members above broker maximum: scale down pro-rata ──
+                foreach ($memberBaskets as $mb) {
+                    // Skip already-removed members
+                    if (in_array($mb['member_id'], $belowMinMembers)) continue;
+
+                    $basketTotal = (float) $mb['basket_total'];
+                    $brokerMax   = (float) $mb['broker_max'];
+
+                    if ($basketTotal > $brokerMax && $brokerMax > 0) {
+                        $cappedAtMax++;
+                        $scaleFactor = $brokerMax / $basketTotal;
+
+                        // Scale down each order for this member proportionally
+                        $this->conn->prepare("
+                            UPDATE prepared_orders
+                            SET amount     = ROUND(amount * ?, 2),
+                                points_used = FLOOR(points_used * ?),
+                                shares     = CASE WHEN price > 0 THEN ROUND((amount * ?) / price, 6) ELSE 0 END
+                            WHERE batch_id = ? AND member_id = ? AND status = 'staged'
+                        ")->execute([$scaleFactor, $scaleFactor, $scaleFactor, $batchId, $mb['member_id']]);
+
+                        $this->log("BROKER MAX: capped member {$mb['member_id']} "
+                                 . "from \${$basketTotal} to ~\${$brokerMax} (scale={$scaleFactor})");
+                    }
+                }
+
+                if ($cappedAtMax > 0) {
+                    $this->log("BROKER MAX: capped {$cappedAtMax} members (basket exceeded broker maximum)");
+                }
+            }
+
             // ── Skipped members count ──
             $skipSql = "
                 SELECT COUNT(DISTINCT msp.member_id)
@@ -448,8 +570,9 @@ class PrepareOrdersProcess
                 INSERT INTO prepare_batches
                     (batch_id, status, filter_merchant, filter_member,
                      total_members, total_orders, total_amount, total_points,
-                     members_skipped)
-                VALUES (?, 'staged', ?, ?, ?, ?, ?, ?, ?)
+                     members_skipped, bypassed_below_min, capped_at_max,
+                     total_amount_before_caps)
+                VALUES (?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ")->execute([
                 $batchId, $merchantId, $memberId,
                 (int)   $agg['total_members'],
@@ -457,25 +580,32 @@ class PrepareOrdersProcess
                 (float) $agg['total_amount'],
                 (int)   $agg['total_points'],
                 $skipped,
+                $bypassedBelowMin,
+                $cappedAtMax,
+                (float) $amountBeforeCaps,
             ]);
 
             $dur = round(microtime(true) - $startTime, 2);
             $this->log("PREPARE DONE: {$agg['total_members']} members, "
                       . "{$agg['total_orders']} orders, \${$agg['total_amount']}, "
-                      . "{$agg['total_shares']} total shares — {$dur}s");
+                      . "{$agg['total_shares']} total shares, "
+                      . "bypassed_below_min={$bypassedBelowMin}, capped_at_max={$cappedAtMax} — {$dur}s");
 
             return [
                 'success'  => true,
                 'batch_id' => $batchId,
                 'results'  => [
-                    'total_members'    => (int)   $agg['total_members'],
-                    'total_orders'     => (int)   $agg['total_orders'],
-                    'total_amount'     => (float) $agg['total_amount'],
-                    'total_points'     => (int)   $agg['total_points'],
-                    'total_shares'     => (float) ($agg['total_shares'] ?? 0),
-                    'missing_prices'   => (int)   ($agg['missing_prices'] ?? 0),
-                    'members_skipped'  => $skipped,
-                    'duration_seconds' => $dur,
+                    'total_members'          => (int)   $agg['total_members'],
+                    'total_orders'           => (int)   $agg['total_orders'],
+                    'total_amount'           => (float) $agg['total_amount'],
+                    'total_points'           => (int)   $agg['total_points'],
+                    'total_shares'           => (float) ($agg['total_shares'] ?? 0),
+                    'missing_prices'         => (int)   ($agg['missing_prices'] ?? 0),
+                    'members_skipped'        => $skipped,
+                    'bypassed_below_min'     => $bypassedBelowMin,
+                    'capped_at_max'          => $cappedAtMax,
+                    'total_amount_before_caps' => (float) $amountBeforeCaps,
+                    'duration_seconds'       => $dur,
                 ],
             ];
         } catch (\Exception $e) {
@@ -563,13 +693,17 @@ class PrepareOrdersProcess
             $missingPrices = (int) $mpStmt->fetchColumn();
 
             return [
-                'success'        => true,
-                'batch'          => $batch,
-                'by_merchant'    => $s1->fetchAll(PDO::FETCH_ASSOC),
-                'by_broker'      => $s2->fetchAll(PDO::FETCH_ASSOC),
-                'by_tier'        => $s3->fetchAll(PDO::FETCH_ASSOC),
-                'by_symbol'      => $s4->fetchAll(PDO::FETCH_ASSOC),
-                'missing_prices' => $missingPrices,
+                'success'                  => true,
+                'batch'                    => $batch,
+                'by_merchant'              => $s1->fetchAll(PDO::FETCH_ASSOC),
+                'by_broker'                => $s2->fetchAll(PDO::FETCH_ASSOC),
+                'by_tier'                  => $s3->fetchAll(PDO::FETCH_ASSOC),
+                'by_symbol'                => $s4->fetchAll(PDO::FETCH_ASSOC),
+                'missing_prices'           => $missingPrices,
+                'bypassed_below_min'       => (int) ($batch['bypassed_below_min'] ?? 0),
+                'capped_at_max'            => (int) ($batch['capped_at_max'] ?? 0),
+                'total_amount_before_caps' => (float) ($batch['total_amount_before_caps'] ?? 0),
+                'total_amount'             => (float) ($batch['total_amount'] ?? 0),
             ];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
@@ -779,7 +913,9 @@ class PrepareOrdersProcess
             $stmt = $this->conn->prepare("
                 SELECT batch_id, status, filter_merchant, filter_member,
                        total_members, total_orders, total_amount, total_points,
-                       members_skipped, created_at, approved_at, discarded_at, notes
+                       members_skipped, bypassed_below_min, capped_at_max,
+                       total_amount_before_caps,
+                       created_at, approved_at, discarded_at, notes
                 FROM prepare_batches
                 ORDER BY created_at DESC
                 LIMIT {$limitInt}
