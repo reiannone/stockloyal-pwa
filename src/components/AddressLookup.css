@@ -1,48 +1,61 @@
-/* src/components/AddressLookup.css
-   Override Geoapify autocomplete styles to match StockLoyal form inputs */
+/* AddressLookup.css */
+.address-lookup-wrapper {
+  width: 100%;
+  position: relative;
+}
 
 .address-lookup-wrapper .geoapify-autocomplete-input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.95rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #fff;
-  color: #1f2937;
-  box-sizing: border-box;
-  transition: border-color 0.15s;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
 }
 
 .address-lookup-wrapper .geoapify-autocomplete-input:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
 }
 
 .address-lookup-wrapper .geoapify-autocomplete-items {
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  margin-top: 2px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   max-height: 250px;
   overflow-y: auto;
-  z-index: 999;
 }
 
-.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+.address-lookup-wrapper .geoapify-autocomplete-items div {
+  padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #f3f4f6;
+  font-size: 14px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
-.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item:hover,
-.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item.active {
-  background: #eff6ff;
+.address-lookup-wrapper .geoapify-autocomplete-items div:hover,
+.address-lookup-wrapper .geoapify-autocomplete-items div.active {
+  background-color: #f5f8ff;
 }
 
-/* Hide the clear button if you prefer — remove this to keep it */
+.address-lookup-wrapper .geoapify-autocomplete-items div:last-child {
+  border-bottom: none;
+}
+
 .address-lookup-wrapper .geoapify-close-button {
+  position: absolute;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
+  cursor: pointer;
+  color: #999;
+  font-size: 18px;
 }
