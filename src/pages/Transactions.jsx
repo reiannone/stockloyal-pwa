@@ -26,6 +26,10 @@ export default function Transactions() {
   const [isTxOpen, setIsTxOpen] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
 
+  // ── View mode: "orders" (individual) or "baskets" (rollup) ──
+  const [viewMode, setViewMode] = useState("baskets");
+  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
     try {
@@ -121,6 +125,64 @@ export default function Transactions() {
     }
   }, [orders, filterField, filterValue]);
 
+  // ── Basket rollup: group filtered orders by basket_id ──
+  const basketRollup = useMemo(() => {
+    const map = new Map();
+    for (const o of filteredOrders) {
+      const bid = o.basket_id || "unknown";
+      if (!map.has(bid)) {
+        map.set(bid, {
+          basket_id: bid,
+          orders: [],
+          totalAmount: 0,
+          totalPoints: 0,
+          totalShares: 0,
+          symbols: [],
+          broker: o.broker || "-",
+          merchant_id: o.merchant_id || "-",
+          placed_at: o.placed_at,
+          statuses: new Set(),
+        });
+      }
+      const b = map.get(bid);
+      b.orders.push(o);
+      b.totalAmount += parseFloat(o.amount) || 0;
+      b.totalPoints += parseInt(o.points_used) || 0;
+      b.totalShares += parseFloat(o.shares) || 0;
+      b.symbols.push(o.symbol);
+      if (o.status) b.statuses.add(o.status.toLowerCase());
+      // Use earliest placed_at
+      if (o.placed_at && (!b.placed_at || o.placed_at < b.placed_at)) {
+        b.placed_at = o.placed_at;
+      }
+    }
+    // Convert to array, sorted newest first
+    return Array.from(map.values()).sort((a, b) => {
+      if (!a.placed_at) return 1;
+      if (!b.placed_at) return -1;
+      return b.placed_at.localeCompare(a.placed_at);
+    });
+  }, [filteredOrders]);
+
+  const toggleBasketExpand = (basketId) => {
+    setExpandedBaskets((prev) => {
+      const next = new Set(prev);
+      if (next.has(basketId)) next.delete(basketId);
+      else next.add(basketId);
+      return next;
+    });
+  };
+
+  // Derive a single status label for a basket
+  const getBasketStatus = (statuses) => {
+    const s = Array.from(statuses);
+    if (s.length === 1) return s[0];
+    if (s.includes("failed")) return "partial";
+    if (s.includes("pending") || s.includes("queued")) return "pending";
+    if (s.every((x) => x === "executed" || x === "confirmed")) return "executed";
+    return "mixed";
+  };
+
   // Convert UTC/MySQL-ish timestamps to member's local time string
   const toLocalZonedString = (ts) => {
     if (!ts) return "-";
@@ -162,7 +224,7 @@ export default function Transactions() {
   return (
     <div className="transactions-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        Buy Order Transaction History
+        My Baskets and Buy Order Transactions
       </h2>
 
       {/* --- Page Notice --- */}
@@ -270,6 +332,45 @@ export default function Transactions() {
         </div>
       )}
 
+      {/* ── View mode toggle ── */}
+      {!loading && !error && orders.length > 0 && (
+        <div style={{ display: "flex", gap: 0, marginBottom: "1rem", borderRadius: 8, overflow: "hidden", border: "1px solid #d1d5db" }}>
+          <button
+            type="button"
+            onClick={() => setViewMode("orders")}
+            style={{
+              flex: 1,
+              padding: "8px 16px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              background: viewMode === "orders" ? "#2563eb" : "#f9fafb",
+              color: viewMode === "orders" ? "#fff" : "#374151",
+            }}
+          >
+            Individual Orders ({filteredOrders.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("baskets")}
+            style={{
+              flex: 1,
+              padding: "8px 16px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              border: "none",
+              borderLeft: "1px solid #d1d5db",
+              cursor: "pointer",
+              background: viewMode === "baskets" ? "#2563eb" : "#f9fafb",
+              color: viewMode === "baskets" ? "#fff" : "#374151",
+            }}
+          >
+            Basket Summary ({basketRollup.length})
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <p>Loading your Order transactions...</p>
       ) : error ? (
@@ -278,6 +379,118 @@ export default function Transactions() {
         <p className="portfolio-subtext" style={{ textAlign: "center" }}>
           {orders.length === 0 ? "No Order transactions found." : "No orders match the current filter."}
         </p>
+      ) : viewMode === "baskets" ? (
+        /* ── BASKET ROLLUP VIEW ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {basketRollup.map((b) => {
+            const isExpanded = expandedBaskets.has(b.basket_id);
+            const status = getBasketStatus(b.statuses);
+
+            return (
+              <div key={b.basket_id} className="card" style={{ padding: 0, overflow: "hidden" }}>
+                {/* Basket header — clickable to expand */}
+                <div
+                  onClick={() => toggleBasketExpand(b.basket_id)}
+                  style={{
+                    padding: "12px 16px",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    background: isExpanded ? "#f0f9ff" : "#fff",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {/* Top row: symbols + status */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827" }}>
+                        {b.symbols.join(", ")}
+                      </span>
+                      <span style={{
+                        fontSize: "0.75rem",
+                        color: "#6b7280",
+                        background: "#f3f4f6",
+                        borderRadius: 4,
+                        padding: "1px 6px",
+                      }}>
+                        {b.orders.length} order{b.orders.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <span style={getStatusPillStyle(status)}>{status}</span>
+                  </div>
+
+                  {/* Summary row */}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "0.85rem", color: "#374151" }}>
+                    <span>Total: <strong>{formatDollars(b.totalAmount)}</strong></span>
+                    <span>Points: <strong>{Number(b.totalPoints).toLocaleString()}</strong></span>
+                    <span>Shares: <strong>{Number(b.totalShares.toFixed(6))}</strong></span>
+                    <span>Broker: <strong>{b.broker}</strong></span>
+                  </div>
+
+                  {/* Date + basket ID row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6b7280" }}>
+                    <span>{b.placed_at ? toLocalZonedString(b.placed_at) : "-"}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {isExpanded ? "▲" : "▼"} {b.basket_id}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded: individual orders table */}
+                {isExpanded && (
+                  <div style={{ borderTop: "1px solid #e5e7eb", overflowX: "auto" }}>
+                    <table
+                      className="basket-table"
+                      style={{ width: "100%", minWidth: "600px", borderCollapse: "collapse", fontSize: "0.85rem" }}
+                    >
+                      <thead>
+                        <tr>
+                          <th>Symbol</th>
+                          <th>Shares</th>
+                          <th style={{ textAlign: "right" }}>Amount</th>
+                          <th style={{ textAlign: "right" }}>Price/Share</th>
+                          <th style={{ textAlign: "center" }}>Status</th>
+                          <th>Placed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.orders.map((order, idx) => {
+                          const shares = parseFloat(order.shares) || 0;
+                          const amount = parseFloat(order.amount) || 0;
+                          const pps = shares > 0 ? amount / shares : 0;
+                          return (
+                            <tr
+                              key={idx}
+                              onClick={() => openTx(order)}
+                              style={{ cursor: "pointer" }}
+                              title="Click to view details"
+                            >
+                              <td>{order.symbol}</td>
+                              <td>{order.shares}</td>
+                              <td style={{ textAlign: "right" }}>{formatDollars(amount)}</td>
+                              <td style={{ textAlign: "right", color: "#6b7280" }}>
+                                {pps > 0 ? formatDollars(pps) : "-"}
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                <span style={getStatusPillStyle(order.status)}>
+                                  {order.status || "-"}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: "0.8rem" }}>
+                                {order.placed_at ? toLocalZonedString(order.placed_at) : "-"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <div className="basket-table-wrapper" style={{ overflowX: "auto" }}>
           <table

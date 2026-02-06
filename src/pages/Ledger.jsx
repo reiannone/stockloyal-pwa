@@ -96,7 +96,7 @@ export default function Ledger() {
     switch (filterField) {
       case "tx_type":
         return entries.filter((e) => 
-          (e.tx_type || "").toLowerCase().includes(val)
+          (e.tx_type || "").toLowerCase() === val
         );
       
       case "date": {
@@ -113,17 +113,17 @@ export default function Ledger() {
       
       case "status":
         return entries.filter((e) => 
-          (e.status || "").toLowerCase().includes(val)
+          (e.status || "").toLowerCase() === val
         );
       
       case "direction":
         return entries.filter((e) => 
-          (e.direction || "").toLowerCase().includes(val)
+          (e.direction || "").toLowerCase() === val
         );
       
       case "channel":
         return entries.filter((e) => 
-          (e.channel || "").toLowerCase().includes(val)
+          (e.channel || "") === filterValue.trim()
         );
       
       default:
@@ -206,23 +206,75 @@ export default function Ledger() {
                 <option value="channel">Channel</option>
               </select>
 
-              {filterField && (
+              {filterField === "tx_type" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Types</option>
+                  <option value="points_received">Points Received</option>
+                  <option value="redeem_points">Redeem Points</option>
+                  <option value="adjust_points">Adjust Points</option>
+                  <option value="cash_in">Cash In</option>
+                  <option value="cash_out">Cash Out</option>
+                  <option value="cash_fee">Cash Fee</option>
+                </select>
+              )}
+
+              {filterField === "status" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="failed">Failed</option>
+                  <option value="reversed">Reversed</option>
+                </select>
+              )}
+
+              {filterField === "direction" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Directions</option>
+                  <option value="inbound">Inbound</option>
+                  <option value="outbound">Outbound</option>
+                </select>
+              )}
+
+              {filterField === "channel" && (
+                <select
+                  className="form-input"
+                  value={filterValue}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
+                >
+                  <option value="">All Channels</option>
+                  <option value="Plaid">Plaid</option>
+                  <option value="ACH">ACH</option>
+                  <option value="Broker API">Broker API</option>
+                  <option value="Merchant API">Merchant API</option>
+                  <option value="Card">Card</option>
+                  <option value="Wire">Wire</option>
+                  <option value="Internal">Internal</option>
+                  <option value="Other">Other</option>
+                </select>
+              )}
+
+              {filterField === "date" && (
                 <input
                   className="form-input"
-                  type={filterField === "date" ? "date" : "text"}
-                  placeholder={
-                    filterField === "tx_type"
-                      ? "e.g. points_received"
-                      : filterField === "date"
-                      ? "Select date"
-                      : filterField === "status"
-                      ? "e.g. confirmed"
-                      : filterField === "direction"
-                      ? "e.g. inbound"
-                      : filterField === "channel"
-                      ? "e.g. web"
-                      : ""
-                  }
+                  type="date"
+                  placeholder="Select date"
                   value={filterValue}
                   onChange={(e) => setFilterValue(e.target.value)}
                   style={{ minWidth: 240, flex: "1 1 auto", maxWidth: "400px" }}
