@@ -284,6 +284,9 @@ export default function PrepareOrders() {
               <span>Points: <strong>{fmtN(prepareResult.results.total_points)}</strong></span>
               <span>Skipped: <strong>{fmtN(prepareResult.results.members_skipped)}</strong></span>
               <span>Time: <strong>{prepareResult.results.duration_seconds}s</strong></span>
+              <span style={(prepareResult.results.capped_at_max || 0) > 0 ? { color: "#b45309" } : {}}>
+                Baskets Reduced: <strong>{fmtN(prepareResult.results.capped_at_max)}</strong>
+              </span>
               {(prepareResult.results.missing_prices || 0) > 0 && (
                 <span style={{ color: "#dc2626" }}>⚠️ {prepareResult.results.missing_prices} orders missing price</span>
               )}

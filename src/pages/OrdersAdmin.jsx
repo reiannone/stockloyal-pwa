@@ -714,11 +714,11 @@ export default function OrdersAdmin() {
                     transition: "background 0.15s",
                   }}
                 >
-                  {/* Top row: symbols + status */}
+                  {/* Top row: basket ID + status */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827" }}>
-                        {b.symbols.join(", ")}
+                      <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>
+                        {b.basket_id}
                       </span>
                       <span style={{
                         fontSize: "0.75rem",
@@ -758,12 +758,28 @@ export default function OrdersAdmin() {
                     </span>
                   </div>
 
-                  {/* Date + basket ID row */}
+                  {/* Date row */}
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#6b7280" }}>
                     <span>{b.placed_at ? new Date(b.placed_at).toLocaleString() : "-"}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      {isExpanded ? "▲" : "▼"} {b.basket_id}
+                      {isExpanded ? "▲" : "▼"}
                     </span>
+                  </div>
+
+                  {/* Bottom row: symbols */}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {b.symbols.map((sym, i) => (
+                      <span key={i} style={{
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        color: "#1e40af",
+                        background: "#eff6ff",
+                        borderRadius: 4,
+                        padding: "2px 8px",
+                      }}>
+                        {sym}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
