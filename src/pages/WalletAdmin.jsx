@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
+import AddressLookup from "../components/AddressLookup.jsx";
 
 export default function WalletAdmin() {
   const location = useLocation();
@@ -9,6 +10,8 @@ export default function WalletAdmin() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const editPanelRef = useRef(null);
 
   // Merchants for dropdown
@@ -261,6 +264,10 @@ export default function WalletAdmin() {
     const updated = { ...selected };
 
     if (newPassword.trim()) {
+      if (newPassword.trim() !== confirmPassword.trim()) {
+        alert("Passwords do not match.");
+        return;
+      }
       updated.new_password = newPassword.trim();
     }
 
@@ -289,6 +296,8 @@ export default function WalletAdmin() {
       if (res?.success) {
         alert("Wallet saved!");
         setNewPassword("");
+        setConfirmPassword("");
+        setShowPw(false);
         window.location.reload();
       } else {
         alert("Save failed: " + (res?.error || "Unknown error"));
@@ -470,6 +479,8 @@ export default function WalletAdmin() {
 
     setSelected(withCalc);
     setNewPassword("");
+    setConfirmPassword("");
+    setShowPw(false);
     setTimeout(() => {
       editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -685,15 +696,54 @@ export default function WalletAdmin() {
             </FormRow>
 
             {/* Admin-only password reset */}
-            <FormRow label="Reset Password">
+            <FormRow label="New Password">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <input
+                  className="form-input"
+                  type={showPw ? "text" : "password"}
+                  name="new_password"
+                  value={newPassword}
+                  placeholder="Enter new password"
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(!showPw)}
+                  style={{
+                    background: "none",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
+                    padding: "0.45rem 0.6rem",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    color: "#6b7280",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={showPw ? "Hide passwords" : "Show passwords"}
+                >
+                  {showPw ? "🙈 Hide" : "👁 Show"}
+                </button>
+              </div>
+            </FormRow>
+
+            <FormRow label="Confirm Password">
               <input
                 className="form-input"
-                type="password"
-                name="new_password"
-                value={newPassword}
-                placeholder="Enter new password to reset"
-                onChange={(e) => setNewPassword(e.target.value)}
+                type={showPw ? "text" : "password"}
+                name="confirm_password"
+                value={confirmPassword}
+                placeholder="Re-enter new password"
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                style={{
+                  borderColor: confirmPassword && confirmPassword !== newPassword ? "#dc2626" : undefined,
+                }}
               />
+              {confirmPassword && confirmPassword !== newPassword && (
+                <p style={{ fontSize: "0.8rem", color: "#dc2626", marginTop: "0.25rem", marginBottom: 0 }}>
+                  Passwords do not match
+                </p>
+              )}
             </FormRow>
 
             <FormRow label="First Name">
@@ -727,6 +777,21 @@ export default function WalletAdmin() {
             </FormRow>
 
             {/* Address */}
+            <FormRow label="Address Lookup">
+              <AddressLookup
+                onSelect={({ line1, city, state, zip, country }) => {
+                  setSelected((prev) => ({
+                    ...prev,
+                    member_address_line1: line1,
+                    member_town_city: city,
+                    member_state: state,
+                    member_zip: zip,
+                    member_country: country,
+                  }));
+                }}
+              />
+            </FormRow>
+
             <FormRow label="Address Line 1">
               <input
                 className="form-input"
@@ -882,6 +947,34 @@ export default function WalletAdmin() {
               )}
             </FormRow>
 
+            {/* ✅ Member Status */}
+            <FormRow label="Member Status">
+              <select
+                className="form-input"
+                name="member_status"
+                value={selected?.member_status || "active"}
+                onChange={handleChange}
+                style={{
+                  fontWeight: "600",
+                  color:
+                    selected?.member_status === "blocked" ? "#dc2626" :
+                    selected?.member_status === "closed"  ? "#6b7280" :
+                    selected?.member_status === "inactive" ? "#d97706" :
+                    "#059669",
+                  backgroundColor:
+                    selected?.member_status === "blocked" ? "#fef2f2" :
+                    selected?.member_status === "closed"  ? "#f3f4f6" :
+                    selected?.member_status === "inactive" ? "#fffbeb" :
+                    "#f0fdf4"
+                }}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="blocked">Blocked</option>
+                <option value="closed">Closed</option>
+              </select>
+            </FormRow>
+
             {/* 🔒 Base Conversion Rate (display-only from merchant) */}
             <FormRow label="Base Conversion Rate (Merchant Default)">
               <input
@@ -1035,6 +1128,7 @@ export default function WalletAdmin() {
                 <th>Email</th>
                 <th>Merchant / Broker</th>
                 <th>Tier</th>
+                <th>Status</th>
                 <th>Points → Cash / Portfolio</th>
               </tr>
             </thead>
@@ -1104,6 +1198,29 @@ export default function WalletAdmin() {
                       </span>
                     </td>
                     <td>
+                      {(() => {
+                        const status = w.member_status || 'active';
+                        const cfg = {
+                          active:   { bg: '#d1fae5', color: '#065f46', label: 'Active' },
+                          inactive: { bg: '#fef3c7', color: '#92400e', label: 'Inactive' },
+                          blocked:  { bg: '#fee2e2', color: '#991b1b', label: 'Blocked' },
+                          closed:   { bg: '#f3f4f6', color: '#6b7280', label: 'Closed' },
+                        }[status] || { bg: '#f3f4f6', color: '#6b7280', label: status };
+                        return (
+                          <span style={{
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            fontWeight: '600',
+                            backgroundColor: cfg.bg,
+                            color: cfg.color,
+                          }}>
+                            {cfg.label}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                         <span>{points == null ? "-" : points.toLocaleString()}</span>
                         <span aria-hidden="true" title="converts to">
@@ -1129,7 +1246,7 @@ export default function WalletAdmin() {
               })}
               {filteredWallets.length === 0 && (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
+                  <td colSpan="6" style={{ textAlign: "center", padding: "2rem", color: "#6b7280" }}>
                     {wallets.length === 0 
                       ? "No wallets found." 
                       : "No wallets match the current filters."}

@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
@@ -8,6 +8,7 @@ const normUsername = (s) => String(s || "").trim().toLowerCase();
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [mode, setMode] = useState("checking"); // checking | login | create | forgot | reset
 
@@ -21,7 +22,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(location.state?.error || "");
   const [successMsg, setSuccessMsg] = useState("");
 
   // Forgot / Reset password
@@ -78,6 +79,13 @@ export default function Login() {
 
     (async () => {
       try {
+        // ✅ If redirected from Wallet/elsewhere with an error, skip straight to login
+        if (location.state?.error) {
+          console.log("[Login] Redirected with error:", location.state.error);
+          setMode("login");
+          return;
+        }
+
         // If we have a memberId, check whether they already have a wallet
         if (lsMemberId) {
           console.log("[Login] memberId found, checking wallet for:", lsMemberId);
@@ -86,6 +94,21 @@ export default function Login() {
             const walletCheck = await apiPost("get-wallet.php", { member_id: lsMemberId });
 
             if (walletCheck?.success && walletCheck?.wallet) {
+              // ✅ Check member_status before auto-redirect
+              const status = (walletCheck.wallet.member_status || "active").toLowerCase();
+              if (status === "blocked" || status === "closed") {
+                console.log("[Login] Account is", status, "— clearing session");
+                localStorage.removeItem("memberId");
+                localStorage.removeItem("memberEmail");
+                setError(
+                  status === "blocked"
+                    ? "Your account has been blocked. Please contact support."
+                    : "Your account has been closed. Please contact support."
+                );
+                setMode("login");
+                return;
+              }
+
               // Existing user with wallet — points already applied server-side
               console.log("[Login] User has wallet, redirecting to wallet");
               navigate("/wallet");

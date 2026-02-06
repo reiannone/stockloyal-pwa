@@ -54,7 +54,8 @@ try {
         'cash_balance',
         'portfolio_value',
         'sweep_percentage',
-        'election_type'
+        'election_type',
+        'member_status'
     ];
     
     foreach ($walletFields as $field) {

@@ -226,6 +226,24 @@ export default function Wallet() {
         if (!mounted) return;
 
         const w = data.wallet ?? null;
+
+        // ✅ Block access for blocked or closed accounts
+        const memberStatus = (w?.member_status || "active").toLowerCase();
+        if (memberStatus === "blocked" || memberStatus === "closed") {
+          console.log("[Wallet] Account is", memberStatus, "— redirecting to login");
+          localStorage.removeItem("memberId");
+          localStorage.removeItem("memberEmail");
+          setLoading(false);
+          navigate("/login", {
+            state: {
+              error: memberStatus === "blocked"
+                ? "Your account has been blocked. Please contact support."
+                : "Your account has been closed. Please contact support.",
+            },
+          });
+          return;
+        }
+
         setWallet(w);
         setLoading(false);
 
@@ -414,6 +432,24 @@ export default function Wallet() {
         setError(data?.error || "Failed to refresh wallet.");
       } else {
         const w = data.wallet ?? null;
+
+        // ✅ Block access for blocked or closed accounts
+        const memberStatus = (w?.member_status || "active").toLowerCase();
+        if (memberStatus === "blocked" || memberStatus === "closed") {
+          console.log("[Wallet] Account is", memberStatus, "— redirecting to login");
+          localStorage.removeItem("memberId");
+          localStorage.removeItem("memberEmail");
+          setLoading(false);
+          navigate("/login", {
+            state: {
+              error: memberStatus === "blocked"
+                ? "Your account has been blocked. Please contact support."
+                : "Your account has been closed. Please contact support.",
+            },
+          });
+          return;
+        }
+
         setWallet(w);
 
         try {

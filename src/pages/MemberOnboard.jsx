@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import AvatarUpload from "../components/AvatarUpload.jsx";
+import AddressLookup from "../components/AddressLookup.jsx";
 
 function MemberOnboard() {
   const navigate = useNavigate();
@@ -478,6 +479,22 @@ function MemberOnboard() {
         <div className="member-form-row">
           <label className="member-form-label">Email:</label>
           <input name="member_email" type="email" value={formData.member_email} onChange={handleChange} className="member-form-input" />
+        </div>
+
+        <div className="member-form-row">
+          <label className="member-form-label">Address Lookup:</label>
+          <AddressLookup
+            onSelect={({ line1, city, state, zip, country }) => {
+              setFormData((prev) => ({
+                ...prev,
+                member_address_line1: line1,
+                member_town_city: city,
+                member_state: state,
+                member_zip: zip,
+                member_country: country,
+              }));
+            }}
+          />
         </div>
 
         <div className="member-form-row">

@@ -1,0 +1,48 @@
+/* src/components/AddressLookup.css
+   Override Geoapify autocomplete styles to match StockLoyal form inputs */
+
+.address-lookup-wrapper .geoapify-autocomplete-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2937;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.address-lookup-wrapper .geoapify-autocomplete-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.address-lookup-wrapper .geoapify-autocomplete-items {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 999;
+}
+
+.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item:hover,
+.address-lookup-wrapper .geoapify-autocomplete-items .geoapify-autocomplete-item.active {
+  background: #eff6ff;
+}
+
+/* Hide the clear button if you prefer — remove this to keep it */
+.address-lookup-wrapper .geoapify-close-button {
+  top: 50%;
+  transform: translateY(-50%);
+}

@@ -52,6 +52,7 @@ try {
                 w.member_id,
                 w.member_email,
                 w.member_password_hash,
+                w.member_status,
                 w.merchant_id,
                 m.merchant_name,
                 w.broker,
@@ -73,6 +74,7 @@ try {
                 w.member_id,
                 w.member_email,
                 w.member_password_hash,
+                w.member_status,
                 w.merchant_id,
                 m.merchant_name,
                 w.broker,
@@ -102,6 +104,19 @@ try {
     if ($hash === '' || !password_verify($password, $hash)) {
         http_response_code(401);
         echo json_encode(["success" => false, "error" => "Invalid password"]);
+        exit;
+    }
+
+    // ✅ Check member_status — reject blocked or closed accounts
+    $memberStatus = strtolower(trim($user['member_status'] ?? 'active'));
+    if ($memberStatus === 'blocked') {
+        http_response_code(403);
+        echo json_encode(["success" => false, "error" => "Your account has been blocked. Please contact support."]);
+        exit;
+    }
+    if ($memberStatus === 'closed') {
+        http_response_code(403);
+        echo json_encode(["success" => false, "error" => "Your account has been closed. Please contact support."]);
         exit;
     }
 
