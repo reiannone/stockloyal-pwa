@@ -84,8 +84,15 @@ export default function AdminLanding() {
       bgColor: "#ecfeff",
     },
     {
+      to: "/prepare-orders",
+      label: "Prepare Batch Orders",
+      icon: <Paintbrush size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+    {
       to: "/sweep-admin",
-      label: "Sweep Admin",
+      label: "Sweep Process Manager",
       icon: <Paintbrush size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",

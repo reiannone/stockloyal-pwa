@@ -34,6 +34,7 @@ import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import PrepareOrders from "./pages/PrepareOrders.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
 import BrokerExecAdmin from "./pages/BrokerExecAdmin.jsx";
 import SocialPostsAdmin from "./pages/SocialPostsAdmin.jsx";
@@ -334,6 +335,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <OrdersAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/prepare-orders"
+                element={
+                  <PageWrapper>
+                    <PrepareOrders />
                   </PageWrapper>
                 }
               />
