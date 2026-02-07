@@ -432,8 +432,9 @@ class SweepProcess
             $stmt = $this->conn->prepare("
                 INSERT INTO broker_notifications
                     (broker_id, broker_name, event_type, status,
-                     member_id, basket_id, payload, sent_at)
-                VALUES (?, ?, 'order.placed', ?, ?, ?, ?, NOW())
+                     member_id, basket_id, payload,
+                     response_code, response_body, error_message, sent_at)
+                VALUES (?, ?, 'order.placed', ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
             $stmt->execute([
                 $brokerInfo['broker_id']   ?? null,
@@ -441,16 +442,10 @@ class SweepProcess
                 $status,
                 $memberId,
                 $basketId,
-                json_encode([
-                    'batch_id'         => $this->batchId,
-                    'http_status'      => $response['http_status'] ?? null,
-                    'acknowledged'     => $acked,
-                    'acknowledged_at'  => $response['acknowledged_at'] ?? null,
-                    'broker_ref'       => $response['broker_ref'] ?? null,
-                    'request_payload'  => $payload,
-                    'response_body'    => $response['body'] ?? null,
-                    'error'            => $response['error'] ?? null,
-                ], JSON_UNESCAPED_SLASHES),
+                json_encode($payload, JSON_UNESCAPED_SLASHES),
+                $response['http_status'] ?? null,
+                $response['body'] ? json_encode($response['body'], JSON_UNESCAPED_SLASHES) : null,
+                $response['error'] ?? null,
             ]);
             $this->log("📝 broker_notifications: basket={$basketId} status={$status}");
         } catch (\PDOException $e) {
