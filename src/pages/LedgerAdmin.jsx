@@ -135,10 +135,11 @@ export default function TransactionsLedgerAdmin() {
       if (data?.success) {
         const list = data.rows || [];
         setRows(list);
-        if (list.length > 0) {
-          setSelected(withDefaultTimezone(list[0], detectedTz));
-        } else {
-          setSelected(null);
+        // Keep selection on the same PK if still present, otherwise clear
+        if (selected) {
+          const pk = primaryKey(selected);
+          const found = list.find((r) => primaryKey(r) === pk);
+          setSelected(found ? withDefaultTimezone(found, detectedTz) : null);
         }
       } else {
         console.warn("[TransactionsLedgerAdmin] fetch error:", data?.error);
@@ -413,9 +414,12 @@ export default function TransactionsLedgerAdmin() {
         </div>
       </div>
 
-      {/* Edit panel */}
-      <div className="card" ref={editPanelRef}>
-        {selected ? (
+      {/* Edit panel — only visible when a row is clicked */}
+      {selected && (
+      <div className="card" ref={editPanelRef} style={{ marginBottom: "1rem" }}>
+        <h2 className="subheading" style={{ marginTop: 0 }}>
+          Edit Ledger Row: {primaryKey(selected) ?? ""}
+        </h2>
           <form onSubmit={saveRow} className="form-grid">
             {/* Primary Key (read-only) */}
             <FormRow label="TX ID">
@@ -613,12 +617,13 @@ export default function TransactionsLedgerAdmin() {
                   Delete Row
                 </button>
               )}
+              <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
+                Close
+              </button>
             </div>
           </form>
-        ) : (
-          <p className="body-text">Select a ledger row from the table below to edit.</p>
-        )}
       </div>
+      )}
 
       {/* Ledger table */}
       <h2 className="subheading">Ledger Records</h2>
@@ -636,7 +641,6 @@ export default function TransactionsLedgerAdmin() {
                 <th>Channel / Status</th>
                 <th>Points / Cash</th>
                 <th>Event (Local)</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -644,7 +648,12 @@ export default function TransactionsLedgerAdmin() {
                 const pk = primaryKey(r);
                 const localTime = toLocalZonedString(r?.event_at, r?.member_timezone || detectedTz);
                 return (
-                  <tr key={pk ?? Math.random()}>
+                  <tr
+                    key={pk ?? Math.random()}
+                    onClick={() => handleEditClick(r)}
+                    style={{ cursor: 'pointer' }}
+                    title="Click to edit this ledger row"
+                  >
                     <td>{pk ?? "-"}</td>
                     <td>{r?.member_id ?? "-"}</td>
                     <td>{r?.order_id ?? "-"}</td>
@@ -666,17 +675,12 @@ export default function TransactionsLedgerAdmin() {
                       <div>Cash: {fmtMoney(r?.amount_cash)}</div>
                     </td>
                     <td>{localTime}</td>
-                    <td>
-                      <button className="btn-secondary" onClick={() => handleEditClick(r)}>
-                        Edit
-                      </button>
-                    </td>
                   </tr>
                 );
               })}
               {displayRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
                     No ledger records found.
                   </td>
                 </tr>

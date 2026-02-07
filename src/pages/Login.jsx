@@ -339,6 +339,26 @@ export default function Login() {
       const effectiveMerchantId = data.merchant_id ?? merchantId;
       await hydrateMerchant(effectiveMerchantId);
 
+      // ✅ Sync points & tier from merchant before navigating to wallet
+      try {
+        const syncData = await apiPost("request-member-sync.php", { member_id: data.member_id });
+        if (syncData?.success) {
+          if (syncData.points_changed) {
+            localStorage.setItem("points", String(syncData.points));
+            localStorage.setItem("cashBalance", Number(syncData.cash_balance || 0).toFixed(2));
+          }
+          if (syncData.tier_changed) {
+            localStorage.setItem("memberTier", String(syncData.member_tier));
+          }
+          if (syncData.points_changed || syncData.tier_changed) {
+            console.log("[Login] Merchant sync applied:", syncData);
+            window.dispatchEvent(new Event("member-updated"));
+          }
+        }
+      } catch (err) {
+        console.warn("[Login] Merchant sync failed (non-blocking):", err);
+      }
+
       navigate("/wallet");
     } catch (err) {
       console.error("[Login] Error caught:", err);

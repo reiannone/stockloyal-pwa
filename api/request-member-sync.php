@@ -138,7 +138,13 @@ try {
     // 2.  Look up the merchant's webhook_url
     // ------------------------------------------------------------------
     $merchantStmt = $conn->prepare("
-        SELECT merchant_id, merchant_name, webhook_url, api_key, conversion_rate
+        SELECT merchant_id, merchant_name, webhook_url, api_key, conversion_rate,
+               tier1_name, tier1_conversion_rate,
+               tier2_name, tier2_conversion_rate,
+               tier3_name, tier3_conversion_rate,
+               tier4_name, tier4_conversion_rate,
+               tier5_name, tier5_conversion_rate,
+               tier6_name, tier6_conversion_rate
         FROM   merchant
         WHERE  merchant_id = ?
         LIMIT  1
@@ -208,7 +214,21 @@ try {
     $newPoints       = (int) $wallet['points'];
     $newTier         = $wallet['member_tier'];
     $newCashBalance  = $wallet['cash_balance'];
-    $conversionRate  = (float) ($merchant['conversion_rate'] ?? 0);
+    $baseRate        = (float) ($merchant['conversion_rate'] ?? 0);
+    if ($baseRate <= 0) $baseRate = 0.01;
+
+    // Helper: resolve effective conversion rate for a given tier
+    $resolveRate = function (string $tierName) use ($merchant, $baseRate): float {
+        if (!$tierName) return $baseRate;
+        for ($i = 1; $i <= 6; $i++) {
+            $tName = $merchant["tier{$i}_name"] ?? '';
+            if ($tName && strtolower($tName) === strtolower($tierName)) {
+                $tRate = (float) ($merchant["tier{$i}_conversion_rate"] ?? 0);
+                return $tRate > 0 ? $tRate : $baseRate;
+            }
+        }
+        return $baseRate;
+    };
 
     if ($httpCode >= 200 && $httpCode < 300 && $response) {
         $merchantResponse = json_decode($response, true);
@@ -241,23 +261,29 @@ try {
 
             // --- persist changes ---
             if ($pointsUpdated || $tierUpdated) {
+                // Resolve the effective rate using the NEW tier
+                $conversionRate = $resolveRate($newTier);
+                logSync($logFile, "Conversion rate for tier '{$newTier}': {$conversionRate} (base: {$baseRate})");
+
                 $setClauses = ['updated_at = NOW()'];
                 $params     = [];
 
                 if ($pointsUpdated) {
                     $setClauses[] = 'points = ?';
                     $params[]     = $newPoints;
-
-                    if ($conversionRate > 0) {
-                        $newCashBalance = number_format($newPoints * $conversionRate, 2, '.', '');
-                        $setClauses[]   = 'cash_balance = ?';
-                        $params[]       = $newCashBalance;
-                    }
                 }
 
                 if ($tierUpdated) {
                     $setClauses[] = 'member_tier = ?';
                     $params[]     = $newTier;
+                }
+
+                // Recalculate cash_balance whenever points OR tier changes
+                // (tier change means different rate, so cash changes even if points didn't)
+                if ($conversionRate > 0) {
+                    $newCashBalance = number_format($newPoints * $conversionRate, 2, '.', '');
+                    $setClauses[]   = 'cash_balance = ?';
+                    $params[]       = $newCashBalance;
                 }
 
                 $params[] = $memberId;
@@ -271,13 +297,14 @@ try {
                     $diff      = $newPoints - (int) $wallet['points'];
                     $direction = $diff > 0 ? 'inbound' : 'outbound';
                     $txType    = $diff > 0 ? 'merchant_sync_credit' : 'merchant_sync_debit';
+                    $cashDelta = $conversionRate > 0 ? number_format(abs($diff) * $conversionRate, 2, '.', '') : '0.00';
 
                     try {
                         $conn->prepare("
                             INSERT INTO transactions_ledger
                               (member_id, merchant_id, client_tx_id, tx_type, direction,
-                               channel, status, amount_points, note, member_timezone)
-                            VALUES (?, ?, ?, ?, ?, 'Merchant Sync', 'confirmed', ?, ?, ?)
+                               channel, status, amount_points, amount_cash, note, member_timezone)
+                            VALUES (?, ?, ?, ?, ?, 'Merchant Sync', 'confirmed', ?, ?, ?, ?)
                         ")->execute([
                             $memberId,
                             $merchantId,
@@ -285,6 +312,7 @@ try {
                             $txType,
                             $direction,
                             abs($diff),
+                            $cashDelta,
                             "Merchant sync: {$wallet['points']} → {$newPoints} (from {$merchant['merchant_name']})",
                             $wallet['member_timezone'] ?? 'America/New_York',
                         ]);

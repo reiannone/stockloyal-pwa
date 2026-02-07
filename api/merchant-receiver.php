@@ -612,6 +612,70 @@ function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array
         logMessage($logFile, "✅ Confirmed post-deduction balance: {$reportedBefore} − {$pointsUsed} = {$newBalance} (wallet already deducted), tier={$currentTier}");
     }
 
+    // ✅ Update merchant_notifications to mark this redemption as confirmed by merchant
+    try {
+        $notifStmt = $conn->prepare("
+            UPDATE merchant_notifications 
+            SET status = 'delivered',
+                delivered_at = NOW(),
+                response_data = ?
+            WHERE member_id = ? 
+              AND basket_id = ? 
+              AND event_type = 'points_redeemed'
+              AND status != 'delivered'
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        $responseData = json_encode([
+            'confirmed_balance' => $newBalance,
+            'tier' => $currentTier,
+            'merchant_confirmed_at' => gmdate('c'),
+        ]);
+        $notifStmt->execute([$responseData, $memberId, $orderId]);
+        $notifUpdated = $notifStmt->rowCount() > 0;
+        logMessage($logFile, $notifUpdated
+            ? "✅ merchant_notifications updated to 'delivered' for basket={$orderId}"
+            : "⚠️ No matching merchant_notification found for basket={$orderId}");
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ merchant_notifications update failed: " . $e->getMessage());
+    }
+
+    // ✅ SIMULATION: Merchant sends back a confirmation with authoritative balance
+    // In production, the real merchant would POST this asynchronously after processing
+    $callbackUrl = 'https://api.stockloyal.com/api/merchant-receiver.php';
+    $callbackPayload = json_encode([
+        'event_type'  => 'member_sync_response',
+        'member_id'   => $memberId,
+        'merchant_id' => $merchantId,
+        'points'      => $newBalance,
+        'tier'        => $currentTier,
+        'request_id'  => $requestId,
+        'reason'      => "post_redemption_confirmation",
+        'order_id'    => $orderId,
+    ]);
+
+    try {
+        $ch = curl_init($callbackUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $callbackPayload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'X-Event-Type: member_sync_response',
+                'X-Source: MerchantSimulation',
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 3,
+            CURLOPT_CONNECTTIMEOUT => 2,
+        ]);
+        $cbResponse = curl_exec($ch);
+        $cbCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        logMessage($logFile, "✅ Sent post-redemption sync callback: HTTP {$cbCode}, balance={$newBalance}, tier={$currentTier}");
+    } catch (\Exception $e) {
+        logMessage($logFile, "⚠️ Post-redemption callback failed: " . $e->getMessage());
+    }
+
     return [
         'success'          => true,
         'event'            => 'points_redeemed',
@@ -624,6 +688,7 @@ function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array
         'order_id'         => $orderId,
         'request_id'       => $requestId,
         'merchant_message' => "Simulated — {$reportedBefore} − {$pointsUsed} = {$newBalance} (confirmed)",
+        'callback_sent'    => true,
     ];
 }
 
@@ -767,6 +832,9 @@ function handleMemberSyncResponse(PDO $conn, array $payload, string $logFile): a
     $params     = [];
     $changes    = [];
 
+    // --- Extract tier early so it can be used for rate resolution ---
+    $newTier = $payload['tier'] ?? $payload['member_tier'] ?? $payload['loyalty_tier'] ?? null;
+
     // --- Check points ---
     $newPoints = $payload['points'] ?? $payload['available_points'] ?? $payload['point_balance'] ?? null;
     if ($newPoints !== null) {
@@ -776,19 +844,43 @@ function handleMemberSyncResponse(PDO $conn, array $payload, string $logFile): a
             $params[]     = $newPoints;
             $changes['points'] = ['from' => (int) $current['points'], 'to' => $newPoints];
 
-            // Recalculate cash_balance using merchant conversion_rate
+            // Recalculate cash_balance using tier-aware conversion rate
             if ($merchantId) {
                 try {
-                    $rateStmt = $conn->prepare("SELECT conversion_rate FROM merchant WHERE merchant_id = ? LIMIT 1");
+                    $rateStmt = $conn->prepare("
+                        SELECT conversion_rate,
+                               tier1_name, tier1_conversion_rate,
+                               tier2_name, tier2_conversion_rate,
+                               tier3_name, tier3_conversion_rate,
+                               tier4_name, tier4_conversion_rate,
+                               tier5_name, tier5_conversion_rate,
+                               tier6_name, tier6_conversion_rate
+                        FROM merchant WHERE merchant_id = ? LIMIT 1
+                    ");
                     $rateStmt->execute([$merchantId]);
                     $rateRow        = $rateStmt->fetch(PDO::FETCH_ASSOC);
-                    $conversionRate = (float) ($rateRow['conversion_rate'] ?? 0);
+                    $baseRate       = (float) ($rateRow['conversion_rate'] ?? 0);
+
+                    // Resolve tier-specific rate (use new tier if changed, else current)
+                    $effectiveTier = $newTier ?? $current['member_tier'] ?? '';
+                    $conversionRate = $baseRate;
+                    if ($effectiveTier && $rateRow) {
+                        for ($i = 1; $i <= 6; $i++) {
+                            $tName = $rateRow["tier{$i}_name"] ?? '';
+                            if ($tName && strtolower($tName) === strtolower($effectiveTier)) {
+                                $tRate = (float) ($rateRow["tier{$i}_conversion_rate"] ?? 0);
+                                if ($tRate > 0) $conversionRate = $tRate;
+                                break;
+                            }
+                        }
+                    }
 
                     if ($conversionRate > 0) {
                         $newCash      = number_format($newPoints * $conversionRate, 2, '.', '');
                         $setClauses[] = 'cash_balance = ?';
                         $params[]     = $newCash;
                         $changes['cash_balance'] = $newCash;
+                        logMessage($logFile, "Conversion rate for tier '{$effectiveTier}': {$conversionRate} (base: {$baseRate})");
                     }
                 } catch (PDOException $e) {
                     logMessage($logFile, "⚠️ conversion_rate lookup failed: " . $e->getMessage());
@@ -798,7 +890,6 @@ function handleMemberSyncResponse(PDO $conn, array $payload, string $logFile): a
     }
 
     // --- Check tier ---
-    $newTier = $payload['tier'] ?? $payload['member_tier'] ?? $payload['loyalty_tier'] ?? null;
     if ($newTier !== null && $newTier !== $current['member_tier']) {
         $setClauses[] = 'member_tier = ?';
         $params[]     = $newTier;

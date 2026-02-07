@@ -365,47 +365,6 @@ export default function Wallet() {
           }
         })();
 
-        // ✅ Background: Sync points & tier from merchant
-        (async () => {
-          try {
-            const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
-            if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
-              console.log("[Wallet] Merchant sync returned changes:", syncData);
-
-              // Update wallet state with fresh values
-              setWallet(prev => ({
-                ...prev,
-                ...(syncData.points_changed ? { points: syncData.points, cash_balance: syncData.cash_balance } : {}),
-                ...(syncData.tier_changed ? { member_tier: syncData.member_tier } : {}),
-              }));
-
-              // Update localStorage
-              if (syncData.points_changed) {
-                localStorage.setItem("points", String(syncData.points));
-                localStorage.setItem("cashBalance", Number(syncData.cash_balance || 0).toFixed(2));
-              }
-              if (syncData.tier_changed) {
-                localStorage.setItem("memberTier", String(syncData.member_tier));
-              }
-              window.dispatchEvent(new Event("member-updated"));
-
-              // Show notification
-              setMerchantSyncInfo({
-                pointsChanged: syncData.points_changed,
-                tierChanged: syncData.tier_changed,
-                newPoints: syncData.points,
-                previousPoints: syncData.previous_points,
-                newTier: syncData.member_tier,
-                previousTier: syncData.previous_tier,
-              });
-              setMerchantSynced(true);
-              setTimeout(() => setMerchantSynced(false), 5000);
-            }
-          } catch (err) {
-            console.warn("[Wallet] Merchant sync failed:", err);
-            // Silently fail — user still sees DB-cached values
-          }
-        })();
       } catch (err) {
         console.error("[Wallet] wallet fetch error:", err);
         if (!mounted) return;
@@ -427,6 +386,29 @@ export default function Wallet() {
     setWarning((w) => ({ ...w, open: false }));
 
     try {
+      // ✅ Step 1: Sync points & tier from merchant FIRST so DB has fresh values
+      try {
+        const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
+        if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
+          console.log("[Wallet] Merchant sync (refresh) returned changes:", syncData);
+
+          // Show notification
+          setMerchantSyncInfo({
+            pointsChanged: syncData.points_changed,
+            tierChanged: syncData.tier_changed,
+            newPoints: syncData.points,
+            previousPoints: syncData.previous_points,
+            newTier: syncData.member_tier,
+            previousTier: syncData.previous_tier,
+          });
+          setMerchantSynced(true);
+          setTimeout(() => setMerchantSynced(false), 5000);
+        }
+      } catch (err) {
+        console.warn("[Wallet] Merchant sync on refresh failed:", err);
+      }
+
+      // ✅ Step 2: Now fetch wallet with the freshly-synced DB values
       const data = await apiPost("get-wallet.php", { member_id: memberId });
       if (!data?.success) {
         setError(data?.error || "Failed to refresh wallet.");
@@ -514,44 +496,6 @@ export default function Wallet() {
             } catch (err) {
               console.warn("[Wallet] Failed to fetch broker data on refresh:", err);
             }
-          }
-        })();
-
-        // ✅ Background: Sync points & tier from merchant on refresh
-        (async () => {
-          try {
-            const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
-            if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
-              console.log("[Wallet] Merchant sync (refresh) returned changes:", syncData);
-
-              setWallet(prev => ({
-                ...prev,
-                ...(syncData.points_changed ? { points: syncData.points, cash_balance: syncData.cash_balance } : {}),
-                ...(syncData.tier_changed ? { member_tier: syncData.member_tier } : {}),
-              }));
-
-              if (syncData.points_changed) {
-                localStorage.setItem("points", String(syncData.points));
-                localStorage.setItem("cashBalance", Number(syncData.cash_balance || 0).toFixed(2));
-              }
-              if (syncData.tier_changed) {
-                localStorage.setItem("memberTier", String(syncData.member_tier));
-              }
-              window.dispatchEvent(new Event("member-updated"));
-
-              setMerchantSyncInfo({
-                pointsChanged: syncData.points_changed,
-                tierChanged: syncData.tier_changed,
-                newPoints: syncData.points,
-                previousPoints: syncData.previous_points,
-                newTier: syncData.member_tier,
-                previousTier: syncData.previous_tier,
-              });
-              setMerchantSynced(true);
-              setTimeout(() => setMerchantSynced(false), 5000);
-            }
-          } catch (err) {
-            console.warn("[Wallet] Merchant sync on refresh failed:", err);
           }
         })();
       }
@@ -865,7 +809,7 @@ export default function Wallet() {
               <CreditCard size={24} />
             </div>
             <div>
-              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Available Cash</div>
+              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Available Cash Value</div>
               <div className="caption">Spendable balance</div>
             </div>
           </div>
