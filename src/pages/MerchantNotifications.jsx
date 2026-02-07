@@ -241,7 +241,7 @@ export default function MerchantNotifications() {
 
   return (
     <div className="app-container app-content">
-      <h1 className="page-title">Merchant Notifications Administration</h1>
+      <h1 className="page-title">Merchant Webhook Notifications</h1>
       <p className="page-deck">
         Review merchant webhook notifications. Monitor delivery status and retry failed notifications.
       </p>
@@ -476,7 +476,7 @@ export default function MerchantNotifications() {
 
       {/* Table */}
       <div className="card">
-        <h3 style={{ marginBottom: "1rem" }}>Merchant Notifications</h3>
+        <h3 style={{ marginBottom: "1rem" }}>Merchant Webhook Notifications</h3>
         {loading ? (
           <p>Loading...</p>
         ) : (

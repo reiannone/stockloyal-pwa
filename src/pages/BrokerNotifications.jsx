@@ -244,7 +244,7 @@ export default function BrokerNotifications() {
 
   return (
     <div className="app-container app-content">
-      <h1 className="page-title">Broker Notifications Administration</h1>
+      <h1 className="page-title">Broker Webhook Notifications</h1>
       <p className="page-deck">
         Review broker webhook notifications. Monitor delivery status and retry failed notifications.
       </p>
@@ -470,7 +470,7 @@ export default function BrokerNotifications() {
 
       {/* Table */}
       <div className="card">
-        <h3 style={{ marginBottom: "1rem" }}>Broker Notifications</h3>
+        <h3 style={{ marginBottom: "1rem" }}>Broker Webhook Notifications</h3>
 
         {loading ? (
           <p>Loading...</p>

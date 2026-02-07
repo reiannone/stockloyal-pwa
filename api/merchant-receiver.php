@@ -16,7 +16,7 @@ declare(strict_types=1);
  *   - member_sync_request: SIMULATION — responds with current tier + balance;
  *     PRIORITY 1: if a recent redemption exists in merchant_notifications (24h),
  *       returns the confirmed post-redemption wallet balance (no random)
- *     PRIORITY 2: if no recent redemption, returns random 10,000–3,000,000
+ *     PRIORITY 2: if no recent redemption, returns random 1,000–500,000
  *   - member_sync_response: Async callback with member's current points/tier
  *     (sent by merchant in response to a member_sync_request from request-member-sync.php)
  * 
@@ -705,7 +705,7 @@ function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array
  *     "yes, we agree with the post-order balance."
  * 
  *   PRIORITY 2 – No recent redemption:
- *     Falls back to a random integer between 10,000 and 3,000,000 for
+ *     Falls back to a random integer between 1,000 and 500,000 for
  *     general sync testing.
  * 
  *   Tier is always returned from the wallet table.
@@ -787,7 +787,7 @@ function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): ar
     // ------------------------------------------------------------------
     // PRIORITY 2: No recent redemption — random points fallback
     // ------------------------------------------------------------------
-    $simulatedPoints = random_int(10000, 3000000);
+    $simulatedPoints = random_int(1000, 500000);
 
     logMessage($logFile, "✅ No recent redemptions — returning random balance: {$simulatedPoints} pts, tier={$currentTier}");
 

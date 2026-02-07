@@ -1,6 +1,7 @@
 // src/pages/AdminLanding.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiPost } from "../api";
 import {
   CreditCard,
   FileText,
@@ -25,6 +26,7 @@ import {
   ShoppingBasket,
   ClipboardCheck,
   CircleDollarSign,
+  CheckCircle2,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -33,14 +35,26 @@ export default function AdminLanding() {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [queueCounts, setQueueCounts] = useState(null);
 
   const ADMIN_PASSWORD = "StockLoyal2024!";
+
+  const fetchQueueCounts = async () => {
+    try {
+      const data = await apiPost("admin-queue-counts.php");
+      if (data?.success) setQueueCounts(data.counts);
+    } catch (err) {
+      console.warn("[AdminLanding] Failed to fetch queue counts:", err);
+    }
+  };
 
   useEffect(() => {
     const auth = localStorage.getItem("adminAuthenticated") === "true";
     setIsAuthenticated(auth);
     if (!auth) {
       setShowAuthPrompt(true);
+    } else {
+      fetchQueueCounts();
     }
   }, []);
 
@@ -51,6 +65,7 @@ export default function AdminLanding() {
       setShowAuthPrompt(false);
       setPassword("");
       setError("");
+      fetchQueueCounts();
     } else {
       setError("Incorrect password. Please try again.");
       setPassword("");
@@ -151,14 +166,14 @@ export default function AdminLanding() {
     },
     {
       to: "/merchant-notifications",
-      label: "Merchant Notifications",
+      label: "Merchant Webhook Notifications",
       icon: <Bell size={32} />,
       color: "#f97316",
       bgColor: "#fff7ed",
     },
     {
       to: "/broker-notifications",
-      label: "Broker Notifications",
+      label: "Broker Webhook Notifications",
       icon: <BellRing size={32} />,
       color: "#ef4444",
       bgColor: "#fef2f2",
@@ -459,66 +474,63 @@ export default function AdminLanding() {
           }}
         >
           <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: "600", color: "#374151" }}>
-            Quick Actions
+            Bulk Actions
           </h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            <button
-              onClick={() => navigate("/sweep-admin")}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#6366f1",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <Paintbrush size={18} />
-              Sweep Process Admin
-            </button>
-            <button
-              onClick={() => navigate("/payments-processing")}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#3b82f6",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <CreditCard size={18} />
-              Payments Processing
-            </button>
-            <button
-              onClick={() => navigate("/dashboard")}
-              style={{
-                padding: "10px 20px",
-                backgroundColor: "#10b981",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <ChartColumn size={18} />
-              KPI Dashbaord
-            </button>
+            {[
+              { to: "/prepare-orders", label: "Prepare Orders", icon: <ClipboardCheck size={18} />, key: "prepare", bg: "#6366f1" },
+              { to: "/sweep-admin", label: "Order Entry", icon: <Paintbrush size={18} />, key: "sweep", bg: "#6366f1" },
+              { to: "/admin-broker-exec", label: "Broker Order Execution", icon: <Briefcase size={18} />, key: "execute", bg: "#6366f1" },
+              { to: "/payments-processing", label: "Payment Settlement", icon: <CreditCard size={18} />, key: "payments", bg: "#3b82f6" },
+            ].map(({ to, label, icon, key, bg }) => {
+              const count = queueCounts?.[key] ?? null;
+              const isZero = count === 0;
+              return (
+                <button
+                  key={to}
+                  onClick={() => navigate(to)}
+                  style={{
+                    padding: "10px 20px",
+                    backgroundColor: bg,
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    position: "relative",
+                  }}
+                >
+                  {icon}
+                  {label}
+                  {count !== null && (
+                    isZero ? (
+                      <CheckCircle2 size={18} color="#4ade80" style={{ marginLeft: 4 }} />
+                    ) : (
+                      <span
+                        style={{
+                          marginLeft: 4,
+                          backgroundColor: "#ef4444",
+                          color: "white",
+                          fontSize: "12px",
+                          fontWeight: "700",
+                          borderRadius: "10px",
+                          padding: "2px 8px",
+                          minWidth: "20px",
+                          textAlign: "center",
+                          lineHeight: "16px",
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
