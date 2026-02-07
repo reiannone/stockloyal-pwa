@@ -206,6 +206,32 @@ try {
     }
 
     // ------------------------------------------------------------------
+    // 3b. Log to merchant_notifications
+    // ------------------------------------------------------------------
+    try {
+        $notifStatus = 'failed';
+        if ($httpCode >= 200 && $httpCode < 300) {
+            $notifStatus = 'sent';
+        }
+        $conn->prepare("
+            INSERT INTO merchant_notifications
+              (merchant_id, member_id, event_type, payload, status,
+               response_code, response_body, error_message, created_at, sent_at)
+            VALUES (?, ?, 'member_sync_request', ?, ?, ?, ?, ?, NOW(), NOW())
+        ")->execute([
+            $merchantId,
+            $memberId,
+            $outboundPayload,
+            $notifStatus,
+            $httpCode ?: null,
+            $response ?: null,
+            $curlError ?: null,
+        ]);
+    } catch (PDOException $e) {
+        logSync($logFile, "⚠️ merchant_notifications insert failed: " . $e->getMessage());
+    }
+
+    // ------------------------------------------------------------------
     // 4.  Process the merchant's response (if synchronous)
     // ------------------------------------------------------------------
     $synced          = false;

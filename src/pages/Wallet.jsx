@@ -52,6 +52,7 @@ export default function Wallet() {
   const [portfolioUpdated, setPortfolioUpdated] = useState(false);
   const [newPortfolioValue, setNewPortfolioValue] = useState(null);
   const [portfolioLastUpdated, setPortfolioLastUpdated] = useState(null);
+  const [lastPointsSync, setLastPointsSync] = useState(null);
 
   // Merchant sync notification
   const [merchantSynced, setMerchantSynced] = useState(false);
@@ -247,10 +248,11 @@ export default function Wallet() {
         setWallet(w);
         setLoading(false);
 
-        // Set portfolio last updated time
+        // Set last updated times using client-side clock (DB timestamps have ambiguous timezone)
         if (w?.updated_at) {
-          setPortfolioLastUpdated(w.updated_at);
+          setPortfolioLastUpdated(new Date().toISOString());
         }
+        setLastPointsSync(new Date().toISOString());
 
         // Sync key values to localStorage
         try {
@@ -389,20 +391,24 @@ export default function Wallet() {
       // ✅ Step 1: Sync points & tier from merchant FIRST so DB has fresh values
       try {
         const syncData = await apiPost("request-member-sync.php", { member_id: memberId });
-        if (syncData?.success && (syncData.points_changed || syncData.tier_changed)) {
-          console.log("[Wallet] Merchant sync (refresh) returned changes:", syncData);
+        if (syncData?.success) {
+          setLastPointsSync(new Date().toISOString());
 
-          // Show notification
-          setMerchantSyncInfo({
-            pointsChanged: syncData.points_changed,
-            tierChanged: syncData.tier_changed,
-            newPoints: syncData.points,
-            previousPoints: syncData.previous_points,
-            newTier: syncData.member_tier,
-            previousTier: syncData.previous_tier,
-          });
-          setMerchantSynced(true);
-          setTimeout(() => setMerchantSynced(false), 5000);
+          if (syncData.points_changed || syncData.tier_changed) {
+            console.log("[Wallet] Merchant sync (refresh) returned changes:", syncData);
+
+            // Show notification
+            setMerchantSyncInfo({
+              pointsChanged: syncData.points_changed,
+              tierChanged: syncData.tier_changed,
+              newPoints: syncData.points,
+              previousPoints: syncData.previous_points,
+              newTier: syncData.member_tier,
+              previousTier: syncData.previous_tier,
+            });
+            setMerchantSynced(true);
+            setTimeout(() => setMerchantSynced(false), 5000);
+          }
         }
       } catch (err) {
         console.warn("[Wallet] Merchant sync on refresh failed:", err);
@@ -993,8 +999,10 @@ export default function Wallet() {
         )}
       </div>
 
-      <p className="wallet-note" style={{ marginTop: 12 }}>
-        Market prices are delayed 15 minutes. Investment portfolio reflects shares purchased through the StockLoyal app only.{" "}
+      <p className="form-disclosure" style={{ marginTop: 12 }}>
+        Market prices are delayed 15 minutes. Investment portfolio reflects shares purchased through the StockLoyal app only.
+        {lastPointsSync && (<> Points last synced: {formatLastUpdated(lastPointsSync).replace('Updated ', '')}.</>)}
+        {" "}
         {wallet.broker && wallet.broker_url && (
           <>
             To see your full portfolio at {wallet.broker}, click{" "}
