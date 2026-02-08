@@ -286,10 +286,11 @@ try {
     try {
         $conn->beginTransaction();
 
-        // UPDATE orders
+        // UPDATE orders - mark as settled and paid
         $updateOrderStmt = $conn->prepare("
             UPDATE orders
             SET
+                status        = 'settled',
                 paid_flag     = 1,
                 paid_batch_id = :batch_id,
                 paid_at       = NOW()

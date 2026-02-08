@@ -52,41 +52,49 @@ try {
         WHERE  LOWER(status) = 'placed'
     ")->fetch()['cnt'];
 
-    // Payments: confirmed orders awaiting settlement
-    $payments = $conn->query("
-        SELECT COUNT(*) AS cnt
+    // Payments: orders with status 'confirmed' or 'executed' that are not yet paid (with basket count)
+    $paymentsRow = $conn->query("
+        SELECT 
+            COUNT(*) AS total_orders,
+            COUNT(DISTINCT basket_id) AS total_baskets
         FROM   orders
-        WHERE  LOWER(status) = 'confirmed'
-          AND  (settled_at IS NULL OR settled_at = '0000-00-00 00:00:00')
-    ")->fetch()['cnt'];
+        WHERE  LOWER(status) IN ('confirmed', 'executed')
+          AND  (paid_at IS NULL OR paid_at = '0000-00-00 00:00:00')
+    ")->fetch();
 
     echo json_encode([
         'success'  => true,
         'counts'   => [
-            'prepare'  => (int) $prepare,
-            'sweep'    => (int) $sweep,
-            'execute'  => (int) $execute,
-            'payments' => (int) $payments,
+            'prepare'         => (int) $prepare,
+            'sweep'           => (int) $sweep,
+            'execute'         => (int) $execute,
+            'payments'        => (int) $paymentsRow['total_orders'],
+            'payments_baskets'=> (int) $paymentsRow['total_baskets'],
+            'payments_orders' => (int) $paymentsRow['total_orders'],
         ],
     ]);
 
 } catch (Exception $e) {
-    // If settled_at column doesn't exist, retry payments without that filter
-    if (str_contains($e->getMessage(), 'settled_at')) {
+    // If paid_at column doesn't exist, retry payments without that filter
+    if (str_contains($e->getMessage(), 'paid_at')) {
         try {
-            $payments = $conn->query("
-                SELECT COUNT(*) AS cnt
+            $paymentsRow = $conn->query("
+                SELECT 
+                    COUNT(*) AS total_orders,
+                    COUNT(DISTINCT basket_id) AS total_baskets
                 FROM   orders
-                WHERE  LOWER(status) = 'confirmed'
-            ")->fetch()['cnt'];
+                WHERE  LOWER(status) IN ('confirmed', 'executed')
+            ")->fetch();
 
             echo json_encode([
                 'success'  => true,
                 'counts'   => [
-                    'prepare'  => (int) ($prepare ?? 0),
-                    'sweep'    => (int) ($sweep ?? 0),
-                    'execute'  => (int) ($execute ?? 0),
-                    'payments' => (int) $payments,
+                    'prepare'         => (int) ($prepare ?? 0),
+                    'sweep'           => (int) ($sweep ?? 0),
+                    'execute'         => (int) ($execute ?? 0),
+                    'payments'        => (int) $paymentsRow['total_orders'],
+                    'payments_baskets'=> (int) $paymentsRow['total_baskets'],
+                    'payments_orders' => (int) $paymentsRow['total_orders'],
                 ],
             ]);
             exit;

@@ -483,8 +483,17 @@ export default function AdminLanding() {
               { to: "/admin-broker-exec", label: "Broker Order Execution", icon: <Briefcase size={18} />, key: "execute", bg: "#6366f1" },
               { to: "/payments-processing", label: "Payment Settlement", icon: <CreditCard size={18} />, key: "payments", bg: "#3b82f6" },
             ].map(({ to, label, icon, key, bg }) => {
+              // Special handling for payments: show baskets and orders
+              const isPayments = key === "payments";
+              const baskets = queueCounts?.payments_baskets ?? null;
+              const orders = queueCounts?.payments_orders ?? null;
               const count = queueCounts?.[key] ?? null;
-              const isZero = count === 0;
+              
+              // For payments, check if both baskets and orders are zero
+              const paymentsIsZero = isPayments && baskets === 0 && orders === 0;
+              const isZero = isPayments ? paymentsIsZero : count === 0;
+              const hasData = isPayments ? (baskets !== null && orders !== null) : count !== null;
+
               return (
                 <button
                   key={to}
@@ -506,9 +515,27 @@ export default function AdminLanding() {
                 >
                   {icon}
                   {label}
-                  {count !== null && (
+                  {hasData && (
                     isZero ? (
                       <CheckCircle2 size={18} color="#4ade80" style={{ marginLeft: 4 }} />
+                    ) : isPayments ? (
+                      // Show "X baskets, Y orders" for payments
+                      <span
+                        style={{
+                          marginLeft: 4,
+                          backgroundColor: "#ef4444",
+                          color: "white",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          borderRadius: "10px",
+                          padding: "2px 8px",
+                          textAlign: "center",
+                          lineHeight: "16px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {baskets} {baskets === 1 ? "basket" : "baskets"}, {orders} {orders === 1 ? "order" : "orders"}
+                      </span>
                     ) : (
                       <span
                         style={{
