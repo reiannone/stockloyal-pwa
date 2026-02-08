@@ -237,6 +237,9 @@ class PrepareOrdersProcess
                 SELECT
                     COUNT(DISTINCT msp.member_id)    AS eligible_members,
                     COUNT(*)                         AS total_picks,
+                    COUNT(DISTINCT msp.symbol)       AS unique_symbols,
+                    COUNT(DISTINCT w.merchant_id)    AS unique_merchants,
+                    COUNT(DISTINCT w.broker)         AS unique_brokers,
                     COALESCE(SUM(
                         ROUND(({$sweepPts}) * ({$rate}) / pc.cnt, 2)
                     ), 0) AS est_total_amount,
@@ -318,6 +321,9 @@ class PrepareOrdersProcess
                 'success'            => true,
                 'eligible_members'   => (int)   ($counts['eligible_members'] ?? 0),
                 'total_picks'        => (int)   ($counts['total_picks'] ?? 0),
+                'unique_symbols'     => (int)   ($counts['unique_symbols'] ?? 0),
+                'unique_merchants'   => (int)   ($counts['unique_merchants'] ?? 0),
+                'unique_brokers'     => (int)   ($counts['unique_brokers'] ?? 0),
                 'est_total_amount'   => (float) ($counts['est_total_amount'] ?? 0),
                 'est_total_points'   => (int)   ($counts['est_total_points'] ?? 0),
                 'members_skipped'    => $skipped,
@@ -347,6 +353,46 @@ class PrepareOrdersProcess
         $this->log("PREPARE START: {$batchId}");
         if ($memberId)   $this->log("  filter member:   {$memberId}");
         if ($merchantId) $this->log("  filter merchant: {$merchantId}");
+
+        // ── Auto-cleanup: discard any open staged batches ──
+        try {
+            $openStmt = $this->conn->query(
+                "SELECT batch_id FROM prepare_batches WHERE status = 'staged'"
+            );
+            $openBatches = $openStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            if (!empty($openBatches)) {
+                $this->conn->prepare(
+                    "UPDATE prepared_orders SET status = 'discarded' WHERE batch_id IN ("
+                    . implode(',', array_fill(0, count($openBatches), '?'))
+                    . ") AND status = 'staged'"
+                )->execute($openBatches);
+
+                $this->conn->prepare(
+                    "UPDATE prepare_batches SET status = 'discarded', discarded_at = NOW() WHERE batch_id IN ("
+                    . implode(',', array_fill(0, count($openBatches), '?'))
+                    . ") AND status = 'staged'"
+                )->execute($openBatches);
+
+                $this->log("AUTO-DISCARD: " . count($openBatches) . " staged batch(es): " . implode(', ', $openBatches));
+            }
+        } catch (\Exception $e) {
+            $this->log("⚠️ Auto-discard failed: " . $e->getMessage());
+        }
+
+        // ── Auto-cleanup: cancel any pending orders ──
+        try {
+            $cancelStmt = $this->conn->prepare(
+                "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE LOWER(status) = 'pending'"
+            );
+            $cancelStmt->execute();
+            $cancelled = $cancelStmt->rowCount();
+            if ($cancelled > 0) {
+                $this->log("AUTO-CANCEL: {$cancelled} pending order(s) cancelled");
+            }
+        } catch (\Exception $e) {
+            $this->log("⚠️ Auto-cancel pending orders failed: " . $e->getMessage());
+        }
 
         try {
             $rate     = $this->tierRateExpr();
@@ -924,6 +970,36 @@ class PrepareOrdersProcess
             return ['success' => true, 'batches' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
         } catch (\Exception $e) {
             return ['success' => true, 'batches' => [], 'note' => $e->getMessage()];
+        }
+    }
+
+
+    // ====================================================================
+    // PUBLIC — cancelPendingOrders()
+    // Cancel any pending orders from previously approved batches
+    // that haven't been swept yet, preventing duplicates when
+    // a new batch is prepared.
+    // ====================================================================
+
+    public function cancelPendingOrders(): array
+    {
+        try {
+            $stmt = $this->conn->prepare("
+                UPDATE orders
+                SET    status = 'cancelled', updated_at = NOW()
+                WHERE  LOWER(status) = 'pending'
+            ");
+            $stmt->execute();
+            $cancelled = $stmt->rowCount();
+
+            $this->log("CANCEL PENDING ORDERS: {$cancelled} order(s) cancelled before new batch preparation");
+
+            return [
+                'success'          => true,
+                'orders_cancelled' => $cancelled,
+            ];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 }

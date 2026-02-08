@@ -22,12 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    // Prepare: members eligible for order preparation
-    // who don't already have pending or placed orders
+    // Prepare: total orders (stock picks) for eligible members
     $prepare = $conn->query("
         SELECT COUNT(*) AS cnt
-        FROM   wallet w
-        WHERE  w.sweep_percentage > 0
+        FROM   member_stock_picks msp
+        JOIN   wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
+        WHERE  msp.is_active = 1
+          AND  w.sweep_percentage > 0
           AND  w.cash_balance > 0
           AND  LOWER(w.member_status) = 'active'
           AND  NOT EXISTS (

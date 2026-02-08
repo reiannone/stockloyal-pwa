@@ -93,9 +93,17 @@ export default function PrepareOrders() {
 
   // ── Prepare (stage) ──
   const handlePrepare = async () => {
-    if (!window.confirm("Stage orders for all eligible members? This writes to the staging table.")) return;
+    const openBatches = batches.filter((b) => b.status === "staged");
+    let confirmMsg = "Stage orders for all eligible members?";
+    if (openBatches.length > 0) {
+      confirmMsg += `\n\n⚠️ ${openBatches.length} open staged batch(es) will be discarded automatically.`;
+    }
+    confirmMsg += "\n\nAny existing pending orders (not yet swept) will also be cancelled.";
+
+    if (!window.confirm(confirmMsg)) return;
     setPreparing(true);
     setPrepareResult(null);
+
     try {
       const payload = { action: "prepare" };
       if (filterMerchant) payload.merchant_id = filterMerchant;
@@ -391,16 +399,26 @@ export default function PrepareOrders() {
               {/* Summary cards */}
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                gap: "1rem",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: "0.75rem",
                 marginBottom: "1.5rem",
               }}>
-                <StatCard label="Eligible Members" value={fmtN(preview.eligible_members)} color="#6366f1" />
-                <StatCard label="Total Picks" value={fmtN(preview.total_picks)} color="#0ea5e9" />
-                <StatCard label="Est. Total Amount" value={fmt$(preview.est_total_amount)} color="#10b981" />
-                <StatCard label="Est. Total Points" value={fmtN(preview.est_total_points)} color="#f59e0b" />
+                <StatCard label="Members" value={fmtN(preview.eligible_members)} color="#6366f1" />
+                <StatCard label="Merchants" value={fmtN(preview.unique_merchants)} color="#8b5cf6" />
+                <StatCard label="Brokers" value={fmtN(preview.unique_brokers)} color="#0ea5e9" />
+                <StatCard label="Symbols" value={fmtN(preview.unique_symbols)} color="#06b6d4" />
+                <StatCard label="Baskets" value={fmtN(preview.eligible_members)} color="#14b8a6" />
+                <StatCard label="Total Orders" value={fmtN(preview.total_picks)} color="#0284c7" />
+                <StatCard label="Est. Amount" value={fmt$(preview.est_total_amount)} color="#10b981" />
+                <StatCard label="Est. Points" value={fmtN(preview.est_total_points)} color="#f59e0b" />
+                {preview.bypassed_below_min > 0 && (
+                  <StatCard label="Bypassed (Min)" value={fmtN(preview.bypassed_below_min)} color="#ef4444" />
+                )}
+                {preview.capped_at_max > 0 && (
+                  <StatCard label="Capped (Max)" value={fmtN(preview.capped_at_max)} color="#f97316" />
+                )}
                 {preview.members_skipped > 0 && (
-                  <StatCard label="Bypassed (0 pts)" value={fmtN(preview.members_skipped)} color="#ef4444" />
+                  <StatCard label="Skipped (0 pts)" value={fmtN(preview.members_skipped)} color="#6b7280" />
                 )}
               </div>
 
@@ -420,7 +438,7 @@ export default function PrepareOrders() {
                       <tr>
                         <th style={thStyle}>Merchant</th>
                         <th style={thStyle}>Members</th>
-                        <th style={thStyle}>Picks</th>
+                        <th style={thStyle}>Orders</th>
                       </tr>
                     </thead>
                     <tbody>
