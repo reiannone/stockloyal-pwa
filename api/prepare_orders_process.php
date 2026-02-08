@@ -235,7 +235,7 @@ class PrepareOrdersProcess
             // ── Eligible totals ──
             $sql = "
                 SELECT
-                    COUNT(DISTINCT msp.member_id)    AS eligible_members,
+                    COUNT(DISTINCT w.member_id)      AS eligible_members,
                     COUNT(*)                         AS total_picks,
                     COUNT(DISTINCT msp.symbol)       AS unique_symbols,
                     COUNT(DISTINCT w.merchant_id)    AS unique_merchants,
@@ -260,7 +260,7 @@ class PrepareOrdersProcess
 
             // ── Skipped (0 points but have picks) ──
             $skipSql = "
-                SELECT COUNT(DISTINCT msp.member_id)
+                SELECT COUNT(DISTINCT w.member_id)
                 FROM member_stock_picks msp
                 JOIN wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1 AND w.points <= 0
@@ -271,7 +271,7 @@ class PrepareOrdersProcess
             $byMerch = $this->conn->prepare("
                 SELECT w.merchant_id,
                        COALESCE(m2.merchant_name, w.merchant_id) AS merchant_name,
-                       COUNT(DISTINCT msp.member_id) AS members,
+                       COUNT(DISTINCT w.member_id) AS members,
                        COUNT(*) AS picks
                 FROM member_stock_picks msp
                 JOIN wallet w          ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
@@ -298,7 +298,7 @@ class PrepareOrdersProcess
                     ), 0) AS total_amount_capped
                 FROM (
                     SELECT
-                        msp_inner.member_id,
+                        w.member_id,
                         SUM(ROUND(({$sweepPts}) * ({$rate}) / pc2.cnt, 2)) AS basket_total,
                         COALESCE(bm.min_order_amount, 1.00) AS broker_min,
                         COALESCE(bm.max_order_amount, 100000.00) AS broker_max
@@ -310,7 +310,7 @@ class PrepareOrdersProcess
                         ON w.broker COLLATE utf8mb4_unicode_ci = bm.broker_id COLLATE utf8mb4_unicode_ci
                     WHERE msp_inner.is_active = 1 AND w.points > 0
                     {$merchantW}
-                    GROUP BY msp_inner.member_id, bm.min_order_amount, bm.max_order_amount
+                    GROUP BY w.member_id, bm.min_order_amount, bm.max_order_amount
                 ) member_baskets
             ";
             $blStmt = $this->conn->prepare($blSql);
@@ -346,7 +346,7 @@ class PrepareOrdersProcess
 
     public function prepare(?string $memberId = null, ?string $merchantId = null): array
     {
-        $batchId   = 'PREP-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
+        $batchId   = 'BATCH-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
         $startTime = microtime(true);
 
         $this->log(str_repeat('=', 80));
@@ -425,8 +425,8 @@ class PrepareOrdersProcess
                      member_tier, conversion_rate, sweep_percentage, status)
                 SELECT
                     ?,
-                    CONCAT(?, '-', msp.member_id),
-                    msp.member_id,
+                    CONCAT(?, '-', w.member_id),
+                    w.member_id,
                     w.merchant_id,
                     msp.symbol,
                     ROUND(({$sweepPts}) * ({$rate}) / pc.cnt, 2),
@@ -590,7 +590,7 @@ class PrepareOrdersProcess
 
             // ── Skipped members count ──
             $skipSql = "
-                SELECT COUNT(DISTINCT msp.member_id)
+                SELECT COUNT(DISTINCT w.member_id)
                 FROM member_stock_picks msp
                 JOIN wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1 AND w.points <= 0
@@ -865,10 +865,10 @@ class PrepareOrdersProcess
             // ── INSERT...SELECT → orders (uses real shares from staging) ──
             $ins = $this->conn->prepare("
                 INSERT INTO orders
-                    (member_id, merchant_id, basket_id, symbol, shares, amount,
+                    (member_id, merchant_id, basket_id, batch_id, symbol, shares, amount,
                      points_used, status, order_type, broker, member_timezone)
                 SELECT
-                    po.member_id, po.merchant_id, po.basket_id, po.symbol,
+                    po.member_id, po.merchant_id, po.basket_id, po.batch_id, po.symbol,
                     po.shares, po.amount, po.points_used,
                     'pending', 'sweep', po.broker, po.member_timezone
                 FROM prepared_orders po

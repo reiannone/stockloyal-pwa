@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
 
 $filterType      = $input['filter_type'] ?? 'all';   // all | liked | commented
-$memberId        = trim($input['member_id'] ?? '');  // current user (for liked/commented)
+$memberId        = strtolower(trim((string)($input['member_id'] ?? '')));  // current user (for liked/commented)
 $authorMemberId  = trim($input['author_member_id'] ?? ''); // filter by post author
 $limit           = max(1, min(100, (int)($input['limit'] ?? 20)));
 $offset          = max(0, (int)($input['offset'] ?? 0));

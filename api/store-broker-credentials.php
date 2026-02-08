@@ -36,7 +36,7 @@ $broker     = $input['broker']      ?? '';
 $brokerUrl  = $input['broker_url']  ?? '';   // <-- new
 $username   = $input['username']    ?? '';
 $password   = $input['password']    ?? '';
-$memberId   = $input['member_id']   ?? '';
+$memberId   = strtolower(trim((string)($input['member_id'] ?? '')));
 
 error_log("store-broker-credentials.php: Received JSON -> broker=$broker, brokerUrl=$brokerUrl, username=$username, memberId=$memberId");
 

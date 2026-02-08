@@ -22,7 +22,7 @@ require_once 'config.php'; // exposes $conn (PDO)
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
 
 // ---- Filters (all optional) ----
-$memberId  = isset($input['member_id'])  ? trim($input['member_id'])  : null;
+$memberId  = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 $orderId   = isset($input['order_id'])   ? $input['order_id']         : null;
 $txType    = isset($input['tx_type'])    ? trim($input['tx_type'])    : null;
 $status    = isset($input['status'])     ? trim($input['status'])     : null;

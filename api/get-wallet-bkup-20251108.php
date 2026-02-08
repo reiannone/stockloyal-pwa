@@ -68,7 +68,7 @@ if (json_last_error() !== JSON_ERROR_NONE) {
     exit;
 }
 
-$memberId = $input['member_id'] ?? null;
+$memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 error_log("member_id: " . ($memberId ?? 'null'));
 
 if (!$memberId) {

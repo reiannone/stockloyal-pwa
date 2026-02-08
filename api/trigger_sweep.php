@@ -36,6 +36,26 @@ try {
             $sweep   = new SweepProcess($conn);
             $results = $sweep->run($merchantId);
 
+            // Mark approved prepare_batches as "submitted" if all their orders have been swept
+            try {
+                $conn->exec("
+                    UPDATE prepare_batches pb
+                    SET    pb.status = 'submitted', pb.submitted_at = NOW()
+                    WHERE  pb.status = 'approved'
+                      AND  NOT EXISTS (
+                           SELECT 1 FROM orders o
+                           WHERE  LOWER(o.status) = 'pending'
+                             AND  (
+                                o.batch_id = pb.batch_id
+                                OR (o.batch_id IS NULL AND o.basket_id LIKE CONCAT(pb.batch_id, '-%'))
+                             )
+                      )
+                ");
+            } catch (\Exception $e) {
+                // Non-fatal — log but don't break sweep response
+                error_log("prepare_batches submitted update failed: " . $e->getMessage());
+            }
+
             echo json_encode([
                 'success' => true,
                 'message' => $merchantId

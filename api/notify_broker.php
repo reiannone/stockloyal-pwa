@@ -26,7 +26,7 @@ try {
   }
 
   // Required basics
-  $member_id   = trim((string)($input['member_id'] ?? ''));
+  $member_id   = strtolower(trim((string)($input['member_id'] ?? '')));
   $merchant_id = trim((string)($input['merchant_id'] ?? ''));
   $basket_id   = trim((string)($input['basket_id'] ?? ''));
   $broker      = trim((string)($input['broker'] ?? ''));

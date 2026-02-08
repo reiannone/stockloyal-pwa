@@ -16,7 +16,7 @@ header("Content-Type: application/json");
 require_once 'config.php';
 
 $input = json_decode(file_get_contents("php://input"), true);
-$memberId = trim($input['member_id'] ?? '');
+$memberId = strtolower(trim((string)($input['member_id'] ?? '')));
 
 if (!$memberId) {
     http_response_code(400);

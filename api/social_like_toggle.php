@@ -23,7 +23,7 @@ if (!is_array($input)) {
 }
 
 $postId   = (int)($input['post_id'] ?? 0);
-$memberId = trim($input['member_id'] ?? '');
+$memberId = strtolower(trim((string)($input['member_id'] ?? '')));
 
 if ($postId <= 0 || $memberId === '') {
     http_response_code(400);

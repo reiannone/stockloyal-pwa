@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php';
 
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
-$memberId = $input['member_id'] ?? null;
+$memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 
 if (!$memberId) {
     http_response_code(400);

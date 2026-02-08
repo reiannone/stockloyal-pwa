@@ -156,7 +156,7 @@ try {
         logMessage($logFile, "Routing to BROKER handler");
         
         $basketId = $payload['basket_id'] ?? '';
-        $memberId = $payload['member_id'] ?? '';
+        $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
         $brokerOrderId = $payload['broker_order_id'] ?? null;
         
         if (empty($basketId)) {
@@ -273,7 +273,7 @@ try {
         switch ($eventType) {
             case 'points_received':
             case 'points.received':
-                $memberId = $payload['member_id'] ?? null;
+                $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
                 $merchantId = $payload['merchant_id'] ?? null;
                 $broker = $payload['broker'] ?? null;
                 $points = isset($payload['points']) ? (int)$payload['points'] : 0;
@@ -337,7 +337,7 @@ try {
                 
             case 'tier_changed':
             case 'tier.changed':
-                $memberId = $payload['member_id'] ?? null;
+                $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
                 $newTier = $payload['tier'] ?? $payload['new_tier'] ?? $payload['member_tier'] ?? null;
                 
                 if (!$memberId || !$newTier) {

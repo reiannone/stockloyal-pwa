@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php'; // ✅ shared PDO connection + encryption
 
 $input = json_decode(file_get_contents("php://input"), true);
-$memberId     = trim($input['member_id'] ?? '');
+$memberId     = strtolower(trim((string)($input['member_id'] ?? '')));
 $pointsUsed   = intval($input['points'] ?? 0);
 $cashUsed     = floatval($input['cash_balance'] ?? 0.00);
 

@@ -147,7 +147,7 @@ function authenticateBroker(PDO $conn, string $logFile): ?array {
  */
 function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): array {
     $basketId       = $payload['basket_id'] ?? '';
-    $memberId       = $payload['member_id'] ?? '';
+    $memberId       = strtolower(trim((string)($payload['member_id'] ?? '')));
     $brokerOrderId  = $payload['broker_order_id'] ?? null;
     $acknowledgedAt = gmdate('c');
     $isSweepOrigin  = !empty($payload['batch_id']);  // sweep engine includes batch_id
@@ -235,7 +235,7 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
  */
 function handleOrderConfirmed(PDO $conn, array $payload, string $logFile): array {
     $basketId       = $payload['basket_id'] ?? '';
-    $memberId       = $payload['member_id'] ?? '';
+    $memberId       = strtolower(trim((string)($payload['member_id'] ?? '')));
     $brokerOrderId  = $payload['broker_order_id'] ?? null;
     $fills          = $payload['fills'] ?? [];
 
@@ -300,7 +300,7 @@ function handleOrderConfirmed(PDO $conn, array $payload, string $logFile): array
  */
 function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array {
     $basketId = $payload['basket_id'] ?? '';
-    $memberId = $payload['member_id'] ?? '';
+    $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
     $fills = $payload['fills'] ?? [];
     
     if (empty($basketId)) {
@@ -364,7 +364,7 @@ function handleOrderExecuted(PDO $conn, array $payload, string $logFile): array 
  */
 function handleOrderRejected(PDO $conn, array $payload, string $logFile): array {
     $basketId = $payload['basket_id'] ?? '';
-    $memberId = $payload['member_id'] ?? '';
+    $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
     $reason = $payload['reason'] ?? 'Unknown reason';
     
     if (empty($basketId)) {
@@ -417,7 +417,7 @@ function handleOrderRejected(PDO $conn, array $payload, string $logFile): array 
  */
 function handleOrderCancelled(PDO $conn, array $payload, string $logFile): array {
     $basketId = $payload['basket_id'] ?? '';
-    $memberId = $payload['member_id'] ?? '';
+    $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
     $reason = $payload['reason'] ?? 'Cancelled by broker';
     
     if (empty($basketId)) {

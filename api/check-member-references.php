@@ -20,7 +20,7 @@ require_once 'config.php'; // ✅ contains $conn (PDO)
 
 // Get JSON input
 $input = json_decode(file_get_contents('php://input'), true);
-$member_id = $input['member_id'] ?? null;
+$member_id = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 
 if (!$member_id) {
     echo json_encode([

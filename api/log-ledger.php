@@ -20,7 +20,7 @@ require_once 'config.php';
 
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
 
-$memberId = $input['member_id'] ?? null;
+$memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 $merchantId = $input['merchant_id'] ?? null;
 $broker = $input['broker'] ?? null;
 $orderId = $input['order_id'] ?? null;

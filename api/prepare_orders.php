@@ -39,7 +39,7 @@ switch ($action) {
         break;
 
     case 'prepare':
-        $memberId   = $input['member_id']   ?? null;
+        $memberId   = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
         $merchantId = $input['merchant_id'] ?? null;
         echo json_encode($process->prepare($memberId, $merchantId));
         break;

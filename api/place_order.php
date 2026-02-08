@@ -36,7 +36,7 @@ if (
     exit;
 }
 
-$member_id   = $input['member_id'];
+$member_id   = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 $merchant_id = $input['merchant_id'] ?? null; // ✅ Accept merchant_id
 $symbol      = $input['symbol'];
 $shares      = $input['shares'];

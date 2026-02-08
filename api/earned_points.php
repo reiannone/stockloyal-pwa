@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once 'config.php'; // ✅ PDO + shared config
 
 $input = json_decode(file_get_contents("php://input"), true);
-$member_id     = $input['member_id']     ?? '';
+$member_id     = strtolower(trim((string)($input['member_id'] ?? '')));
 $merchant_id   = $input['merchant_id']   ?? '';
 $points        = intval($input['points'] ?? 0);
 $cash_balance  = isset($input['cash_balance']) ? floatval($input['cash_balance']) : 0.00;

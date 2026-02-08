@@ -86,7 +86,7 @@ try {
 // ============================================================================
 
 $input      = json_decode(file_get_contents('php://input'), true);
-$memberId   = $input['member_id']   ?? null;
+$memberId   = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 $pointsUsed = isset($input['points_used'])     ? (int) $input['points_used']
             : (isset($input['points_redeemed']) ? (int) $input['points_redeemed'] : 0);
 $orderId    = $input['order_id'] ?? $input['basket_id'] ?? null;

@@ -29,7 +29,7 @@ if (!is_array($input)) {
     $input = $_POST ?? [];
 }
 
-$member_id      = trim($input['member_id'] ?? '');
+$member_id      = strtolower(trim((string)($input['member_id'] ?? '')));
 $points         = isset($input['points']) ? intval($input['points']) : null;
 $cash_balance   = isset($input['cash_balance']) ? floatval($input['cash_balance']) : null;
 $portfolio_value = isset($input['portfolio_value']) ? floatval($input['portfolio_value']) : null;

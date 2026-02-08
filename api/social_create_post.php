@@ -22,7 +22,7 @@ if (!is_array($input)) {
     exit;
 }
 
-$memberId      = trim($input['member_id'] ?? '');
+$memberId      = strtolower(trim((string)($input['member_id'] ?? '')));
 $memberAvatar  = $input['member_avatar'] ?? null; // ✅ NEW
 $pointsUsed    = (int)($input['points_used'] ?? 0);
 $cashValue     = (float)($input['cash_value'] ?? 0.0);

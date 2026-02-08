@@ -20,7 +20,7 @@ require_once 'config.php';
 
 try {
     $input = json_decode(file_get_contents("php://input"), true) ?? [];
-    $memberId = isset($input['member_id']) ? trim((string)$input['member_id']) : '';
+    $memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id']) : '';
     $limit = isset($input['limit']) ? min((int)$input['limit'], 100) : 50;
 
     if (empty($memberId)) {
@@ -72,3 +72,4 @@ try {
     http_response_code(500);
     echo json_encode(["success" => false, "error" => "Server error"]);
 }
+

@@ -145,7 +145,7 @@ function authenticateMerchant(PDO $conn, string $logFile): ?array {
  * Merchant awards points to a member
  */
 function handlePointsReceived(PDO $conn, array $payload, string $requestId, string $logFile): array {
-    $memberId = $payload['member_id'] ?? null;
+    $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     $broker = $payload['broker'] ?? null;
     $points = isset($payload['points']) ? (int)$payload['points'] : 0;
@@ -266,7 +266,7 @@ function handlePointsReceived(PDO $conn, array $payload, string $requestId, stri
  * Merchant adjusts member points (can be positive or negative)
  */
 function handlePointsAdjusted(PDO $conn, array $payload, string $requestId, string $logFile): array {
-    $memberId = $payload['member_id'] ?? null;
+    $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     $broker = $payload['broker'] ?? null;
     $points = isset($payload['points']) ? (int)$payload['points'] : 0;
@@ -363,7 +363,7 @@ function handlePointsAdjusted(PDO $conn, array $payload, string $requestId, stri
  * Sync member profile data from merchant
  */
 function handleMemberUpdated(PDO $conn, array $payload, string $logFile): array {
-    $memberId = $payload['member_id'] ?? null;
+    $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     
     if (!$memberId) {
@@ -425,7 +425,7 @@ function handleMemberUpdated(PDO $conn, array $payload, string $logFile): array 
  * Update member tier from merchant
  */
 function handleTierChanged(PDO $conn, array $payload, string $logFile): array {
-    $memberId = $payload['member_id'] ?? null;
+    $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     $newTier = $payload['tier'] ?? $payload['new_tier'] ?? $payload['member_tier'] ?? null;
     $previousTier = $payload['previous_tier'] ?? null;
@@ -467,7 +467,7 @@ function handleTierChanged(PDO $conn, array $payload, string $logFile): array {
  * New member enrolled by merchant
  */
 function handleMemberEnrolled(PDO $conn, array $payload, string $logFile): array {
-    $memberId = $payload['member_id'] ?? null;
+    $memberId = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     $email = $payload['email'] ?? $payload['member_email'] ?? null;
     $firstName = $payload['first_name'] ?? '';
@@ -555,7 +555,7 @@ function handleTestConnection(array $payload, string $logFile): array {
  * and return their authoritative balance.
  */
 function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array {
-    $memberId     = $payload['member_id'] ?? null;
+    $memberId     = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId   = $payload['merchant_id'] ?? null;
     $pointsUsed   = isset($payload['points_used'])     ? (int) $payload['points_used']
                   : (isset($payload['points_redeemed']) ? (int) $payload['points_redeemed'] : 0);
@@ -713,7 +713,7 @@ function handlePointsRedeemed(PDO $conn, array $payload, string $logFile): array
  * In production, a real merchant would return their authoritative balance.
  */
 function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): array {
-    $memberId   = $payload['member_id'] ?? null;
+    $memberId   = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
     $requestId  = $payload['request_id'] ?? null;
 
@@ -810,7 +810,7 @@ function handleMemberSyncRequest(PDO $conn, array $payload, string $logFile): ar
  * Sent when the merchant could not respond synchronously to our member_sync_request.
  */
 function handleMemberSyncResponse(PDO $conn, array $payload, string $logFile): array {
-    $memberId   = $payload['member_id'] ?? null;
+    $memberId   = isset($payload['member_id']) ? strtolower(trim((string)$payload['member_id'])) : null;
     $merchantId = $payload['merchant_id'] ?? null;
 
     if (!$memberId) {

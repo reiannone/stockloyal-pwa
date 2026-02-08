@@ -14,7 +14,7 @@ if (!is_array($input)) {
 }
 
 $merchant_id = trim($input['merchant_id'] ?? '');
-$member_id   = trim($input['member_id'] ?? '');  // treat as email-shaped id
+$member_id   = strtolower(trim((string)($input['member_id'] ?? '')));  // treat as email-shaped id
 
 if ($merchant_id === '' || $member_id === '') {
     http_response_code(400);

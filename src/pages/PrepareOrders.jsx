@@ -218,6 +218,7 @@ export default function PrepareOrders() {
     const map = {
       staged:    { bg: "#fef3c7", text: "#92400e" },
       approved:  { bg: "#d1fae5", text: "#065f46" },
+      submitted: { bg: "#dbeafe", text: "#1e40af" },
       discarded: { bg: "#f3f4f6", text: "#6b7280" },
     };
     const c = map[status] || map.staged;

@@ -18,7 +18,7 @@ $input = json_decode(file_get_contents("php://input"), true) ?? [];
 // ── Filter parameters ───────────────────────────────────────────────────────
 $postId        = isset($input['post_id']) ? (int)$input['post_id'] : null;
 $postIds       = $input['post_ids'] ?? null; // Array of IDs (for Data Quality)
-$memberId      = trim($input['member_id'] ?? '');
+$memberId      = strtolower(trim((string)($input['member_id'] ?? '')));
 $strategyTag   = trim($input['strategy_tag'] ?? '');
 $primaryTicker = trim($input['primary_ticker'] ?? '');
 $visibility    = trim($input['visibility'] ?? '');

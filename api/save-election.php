@@ -29,7 +29,7 @@ require_once 'config.php'; // provides $conn (PDO)
 
 // ✅ Expect JSON
 $input     = json_decode(file_get_contents("php://input"), true) ?? [];
-$memberId  = $input['member_id'] ?? null;
+$memberId  = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
 $election  = $input['election'] ?? null;
 $rawSweep  = $input['sweep_percentage'] ?? null;
 

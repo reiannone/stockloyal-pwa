@@ -38,7 +38,7 @@ try {
         respond(["success" => false, "error" => "Invalid JSON payload"], 400);
     }
 
-    $member_id  = trim((string)($input['member_id'] ?? ''));
+    $member_id  = strtolower(trim((string)($input['member_id'] ?? '')));
     $basket_id  = trim((string)($input['basket_id'] ?? ''));
     $processing_stage = trim((string)($input['processing_stage'] ?? 'confirm'));
 

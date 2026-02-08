@@ -48,7 +48,7 @@ try {
     
     // Prepare values with proper null handling
     $orderId = (int)$input['order_id'];
-    $memberId = $input['member_id'];
+    $memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : null;
     $merchantId = !empty($input['merchant_id']) ? $input['merchant_id'] : null;
     $basketId = $input['basket_id'];
     $symbol = strtoupper($input['symbol']);

@@ -26,7 +26,7 @@ require_once 'config.php';
 
 // Parse incoming request
 $input = json_decode(file_get_contents('php://input'), true);
-$memberId = trim($input['member_id'] ?? '');
+$memberId = strtolower(trim((string)($input['member_id'] ?? '')));
 $password = $input['password'] ?? '';
 
 if (!$memberId || !$password) {

@@ -24,7 +24,7 @@ require_once 'config.php';
 $input = json_decode(file_get_contents("php://input"), true);
 
 $merchantId = trim($input['merchant_id'] ?? '');
-$memberId   = trim($input['member_id']   ?? '');
+$memberId   = strtolower(trim((string)($input['member_id'] ?? '')));
 $points     = (int) ($input['points']     ?? 0);
 $tier       = trim($input['tier']         ?? '');
 $action     = trim($input['action']       ?? 'earn');
