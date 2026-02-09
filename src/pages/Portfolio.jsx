@@ -67,6 +67,7 @@ export default function Portfolio() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [priceUpdateMsg, setPriceUpdateMsg] = useState(null); // For showing price update notification
 
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filterField, setFilterField] = useState(""); // "" = all | symbol | stock_name
@@ -102,6 +103,12 @@ export default function Portfolio() {
 
         // Set timestamp
         setLastUpdated(new Date());
+        
+        // Show update message on refresh
+        if (isRefresh) {
+          setPriceUpdateMsg("✓ Prices updated with latest market data");
+          setTimeout(() => setPriceUpdateMsg(null), 3000);
+        }
       } catch (err) {
         console.error("Portfolio fetch error:", err);
         setError("Network error while fetching portfolio.");
@@ -192,22 +199,25 @@ export default function Portfolio() {
   return (
     <div className="portfolio-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        Your StockLoyal Portfolio
+        My StockLoyal Portfolio
       </h2>
 
       {/* ---- Last Updated Timestamp ---- */}
       {lastUpdated && !loading && !error && (
-        <p
+        <div
           style={{
             textAlign: "center",
             marginTop: "-6px",
             marginBottom: "18px",
-            color: "#6b7280",
-            fontSize: "0.85rem",
           }}
         >
-          Last updated: <strong>{formatTimestamp(lastUpdated)}</strong>
-        </p>
+          <p style={{ color: "#6b7280", fontSize: "0.85rem", margin: 0 }}>
+            Last updated: <strong>{formatTimestamp(lastUpdated)}</strong>
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: "0.75rem", margin: "4px 0 0 0", fontStyle: "italic" }}>
+            Market prices are delayed by 15 minutes
+          </p>
+        </div>
       )}
 
       {/* Filter bar */}
@@ -306,15 +316,25 @@ export default function Portfolio() {
               {formatDollars(portfolioValue)}
             </span>
 
-            <div style={{ marginTop: "8px" }}>
+            <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
               <button
                 type="button"
                 className="btn-secondary"
                 onClick={() => loadPortfolio(true)}
                 disabled={refreshing}
+                style={{ minWidth: "160px" }}
               >
-                {refreshing ? "Refreshing…" : "Refresh Prices"}
+                {refreshing ? "Updating Prices…" : "🔄 Refresh Prices"}
               </button>
+              {priceUpdateMsg && (
+                <span style={{ 
+                  fontSize: "0.85rem", 
+                  color: "#22c55e",
+                  fontWeight: 500
+                }}>
+                  {priceUpdateMsg}
+                </span>
+              )}
             </div>
           </div>
 
@@ -406,7 +426,7 @@ export default function Portfolio() {
       </div>
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
       <p className="form-disclosure">
-        <strong>Disclosure:</strong> Your <em>StockLoyal Portfolio</em> displays
+        <strong>Disclosure:</strong><em>StockLoyal Portfolio</em> displays
         only the securities purchased through the <strong>StockLoyal app</strong>.
         These holdings are maintained directly with your brokerage firm,{" "}
         {brokerUrl ? (
