@@ -5,11 +5,13 @@ declare(strict_types=1);
  * get-settled-batches.php
  *
  * Returns a list of settled payment batches for the payment history view.
+ * Supports pagination with offset for infinite scroll.
  *
  * Input (JSON POST):
  * {
  *   "merchant_id": "merchant001",  // optional - filter by merchant
- *   "limit": 50                    // optional - max results (default 50)
+ *   "limit": 25,                   // optional - max results (default 25)
+ *   "offset": 0                    // optional - offset for pagination (default 0)
  * }
  */
 
@@ -28,7 +30,10 @@ try {
     $input = $raw ? json_decode($raw, true) : [];
     
     $merchantId = isset($input['merchant_id']) ? trim((string)$input['merchant_id']) : '';
-    $limit = isset($input['limit']) ? min(100, max(1, (int)$input['limit'])) : 50;
+    
+    // Cast to int and concatenate directly to avoid PDO quoting issues with LIMIT/OFFSET
+    $limit = isset($input['limit']) ? min(100, max(1, (int)$input['limit'])) : 25;
+    $offset = isset($input['offset']) ? max(0, (int)$input['offset']) : 0;
 
     // Build query to get settled batches grouped by paid_batch_id
     $sql = "
@@ -56,13 +61,28 @@ try {
     $sql .= "
         GROUP BY paid_batch_id, merchant_id, broker
         ORDER BY paid_at DESC
-        LIMIT ?
-    ";
-    $params[] = $limit;
+        LIMIT " . $limit . " OFFSET " . $offset;
 
     $stmt = $conn->prepare($sql);
     $stmt->execute($params);
     $batches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Get total count for pagination info
+    $countSql = "
+        SELECT COUNT(DISTINCT paid_batch_id) AS total
+        FROM orders
+        WHERE status = 'settled'
+          AND paid_flag = 1
+          AND paid_batch_id IS NOT NULL
+    ";
+    if ($merchantId !== '') {
+        $countSql .= " AND merchant_id = ?";
+        $countStmt = $conn->prepare($countSql);
+        $countStmt->execute([$merchantId]);
+    } else {
+        $countStmt = $conn->query($countSql);
+    }
+    $totalCount = (int)$countStmt->fetchColumn();
 
     // Format the results
     $formattedBatches = array_map(function($batch) {
@@ -79,7 +99,11 @@ try {
     echo json_encode([
         'success' => true,
         'batches' => $formattedBatches,
-        'count' => count($formattedBatches)
+        'count' => count($formattedBatches),
+        'total' => $totalCount,
+        'offset' => $offset,
+        'limit' => $limit,
+        'has_more' => ($offset + count($formattedBatches)) < $totalCount
     ], JSON_NUMERIC_CHECK);
 
 } catch (Throwable $e) {

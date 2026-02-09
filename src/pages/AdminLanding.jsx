@@ -208,17 +208,10 @@ export default function AdminLanding() {
     },
     {
       to: "/demo-launch",
-      label: "Demo Launch",
+      label: "Merchant Demo Launch",
       icon: <Rocket size={32} />,
       color: "#a855f7",
       bgColor: "#faf5ff",
-    },
-    {
-      to: "/skyblue-rewards",
-      label: "Sky Blue Airlines",
-      icon: <Plane size={32} />,
-      color: "#0ea5e9",
-      bgColor: "#f0f9ff",
     },
   ];
 

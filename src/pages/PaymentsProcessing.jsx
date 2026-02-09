@@ -48,6 +48,9 @@ export default function PaymentsProcessing() {
   const [showHistory, setShowHistory] = useState(false);
   const [settledBatches, setSettledBatches] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyTotal, setHistoryTotal] = useState(0);
   const [selectedCancelBatch, setSelectedCancelBatch] = useState(null);
   const [cancelResults, setCancelResults] = useState(null);
 
@@ -419,24 +422,42 @@ export default function PaymentsProcessing() {
     }
   };
 
-  // ✅ NEW: Load settled payment history
-  const loadSettledHistory = async () => {
-    setHistoryLoading(true);
+  // ✅ NEW: Load settled payment history with pagination
+  const loadSettledHistory = async (loadMore = false) => {
+    if (loadMore) {
+      setHistoryLoadingMore(true);
+    } else {
+      setHistoryLoading(true);
+      setSettledBatches([]);
+    }
+    
     try {
+      const offset = loadMore ? settledBatches.length : 0;
       const res = await apiPost("get-settled-batches.php", {
         merchant_id: merchantId || null,
-        limit: 50
+        limit: 25,
+        offset: offset
       });
+      
       if (res?.success && Array.isArray(res.batches)) {
-        setSettledBatches(res.batches);
+        if (loadMore) {
+          setSettledBatches(prev => [...prev, ...res.batches]);
+        } else {
+          setSettledBatches(res.batches);
+        }
+        setHistoryHasMore(res.has_more || false);
+        setHistoryTotal(res.total || 0);
       } else {
-        setSettledBatches([]);
+        if (!loadMore) setSettledBatches([]);
+        setHistoryHasMore(false);
       }
     } catch (err) {
       console.error("[PaymentsProcessing] Failed to load settled history:", err);
-      setSettledBatches([]);
+      if (!loadMore) setSettledBatches([]);
+      setHistoryHasMore(false);
     } finally {
       setHistoryLoading(false);
+      setHistoryLoadingMore(false);
     }
   };
 
@@ -878,9 +899,18 @@ export default function PaymentsProcessing() {
     );
   };
 
-  // ✅ Payment History Panel
+  // ✅ Payment History Panel with Infinite Scroll
   const PaymentHistoryPanel = () => {
     if (!showHistory) return null;
+
+    // Handle scroll to load more
+    const handleScroll = (e) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.target;
+      // Load more when within 50px of bottom
+      if (scrollHeight - scrollTop - clientHeight < 50 && historyHasMore && !historyLoadingMore) {
+        loadSettledHistory(true);
+      }
+    };
 
     return (
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -888,10 +918,15 @@ export default function PaymentsProcessing() {
           <h2 className="subheading" style={{ margin: 0 }}>
             <History size={18} style={{ marginRight: "8px", verticalAlign: "middle" }} />
             Recent Settled Payments
+            {historyTotal > 0 && (
+              <span style={{ fontSize: "12px", fontWeight: "400", color: "#6b7280", marginLeft: "8px" }}>
+                ({settledBatches.length} of {historyTotal})
+              </span>
+            )}
           </h2>
           <div style={{ display: "flex", gap: "8px" }}>
             <button
-              onClick={loadSettledHistory}
+              onClick={() => loadSettledHistory(false)}
               disabled={historyLoading}
               style={{
                 padding: "6px 12px",
@@ -925,7 +960,10 @@ export default function PaymentsProcessing() {
         ) : settledBatches.length === 0 ? (
           <p className="body-text">No settled payment batches found.</p>
         ) : (
-          <div style={{ maxHeight: "400px", overflow: "auto" }}>
+          <div 
+            style={{ maxHeight: "400px", overflow: "auto" }}
+            onScroll={handleScroll}
+          >
             <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ backgroundColor: "#f3f4f6", position: "sticky", top: 0 }}>
@@ -974,6 +1012,20 @@ export default function PaymentsProcessing() {
                 ))}
               </tbody>
             </table>
+            
+            {/* Loading more indicator */}
+            {historyLoadingMore && (
+              <div style={{ padding: "12px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
+                Loading more...
+              </div>
+            )}
+            
+            {/* End of list indicator */}
+            {!historyHasMore && settledBatches.length > 0 && (
+              <div style={{ padding: "12px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
+                — End of history —
+              </div>
+            )}
           </div>
         )}
       </div>

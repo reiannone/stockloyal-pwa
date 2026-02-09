@@ -151,10 +151,10 @@ function App() {
                 }
               />
               <Route
-                path="/skyblue-rewards"
+                path="/demo-launch"
                 element={
                   <PageWrapper>
-                    <SkyBlueRewards />
+                    <DemoLaunch />
                   </PageWrapper>
                 }
               />
@@ -424,14 +424,6 @@ function App() {
                 element={
                   <PageWrapper>
                     <DataQualityCheck />
-                  </PageWrapper>
-                }
-              />
-              <Route
-                path="/demo-launch"
-                element={
-                  <PageWrapper>
-                    <DemoLaunch />
                   </PageWrapper>
                 }
               />

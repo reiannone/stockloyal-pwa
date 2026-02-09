@@ -7,6 +7,7 @@ export default function MerchantNotifications() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [jsonViewMode, setJsonViewMode] = useState("formatted"); // "formatted" | "raw"
 
   // ── Filter state ────────────────────────────────────────────────────────────
   const [filterField, setFilterField] = useState("merchant_id");
@@ -230,6 +231,139 @@ export default function MerchantNotifications() {
     }
   };
 
+  // ── JSON Viewer Component ──────────────────────────────────────────────────
+  const JsonViewer = ({ value, name, onChange, rows = 5 }) => {
+    // Parse JSON if it's a string
+    let parsed = null;
+    let parseError = null;
+    const rawValue = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    
+    try {
+      parsed = typeof value === "string" ? JSON.parse(value) : value;
+    } catch (e) {
+      parseError = e.message;
+    }
+
+    // Render a formatted key-value pair
+    const renderValue = (val, depth = 0) => {
+      if (val === null) return <span style={{ color: "#94a3b8" }}>null</span>;
+      if (val === undefined) return <span style={{ color: "#94a3b8" }}>undefined</span>;
+      if (typeof val === "boolean") return <span style={{ color: "#8b5cf6" }}>{val.toString()}</span>;
+      if (typeof val === "number") return <span style={{ color: "#0891b2" }}>{val}</span>;
+      if (typeof val === "string") {
+        // Check if it's a date
+        if (/^\d{4}-\d{2}-\d{2}/.test(val)) {
+          return <span style={{ color: "#059669" }}>{val}</span>;
+        }
+        return <span style={{ color: "#dc2626" }}>"{val}"</span>;
+      }
+      if (Array.isArray(val)) {
+        if (val.length === 0) return <span style={{ color: "#64748b" }}>[]</span>;
+        return (
+          <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
+            {val.map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 4 }}>
+                <span style={{ color: "#64748b" }}>[{i}]:</span>
+                {renderValue(item, depth + 1)}
+              </div>
+            ))}
+          </div>
+        );
+      }
+      if (typeof val === "object") {
+        const keys = Object.keys(val);
+        if (keys.length === 0) return <span style={{ color: "#64748b" }}>{"{}"}</span>;
+        return (
+          <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
+            {keys.map((key) => (
+              <div key={key} style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <span style={{ color: "#6366f1", fontWeight: 600 }}>{key}:</span>
+                {renderValue(val[key], depth + 1)}
+              </div>
+            ))}
+          </div>
+        );
+      }
+      return <span>{String(val)}</span>;
+    };
+
+    return (
+      <div>
+        {/* Toggle */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setJsonViewMode("formatted")}
+            style={{
+              padding: "4px 12px",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              border: "1px solid #e2e8f0",
+              borderRadius: 4,
+              backgroundColor: jsonViewMode === "formatted" ? "#6366f1" : "#fff",
+              color: jsonViewMode === "formatted" ? "#fff" : "#64748b",
+              cursor: "pointer",
+            }}
+          >
+            📋 Formatted
+          </button>
+          <button
+            type="button"
+            onClick={() => setJsonViewMode("raw")}
+            style={{
+              padding: "4px 12px",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              border: "1px solid #e2e8f0",
+              borderRadius: 4,
+              backgroundColor: jsonViewMode === "raw" ? "#6366f1" : "#fff",
+              color: jsonViewMode === "raw" ? "#fff" : "#64748b",
+              cursor: "pointer",
+            }}
+          >
+            {"{ }"} Raw JSON
+          </button>
+        </div>
+
+        {jsonViewMode === "raw" ? (
+          <textarea
+            className="form-input"
+            name={name}
+            rows={rows}
+            value={rawValue}
+            onChange={onChange}
+            style={{ fontFamily: "monospace", fontSize: "0.85rem" }}
+          />
+        ) : (
+          <div
+            style={{
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 6,
+              padding: 12,
+              fontFamily: "monospace",
+              fontSize: "0.8rem",
+              lineHeight: 1.6,
+              maxHeight: 300,
+              overflow: "auto",
+            }}
+          >
+            {parseError ? (
+              <div style={{ color: "#dc2626" }}>
+                <strong>Parse Error:</strong> {parseError}
+                <pre style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{rawValue}</pre>
+              </div>
+            ) : parsed ? (
+              renderValue(parsed)
+            ) : (
+              <span style={{ color: "#94a3b8" }}>Empty</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const inputPlaceholder =
     filterField === "date"
       ? "YYYY-MM-DD"
@@ -410,28 +544,20 @@ export default function MerchantNotifications() {
             </FormRow>
 
             <FormRow label="Payload (JSON)" fullWidth>
-              <textarea
-                className="form-input"
+              <JsonViewer
+                value={selected.payload}
                 name="payload"
-                rows={4}
-                value={
-                  typeof selected.payload === "string"
-                    ? selected.payload
-                    : JSON.stringify(selected.payload, null, 2)
-                }
                 onChange={handleChange}
-                style={{ fontFamily: "monospace", fontSize: "0.85rem" }}
+                rows={6}
               />
             </FormRow>
 
             <FormRow label="Response Body" fullWidth>
-              <textarea
-                className="form-input"
+              <JsonViewer
+                value={selected.response_body}
                 name="response_body"
-                rows={3}
-                value={selected.response_body ?? ""}
                 onChange={handleChange}
-                style={{ fontFamily: "monospace", fontSize: "0.85rem" }}
+                rows={4}
               />
             </FormRow>
 
