@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
+import OrderPipeline from "../components/OrderPipeline";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -535,7 +536,7 @@ export default function PrepareOrders() {
   };
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="app-container app-content">
       
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* UNIFIED CONFIRM MODAL                                                  */}
@@ -554,9 +555,14 @@ export default function PrepareOrders() {
       />
 
       {/* ── Header ── */}
-      <h1 style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#1e293b", marginBottom: "1.5rem" }}>
-        📋 Prepare Orders
-      </h1>
+      <h1 className="page-title">Prepare Batch Orders</h1>
+      <p className="page-deck">
+        This process prepares and stages orders based on each member's basket selections and the percentage of points specified in their investment elections. 
+        Minimum and maximum dollar limits may apply to each member in the batch process, as defined by their broker.
+      </p>
+
+      {/* ── Order Pipeline ── */}
+      <OrderPipeline currentStep={1} />
 
       {/* ── Tabs ── */}
       <div style={{
@@ -932,7 +938,7 @@ export default function PrepareOrders() {
                             )}
 
                             {/* ── Stats grids ── */}
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
 
                               {/* By Merchant */}
                               <BreakdownTable
@@ -948,17 +954,6 @@ export default function PrepareOrders() {
                                 rows={batchStats.by_broker}
                                 labelKey="broker"
                                 labelName="Broker"
-                              />
-
-                              {/* By Tier */}
-                              <BreakdownTable
-                                title="By Tier / Rate"
-                                rows={(batchStats.by_tier || []).map((r) => ({
-                                  ...r,
-                                  label: `${r.member_tier || "—"} @ ${r.conversion_rate}`,
-                                }))}
-                                labelKey="label"
-                                labelName="Tier"
                               />
 
                               {/* Top Symbols */}

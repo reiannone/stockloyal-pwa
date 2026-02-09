@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
+import OrderPipeline from "../components/OrderPipeline";
 
 /**
  * BrokerExecAdmin — Broker Trade Execution Simulator
@@ -88,56 +89,56 @@ export default function BrokerExecAdmin() {
   const formatTime = (d) => (d ? new Date(d).toLocaleTimeString() : "-");
 
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="app-container app-content">
       {/* Header */}
+      <h1 className="page-title">Broker Trade Execution</h1>
+      <p className="page-deck">
+        Simulate broker market execution for placed orders. In production, the broker executes trades automatically at market open.
+      </p>
+
+      {/* ── Order Pipeline ── */}
+      <OrderPipeline currentStep={3} />
+
+      {/* Action Bar */}
       <div style={{
         display: "flex",
-        justifyContent: "space-between",
+        justifyContent: "flex-end",
+        gap: "0.75rem",
         alignItems: "center",
         marginBottom: "1.5rem",
       }}>
-        <div>
-          <h1 style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#1e293b", margin: 0 }}>
-            🏦 Broker Trade Execution
-          </h1>
-          <p style={{ color: "#64748b", fontSize: "0.875rem", margin: "0.25rem 0 0 0" }}>
-            Simulate broker market execution for placed orders
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <button
-            onClick={loadPlacedOrders}
-            disabled={loading}
-            style={{
-              padding: "0.625rem 1.25rem",
-              background: "#f1f5f9",
-              color: "#475569",
-              border: "1px solid #cbd5e1",
-              borderRadius: "6px",
-              fontSize: "0.875rem",
-              cursor: "pointer",
-            }}
-          >
-            🔄 Refresh
-          </button>
-          <button
-            onClick={executeAll}
-            disabled={executing || !summary?.total_orders}
-            style={{
-              padding: "0.625rem 1.25rem",
-              background: executing ? "#94a3b8" : (!summary?.total_orders ? "#e2e8f0" : "#059669"),
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              cursor: summary?.total_orders ? "pointer" : "not-allowed",
-              opacity: executing ? 0.7 : 1,
-            }}
-          >
-            {executing ? "⏳ Executing..." : "⚡ Execute All Trades"}
-          </button>
-        </div>
+        <button
+          onClick={loadPlacedOrders}
+          disabled={loading}
+          style={{
+            padding: "0.625rem 1.25rem",
+            background: "#f1f5f9",
+            color: "#475569",
+            border: "1px solid #cbd5e1",
+            borderRadius: "6px",
+            fontSize: "0.875rem",
+            cursor: "pointer",
+          }}
+        >
+          🔄 Refresh
+        </button>
+        <button
+          onClick={executeAll}
+          disabled={executing || !summary?.total_orders}
+          style={{
+            padding: "0.625rem 1.25rem",
+            background: executing ? "#94a3b8" : (!summary?.total_orders ? "#e2e8f0" : "#059669"),
+            color: "#fff",
+            border: "none",
+            borderRadius: "6px",
+            fontSize: "0.875rem",
+            fontWeight: 600,
+            cursor: summary?.total_orders ? "pointer" : "not-allowed",
+            opacity: executing ? 0.7 : 1,
+          }}
+        >
+          {executing ? "⏳ Executing..." : "⚡ Execute All Trades"}
+        </button>
       </div>
 
       {/* Summary Stats */}

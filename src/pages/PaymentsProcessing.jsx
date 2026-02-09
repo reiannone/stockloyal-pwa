@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
 import { CheckCircle, AlertCircle, Loader2, CreditCard, Building2, Store, XCircle, History, RotateCcw } from "lucide-react";
+import OrderPipeline from "../components/OrderPipeline";
 
 function safeNum(v) {
   const n = Number(v);
@@ -987,6 +988,9 @@ export default function PaymentsProcessing() {
       <div className="app-container app-content">
         <ConfirmModal />
 
+        {/* ── Order Pipeline ── */}
+        <OrderPipeline currentStep={4} />
+
         <div className="card" style={{ marginBottom: "1rem" }}>
           <div className="card-actions" style={{ justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
             <div>
@@ -1172,6 +1176,9 @@ export default function PaymentsProcessing() {
       <p className="page-deck">
         Summary of <strong>unpaid</strong> ACH obligations across all merchants.
       </p>
+
+      {/* ── Order Pipeline ── */}
+      <OrderPipeline currentStep={4} />
 
       <ProgressIndicator />
       <ResultsSummary />

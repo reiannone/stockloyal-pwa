@@ -110,7 +110,7 @@ export default function AdminLanding() {
     },
     {
       to: "/sweep-admin",
-      label: "Sweep Process Manager",
+      label: "Sweep Process Order Entry",
       icon: <Paintbrush size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
@@ -463,101 +463,228 @@ export default function AdminLanding() {
           ))}
         </div>
 
-        {/* Quick Stats Section */}
+        {/* Order Processing Pipeline - Subway Timeline */}
         <div
           style={{
             marginTop: "32px",
-            padding: "20px",
+            padding: "24px",
             backgroundColor: "white",
             borderRadius: "12px",
             border: "1px solid #e5e7eb",
           }}
         >
-          <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: "600", color: "#374151" }}>
-            Bulk Actions
+          <h3 style={{ margin: "0 0 8px 0", fontSize: "16px", fontWeight: "600", color: "#374151" }}>
+            Order Processing Pipeline
           </h3>
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            {[
-              { to: "/prepare-orders", label: "Prepare Orders", icon: <ClipboardCheck size={18} />, key: "prepare", bg: "#6366f1" },
-              { to: "/sweep-admin", label: "Order Entry", icon: <Paintbrush size={18} />, key: "sweep", bg: "#6366f1" },
-              { to: "/admin-broker-exec", label: "Broker Order Execution", icon: <Briefcase size={18} />, key: "execute", bg: "#6366f1" },
-              { to: "/payments-processing", label: "Payment Settlement", icon: <CreditCard size={18} />, key: "payments", bg: "#3b82f6" },
-            ].map(({ to, label, icon, key, bg }) => {
-              // Special handling for payments: show baskets and orders
-              const isPayments = key === "payments";
-              const baskets = queueCounts?.payments_baskets ?? null;
-              const orders = queueCounts?.payments_orders ?? null;
-              const count = queueCounts?.[key] ?? null;
-              
-              // For payments, check if both baskets and orders are zero
-              const paymentsIsZero = isPayments && baskets === 0 && orders === 0;
-              const isZero = isPayments ? paymentsIsZero : count === 0;
-              const hasData = isPayments ? (baskets !== null && orders !== null) : count !== null;
+          <p style={{ margin: "0 0 24px 0", fontSize: "13px", color: "#6b7280" }}>
+            Follow the sequence to process member orders from preparation to settlement
+          </p>
 
-              return (
-                <button
-                  key={to}
-                  onClick={() => navigate(to)}
-                  style={{
-                    padding: "10px 20px",
-                    backgroundColor: bg,
-                    color: "white",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    position: "relative",
-                  }}
-                >
-                  {icon}
-                  {label}
-                  {hasData && (
-                    isZero ? (
-                      <CheckCircle2 size={18} color="#4ade80" style={{ marginLeft: 4 }} />
-                    ) : isPayments ? (
-                      // Show "X baskets, Y orders" for payments
-                      <span
+          {/* Subway Timeline */}
+          <div style={{ position: "relative" }}>
+            {/* Connecting Line */}
+            <div
+              style={{
+                position: "absolute",
+                top: "24px",
+                left: "24px",
+                right: "24px",
+                height: "4px",
+                backgroundColor: "#e5e7eb",
+                zIndex: 0,
+              }}
+            />
+
+            {/* Timeline Steps */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: "8px",
+                position: "relative",
+                zIndex: 1,
+              }}
+            >
+              {[
+                { 
+                  to: "/prepare-orders", 
+                  label: "Prepare Orders", 
+                  subtitle: "Stage batches",
+                  icon: <ClipboardCheck size={20} />, 
+                  key: "prepare", 
+                  color: "#8b5cf6",
+                  step: 1
+                },
+                { 
+                  to: "/sweep-admin", 
+                  label: "Sweep Process", 
+                  subtitle: "Submit to brokers",
+                  icon: <Paintbrush size={20} />, 
+                  key: "sweep", 
+                  color: "#6366f1",
+                  step: 2
+                },
+                { 
+                  to: "/admin-broker-exec", 
+                  label: "Broker Execution", 
+                  subtitle: "Confirm trades",
+                  icon: <Briefcase size={20} />, 
+                  key: "execute", 
+                  color: "#3b82f6",
+                  step: 3
+                },
+                { 
+                  to: "/payments-processing", 
+                  label: "Payment Settlement", 
+                  subtitle: "Process ACH",
+                  icon: <CreditCard size={20} />, 
+                  key: "payments", 
+                  color: "#10b981",
+                  step: 4
+                },
+              ].map(({ to, label, subtitle, icon, key, color, step }) => {
+                // Special handling for payments: show baskets and orders
+                const isPayments = key === "payments";
+                const baskets = queueCounts?.payments_baskets ?? null;
+                const orders = queueCounts?.payments_orders ?? null;
+                const count = queueCounts?.[key] ?? null;
+                
+                // For payments, check if both baskets and orders are zero
+                const paymentsIsZero = isPayments && baskets === 0 && orders === 0;
+                const isZero = isPayments ? paymentsIsZero : count === 0;
+                const hasData = isPayments ? (baskets !== null && orders !== null) : count !== null;
+
+                return (
+                  <button
+                    key={to}
+                    onClick={() => navigate(to)}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      padding: "0",
+                      backgroundColor: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "transform 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                  >
+                    {/* Station Circle */}
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        borderRadius: "50%",
+                        backgroundColor: color,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "white",
+                        marginBottom: "12px",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                        border: "4px solid white",
+                        position: "relative",
+                      }}
+                    >
+                      {icon}
+                      {/* Badge */}
+                      {hasData && !isZero && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            top: "-6px",
+                            right: "-6px",
+                            backgroundColor: "#ef4444",
+                            color: "white",
+                            fontSize: "10px",
+                            fontWeight: "700",
+                            borderRadius: "10px",
+                            padding: "2px 6px",
+                            minWidth: "18px",
+                            textAlign: "center",
+                            border: "2px solid white",
+                          }}
+                        >
+                          {isPayments ? orders : count}
+                        </span>
+                      )}
+                      {hasData && isZero && (
+                        <CheckCircle2 
+                          size={16} 
+                          color="#4ade80"
+                          style={{
+                            position: "absolute",
+                            top: "-4px",
+                            right: "-4px",
+                            backgroundColor: "white",
+                            borderRadius: "50%",
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    {/* Step Number */}
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        color: color,
+                        marginBottom: "4px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
+                      Step {step}
+                    </div>
+
+                    {/* Label */}
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: "#1f2937",
+                        textAlign: "center",
+                        lineHeight: 1.3,
+                        marginBottom: "2px",
+                      }}
+                    >
+                      {label}
+                    </div>
+
+                    {/* Subtitle */}
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#6b7280",
+                        textAlign: "center",
+                      }}
+                    >
+                      {subtitle}
+                    </div>
+
+                    {/* Payments extra info */}
+                    {isPayments && hasData && !isZero && (
+                      <div
                         style={{
-                          marginLeft: 4,
-                          backgroundColor: "#ef4444",
-                          color: "white",
-                          fontSize: "11px",
-                          fontWeight: "700",
-                          borderRadius: "10px",
-                          padding: "2px 8px",
-                          textAlign: "center",
-                          lineHeight: "16px",
-                          whiteSpace: "nowrap",
+                          fontSize: "10px",
+                          color: "#ef4444",
+                          fontWeight: "600",
+                          marginTop: "4px",
                         }}
                       >
-                        {baskets} {baskets === 1 ? "basket" : "baskets"}, {orders} {orders === 1 ? "order" : "orders"}
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          marginLeft: 4,
-                          backgroundColor: "#ef4444",
-                          color: "white",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          borderRadius: "10px",
-                          padding: "2px 8px",
-                          minWidth: "20px",
-                          textAlign: "center",
-                          lineHeight: "16px",
-                        }}
-                      >
-                        {count}
-                      </span>
-                    )
-                  )}
-                </button>
-              );
-            })}
+                        {baskets} basket{baskets !== 1 ? "s" : ""}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

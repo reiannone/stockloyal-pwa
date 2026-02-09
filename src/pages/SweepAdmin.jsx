@@ -1,13 +1,123 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api"; // Use existing api helper
+import { CheckCircle } from "lucide-react";
+import OrderPipeline from "../components/OrderPipeline";
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIRM MODAL COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+function ConfirmModal({ 
+  show, 
+  title, 
+  message, 
+  details,
+  confirmText = "Confirm", 
+  cancelText = "Cancel",
+  confirmColor = "#4ECDC4",
+  icon = "🔄",
+  onConfirm, 
+  onCancel 
+}) {
+  if (!show) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 3000,
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          backgroundColor: "white",
+          borderRadius: "8px",
+          padding: "24px",
+          maxWidth: "500px",
+          width: "90%",
+          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "600", display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "24px" }}>{icon}</span>
+          {title}
+        </h3>
+        
+        {typeof message === "string" ? (
+          <p style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
+            {message}
+          </p>
+        ) : (
+          <div style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
+            {message}
+          </div>
+        )}
+
+        {details && (
+          <div style={{
+            backgroundColor: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: "6px",
+            padding: "12px",
+            marginBottom: "16px",
+            fontSize: "13px",
+          }}>
+            {details}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "10px 20px",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              backgroundColor: "white",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+            }}
+          >
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              padding: "10px 20px",
+              border: "none",
+              borderRadius: "4px",
+              backgroundColor: confirmColor,
+              color: "white",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+            }}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
- * SweepAdmin - Admin page for managing the sweep process
+ * SweepAdmin - Admin page for managing the sweep process (order entry to broker)
  * 
  * Features:
  * - View sweep status overview
  * - See upcoming sweep schedules
- * - View pending orders by merchant
+ * - View pending orders by merchant (grouped by basket)
  * - Trigger manual sweeps
  * - View sweep execution history
  */
@@ -23,6 +133,21 @@ export default function SweepAdmin() {
   const [lastResult, setLastResult] = useState(null);
   const [selectedMerchant, setSelectedMerchant] = useState("");
   const [preview, setPreview] = useState(null);
+  const [expandedBaskets, setExpandedBaskets] = useState({});
+
+  // ── Modal State ──
+  const [modal, setModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    details: null,
+    confirmText: "Confirm",
+    confirmColor: "#4ECDC4",
+    icon: "🔄",
+    data: null,
+  });
+
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // Load overview data
   const loadOverview = useCallback(async () => {
@@ -95,16 +220,40 @@ export default function SweepAdmin() {
     }
   };
 
-  // Run sweep
-  const runSweep = async (merchantId = null) => {
-    if (!window.confirm(
-      merchantId 
-        ? `Run sweep for merchant ${merchantId}?`
-        : "Run sweep for ALL eligible merchants?"
-    )) {
-      return;
-    }
+  // Show sweep confirmation modal
+  const showSweepModal = (merchantId = null) => {
+    const merchantData = merchantId 
+      ? overview?.pending_by_merchant?.find(m => m.merchant_id === merchantId)
+      : null;
 
+    setModal({
+      show: true,
+      title: merchantId ? "Run Merchant Sweep" : "Run Sweep for All Merchants",
+      icon: "🔄",
+      message: merchantId 
+        ? `Run sweep for merchant "${merchantId}"?`
+        : "Run sweep for ALL eligible merchants?",
+      details: merchantId && merchantData ? (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <span>Orders: <strong>{merchantData.pending_orders}</strong></span>
+          <span>Amount: <strong>{formatCurrency(merchantData.pending_amount)}</strong></span>
+        </div>
+      ) : overview ? (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <span>Merchants: <strong>{overview.pending_by_merchant?.length || 0}</strong></span>
+          <span>Orders: <strong>{overview.total_pending_orders || 0}</strong></span>
+          <span>Amount: <strong>{formatCurrency(overview.total_pending_amount)}</strong></span>
+        </div>
+      ) : null,
+      confirmText: "Run Sweep",
+      confirmColor: "#4ECDC4",
+      data: { merchantId },
+    });
+  };
+
+  // Execute sweep
+  const executeSweep = async (merchantId = null) => {
+    closeModal();
     setSweepRunning(true);
     setLastResult(null);
     
@@ -125,6 +274,11 @@ export default function SweepAdmin() {
     }
     
     setSweepRunning(false);
+  };
+
+  // Handle modal confirm
+  const handleModalConfirm = () => {
+    executeSweep(modal.data?.merchantId);
   };
 
   // Initial load
@@ -156,34 +310,130 @@ export default function SweepAdmin() {
     return `Day ${day}`;
   };
 
+  // Group orders by basket_id
+  const groupOrdersByBasket = (orders) => {
+    const grouped = {};
+    for (const order of orders) {
+      const basketId = order.basket_id || "no-basket";
+      if (!grouped[basketId]) {
+        grouped[basketId] = [];
+      }
+      grouped[basketId].push(order);
+    }
+    return grouped;
+  };
+
   return (
-    <div style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
+    <div className="app-container app-content">
+      {/* Confirm Modal */}
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        details={modal.details}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        icon={modal.icon}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
+
       {/* Header */}
-      <div style={{ 
-        display: "flex", 
-        justifyContent: "space-between", 
-        alignItems: "center",
-        marginBottom: "1.5rem"
-      }}>
-        <h1 style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#1e293b" }}>
-          🔄 Sweep Process Manager
-        </h1>
-        <button
-          onClick={() => runSweep()}
-          disabled={sweepRunning}
+      <h1 className="page-title">Sweep Process — Order Entry</h1>
+      <p className="page-deck">
+        Submit prepared orders to brokers. This sweep process will submit orders to all brokers using the orders prepared in the previous step.
+      </p>
+
+      {/* ── Order Pipeline ── */}
+      <OrderPipeline currentStep={2} />
+
+      {/* All Caught Up Message */}
+      {!loading && overview && (overview.total_pending_orders || 0) === 0 && (
+        <div
           style={{
-            padding: "0.75rem 1.5rem",
-            background: sweepRunning ? "#94a3b8" : "#4ECDC4",
-            color: "#fff",
-            border: "none",
+            backgroundColor: "#d1fae5",
+            border: "2px solid #10b981",
             borderRadius: "8px",
-            fontWeight: "600",
-            cursor: sweepRunning ? "not-allowed" : "pointer"
+            padding: "1rem 1.5rem",
+            marginBottom: "1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
           }}
         >
-          {sweepRunning ? "Running..." : "▶️ Run Sweep Now"}
-        </button>
-      </div>
+          <CheckCircle size={24} color="#10b981" />
+          <span style={{ fontSize: "1.125rem", fontWeight: "600", color: "#065f46" }}>
+            You're all caught up! No pending orders to sweep.
+          </span>
+        </div>
+      )}
+
+      {/* Summary Stats Card */}
+      {!loading && overview && (overview.total_pending_orders || 0) > 0 && (
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+              gap: "12px",
+              marginBottom: "16px",
+            }}
+          >
+            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: "24px", fontWeight: "700", color: "#f59e0b" }}>{overview.total_pending_orders || 0}</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>Pending Orders</div>
+            </div>
+            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: "24px", fontWeight: "700", color: "#10b981" }}>{formatCurrency(overview.total_pending_amount)}</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>Total Amount</div>
+            </div>
+            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: "24px", fontWeight: "700", color: "#6366f1" }}>{overview.pending_by_merchant?.length || 0}</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>Merchants</div>
+            </div>
+            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: "24px", fontWeight: "700", color: "#8b5cf6" }}>{overview.today?.sweeps_run || 0}</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>Sweeps Today</div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button
+              onClick={() => showSweepModal()}
+              disabled={sweepRunning || (overview.total_pending_orders || 0) === 0}
+              style={{
+                padding: "0.75rem 1.5rem",
+                background: sweepRunning || (overview.total_pending_orders || 0) === 0 ? "#94a3b8" : "#4ECDC4",
+                color: "#fff",
+                border: "none",
+                borderRadius: "8px",
+                fontWeight: "600",
+                cursor: sweepRunning || (overview.total_pending_orders || 0) === 0 ? "not-allowed" : "pointer",
+                fontSize: "14px",
+              }}
+            >
+              {sweepRunning ? "Running..." : "▶️ Run Sweep Now"}
+            </button>
+            <button
+              onClick={loadOverview}
+              disabled={loading}
+              style={{
+                padding: "0.75rem 1.5rem",
+                background: "#f3f4f6",
+                color: "#374151",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                fontWeight: "500",
+                cursor: "pointer",
+                fontSize: "14px",
+              }}
+            >
+              {loading ? "Loading..." : "🔄 Refresh"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ 
@@ -371,7 +621,7 @@ export default function SweepAdmin() {
                         <td style={tdStyle}>{formatDate(m.oldest_order)}</td>
                         <td style={tdStyle}>
                           <button
-                            onClick={() => runSweep(m.merchant_id)}
+                            onClick={() => showSweepModal(m.merchant_id)}
                             disabled={sweepRunning}
                             style={smallBtnStyle}
                           >
@@ -422,15 +672,16 @@ export default function SweepAdmin() {
             </div>
           )}
 
-          {/* Pending Orders Tab */}
+          {/* Pending Orders Tab - Grouped by Basket */}
           {activeTab === "pending" && (
             <div>
-              <div style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center" }}>
+              <div style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
                 <select
                   value={selectedMerchant}
                   onChange={(e) => {
                     setSelectedMerchant(e.target.value);
                     loadPendingOrders(e.target.value || null);
+                    setExpandedBaskets({});
                   }}
                   style={{
                     padding: "0.5rem",
@@ -446,63 +697,161 @@ export default function SweepAdmin() {
                   ))}
                 </select>
                 <span style={{ color: "#64748b" }}>
-                  {pendingOrders.length} order(s)
+                  {pendingOrders.length} order(s) in {Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)
                 </span>
+                <button
+                  onClick={() => {
+                    const baskets = groupOrdersByBasket(pendingOrders);
+                    const allExpanded = Object.keys(baskets).every(k => expandedBaskets[k]);
+                    if (allExpanded) {
+                      setExpandedBaskets({});
+                    } else {
+                      const newExpanded = {};
+                      Object.keys(baskets).forEach(k => newExpanded[k] = true);
+                      setExpandedBaskets(newExpanded);
+                    }
+                  }}
+                  style={{
+                    padding: "0.375rem 0.75rem",
+                    background: "#f3f4f6",
+                    color: "#374151",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  {Object.keys(groupOrdersByBasket(pendingOrders)).every(k => expandedBaskets[k]) ? "Collapse All" : "Expand All"}
+                </button>
               </div>
 
-              <div style={{ 
-                background: "#fff", 
-                borderRadius: "8px", 
-                border: "1px solid #e2e8f0",
-                overflow: "auto",
-                maxHeight: "600px"
-              }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead style={{ position: "sticky", top: 0, background: "#f8fafc" }}>
-                    <tr>
-                      <th style={thStyle}>Order ID</th>
-                      <th style={thStyle}>Member</th>
-                      <th style={thStyle}>Symbol</th>
-                      <th style={thStyle}>Shares</th>
-                      <th style={thStyle}>Amount</th>
-                      <th style={thStyle}>Broker</th>
-                      <th style={thStyle}>Status</th>
-                      <th style={thStyle}>Placed At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingOrders.map((o) => (
-                      <tr key={o.order_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                        <td style={tdStyle}>{o.order_id}</td>
-                        <td style={tdStyle}>{o.member_id}</td>
-                        <td style={{ ...tdStyle, fontWeight: "600" }}>{o.symbol}</td>
-                        <td style={tdStyle}>{parseFloat(o.shares).toFixed(4)}</td>
-                        <td style={tdStyle}>{formatCurrency(o.amount)}</td>
-                        <td style={tdStyle}>{o.broker || "-"}</td>
-                        <td style={tdStyle}>
-                          <span style={{
-                            padding: "0.125rem 0.5rem",
-                            background: "#fef3c7",
-                            color: "#92400e",
-                            borderRadius: "999px",
-                            fontSize: "0.75rem"
-                          }}>
-                            {o.status}
+              {pendingOrders.length === 0 ? (
+                <div
+                  style={{
+                    backgroundColor: "#d1fae5",
+                    border: "2px solid #10b981",
+                    borderRadius: "8px",
+                    padding: "1rem 1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                  }}
+                >
+                  <CheckCircle size={24} color="#10b981" />
+                  <span style={{ fontSize: "1rem", fontWeight: "600", color: "#065f46" }}>
+                    No pending orders to display.
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {Object.entries(groupOrdersByBasket(pendingOrders)).map(([basketId, basketOrders]) => {
+                    const isExpanded = expandedBaskets[basketId];
+                    const totalAmount = basketOrders.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0);
+                    const totalShares = basketOrders.reduce((sum, o) => sum + parseFloat(o.shares || 0), 0);
+                    const broker = basketOrders[0]?.broker || "-";
+                    const merchant = basketOrders[0]?.merchant_id || "-";
+
+                    return (
+                      <div
+                        key={basketId}
+                        style={{
+                          background: "#fff",
+                          borderRadius: "8px",
+                          border: `1px solid ${isExpanded ? "#4ECDC4" : "#e2e8f0"}`,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* Basket Header - Clickable */}
+                        <div
+                          onClick={() => setExpandedBaskets(prev => ({ ...prev, [basketId]: !prev[basketId] }))}
+                          style={{
+                            padding: "0.75rem 1rem",
+                            cursor: "pointer",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: isExpanded ? "#f0fdfa" : "#fff",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.85rem", color: "#1e293b" }}>
+                                🧺 {basketId}
+                              </span>
+                              <span style={{
+                                padding: "2px 8px",
+                                background: "#fef3c7",
+                                color: "#92400e",
+                                borderRadius: "999px",
+                                fontSize: "0.7rem",
+                                fontWeight: 600,
+                              }}>
+                                {basketOrders.length} orders
+                              </span>
+                              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                                Broker: <strong>{broker}</strong>
+                              </span>
+                              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                                Merchant: <strong>{merchant}</strong>
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", gap: "16px", fontSize: "0.8rem", color: "#475569" }}>
+                              <span>Amount: <strong>{formatCurrency(totalAmount)}</strong></span>
+                              <span>Shares: <strong>{totalShares.toFixed(4)}</strong></span>
+                            </div>
+                          </div>
+                          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                            {isExpanded ? "▲" : "▼"}
                           </span>
-                        </td>
-                        <td style={tdStyle}>{formatDate(o.placed_at)}</td>
-                      </tr>
-                    ))}
-                    {pendingOrders.length === 0 && (
-                      <tr>
-                        <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>
-                          No pending orders
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                        </div>
+
+                        {/* Expanded Orders Table */}
+                        {isExpanded && (
+                          <div style={{ borderTop: "1px solid #e2e8f0", overflow: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead>
+                                <tr style={{ background: "#f8fafc" }}>
+                                  <th style={thStyle}>Order ID</th>
+                                  <th style={thStyle}>Member</th>
+                                  <th style={thStyle}>Symbol</th>
+                                  <th style={thStyle}>Shares</th>
+                                  <th style={thStyle}>Amount</th>
+                                  <th style={thStyle}>Status</th>
+                                  <th style={thStyle}>Placed At</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {basketOrders.map((o) => (
+                                  <tr key={o.order_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                    <td style={tdStyle}>{o.order_id}</td>
+                                    <td style={tdStyle}>{o.member_id}</td>
+                                    <td style={{ ...tdStyle, fontWeight: "600" }}>{o.symbol}</td>
+                                    <td style={tdStyle}>{parseFloat(o.shares).toFixed(4)}</td>
+                                    <td style={tdStyle}>{formatCurrency(o.amount)}</td>
+                                    <td style={tdStyle}>
+                                      <span style={{
+                                        padding: "0.125rem 0.5rem",
+                                        background: "#fef3c7",
+                                        color: "#92400e",
+                                        borderRadius: "999px",
+                                        fontSize: "0.7rem"
+                                      }}>
+                                        {o.status}
+                                      </span>
+                                    </td>
+                                    <td style={tdStyle}>{formatDate(o.placed_at)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -536,7 +885,7 @@ export default function SweepAdmin() {
                         <td style={tdStyle}>{formatCurrency(s.pending_amount)}</td>
                         <td style={tdStyle}>
                           <button
-                            onClick={() => runSweep(s.merchant_id)}
+                            onClick={() => showSweepModal(s.merchant_id)}
                             disabled={sweepRunning || !s.pending_orders}
                             style={{
                               ...smallBtnStyle,
