@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
 import { Settings } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
 
 /**
  * DemoLaunch - Merchant Loyalty Portal Simulator
@@ -38,6 +39,7 @@ export default function DemoLaunch() {
   const [bulkPoints, setBulkPoints] = useState("10000");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showBulkSection, setShowBulkSection] = useState(false);
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
 
   // Admin authentication state
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
@@ -206,8 +208,8 @@ export default function DemoLaunch() {
     }
   };
 
-  // Bulk refresh all members for merchant
-  const refreshAllMembers = async () => {
+  // Show bulk refresh confirmation
+  const confirmBulkRefresh = () => {
     const target = Number(bulkPoints);
 
     if (!selectedMerchantId) return alert("Select a merchant first");
@@ -215,10 +217,13 @@ export default function DemoLaunch() {
       return alert("Bulk points must be 0 or a positive number");
     }
 
-    const ok = window.confirm(
-      `This will FORCE-SET ALL members of merchant "${selectedMerchantId}" to exactly ${target.toLocaleString()} points.\n\nContinue?`
-    );
-    if (!ok) return;
+    setShowBulkConfirm(true);
+  };
+
+  // Bulk refresh all members for merchant (after confirmation)
+  const refreshAllMembers = async () => {
+    setShowBulkConfirm(false);
+    const target = Number(bulkPoints);
 
     setBulkBusy(true);
     setError("");
@@ -521,7 +526,7 @@ export default function DemoLaunch() {
                       backgroundColor: "#c53030",
                       opacity: bulkBusy ? 0.6 : 1 
                     }}
-                    onClick={refreshAllMembers}
+                    onClick={confirmBulkRefresh}
                     disabled={bulkBusy}
                   >
                     {bulkBusy ? "Processing..." : "Reset All Members"}
@@ -546,6 +551,18 @@ export default function DemoLaunch() {
           </button>
         </div>
       </footer>
+
+      {/* Bulk Reset Confirm Modal */}
+      <ConfirmModal
+        show={showBulkConfirm}
+        title="Bulk Points Reset"
+        message={`This will FORCE-SET ALL members of merchant "${selectedMerchant?.merchant_name || selectedMerchantId}" to exactly ${Number(bulkPoints).toLocaleString()} points.`}
+        icon="⚠️"
+        confirmText="Reset All Members"
+        confirmColor="#c53030"
+        onConfirm={refreshAllMembers}
+        onCancel={() => setShowBulkConfirm(false)}
+      />
 
       {/* Admin Password Prompt Modal */}
       {showAdminPrompt && (

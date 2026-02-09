@@ -1,6 +1,4 @@
-// src/components/Header.jsx (Option A - minimal changes: tighter menu spacing + scroll + install label/color)
-// Based on your uploaded Header.jsx :contentReference[oaicite:0]{index=0}
-
+// src/components/Header.jsx
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Menu, LogOut } from "lucide-react";
@@ -9,6 +7,7 @@ import SlideOutPanel from "./SlideOutPanel";
 import { useBasket } from "../context/BasketContext";
 import InstallAppModal from "./InstallAppModal";
 import UserAvatar from "./UserAvatar";
+import ConfirmModal from "./ConfirmModal";
 import { apiPost } from "../api.js";
 
 export default function Header() {
@@ -17,18 +16,13 @@ export default function Header() {
   const { basket } = useBasket();
   const [showMenu, setShowMenu] = useState(false);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userAvatar, setUserAvatar] = useState(null);
   const [memberId, setMemberId] = useState(null);
   const [merchantLogo, setMerchantLogo] = useState(localStorage.getItem("merchantLogo"));
 
-  // ✅ Logout function with confirmation
-  const handleLogout = () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to log out?\n\nThis will clear your session and return you to the login page."
-    );
-    
-    if (!confirmed) return;
-
+  // ✅ Logout function - called after confirmation
+  const handleLogoutConfirm = () => {
     // Clear all user session data
     localStorage.removeItem("memberId");
     localStorage.removeItem("memberEmail");
@@ -51,6 +45,7 @@ export default function Header() {
     setMemberId(null);
     setUserAvatar(null);
     setShowMenu(false);
+    setShowLogoutModal(false);
     
     // Notify other components
     window.dispatchEvent(new Event("member-updated"));
@@ -120,7 +115,7 @@ export default function Header() {
     // ✅ Option A: same-tab memberId updates
     const handleMemberUpdate = () => {
       const id = localStorage.getItem("memberId");
-      console.log("🔁 member-updated event:", id);
+      console.log("🔍 member-updated event:", id);
       setMemberId(id);
       setMerchantLogo(localStorage.getItem("merchantLogo"));
     };
@@ -392,10 +387,13 @@ export default function Header() {
             Install App Bookmark
           </button>
           
-          {/* ✅ Logout Button */}
+          {/* ✅ Logout Button - opens confirm modal */}
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => {
+              setShowMenu(false);
+              setShowLogoutModal(true);
+            }}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-colors font-medium text-sm shadow-sm"
             style={{
               background: "#fee2e2",
@@ -413,6 +411,18 @@ export default function Header() {
       <InstallAppModal
         isOpen={showInstallModal}
         onClose={() => setShowInstallModal(false)}
+      />
+
+      {/* ✅ Logout Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showLogoutModal}
+        title="Log Out"
+        message="Are you sure you want to log out? This will clear your session and return you to the login page."
+        confirmLabel="Log Out"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleLogoutConfirm}
+        onCancel={() => setShowLogoutModal(false)}
       />
     </div>
   );

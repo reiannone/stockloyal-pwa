@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
+import ConfirmModal from "../components/ConfirmModal";
 
 /**
  * BrokerExecAdmin — Broker Trade Execution Simulator
@@ -21,6 +22,19 @@ export default function BrokerExecAdmin() {
   const [executing, setExecuting] = useState(false);
   const [executingBasket, setExecutingBasket] = useState(null);
   const [lastResult, setLastResult] = useState(null);
+
+  // Modal state
+  const [modal, setModal] = useState({
+    show: false,
+    title: "",
+    message: "",
+    icon: "⚡",
+    confirmText: "Execute",
+    confirmColor: "#059669",
+    data: null,
+  });
+
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // Load placed orders
   const loadPlacedOrders = useCallback(async () => {
@@ -43,13 +57,22 @@ export default function BrokerExecAdmin() {
     loadPlacedOrders();
   }, [loadPlacedOrders]);
 
-  // Execute all trades
-  const executeAll = async () => {
-    if (!window.confirm(
-      `Execute all ${summary?.total_orders || 0} placed orders?\n\n` +
-      `This simulates broker market execution at current prices.`
-    )) return;
+  // Show confirm modal for execute all
+  const confirmExecuteAll = () => {
+    setModal({
+      show: true,
+      title: "Execute All Orders",
+      message: `Execute all ${summary?.total_orders || 0} placed orders? This simulates broker market execution at current prices.`,
+      icon: "⚡",
+      confirmText: "Execute All",
+      confirmColor: "#059669",
+      data: { type: "all" },
+    });
+  };
 
+  // Execute all trades (after confirmation)
+  const executeAll = async () => {
+    closeModal();
     setExecuting(true);
     setLastResult(null);
     try {
@@ -63,10 +86,22 @@ export default function BrokerExecAdmin() {
     setExecuting(false);
   };
 
-  // Execute single basket
-  const executeBasketAction = async (basketId) => {
-    if (!window.confirm(`Execute basket ${basketId}?`)) return;
+  // Show confirm modal for single basket
+  const confirmExecuteBasket = (basketId, orderCount) => {
+    setModal({
+      show: true,
+      title: "Execute Basket",
+      message: `Execute basket ${basketId} with ${orderCount || "?"} order(s)? This simulates broker market execution.`,
+      icon: "📦",
+      confirmText: "Execute Basket",
+      confirmColor: "#059669",
+      data: { type: "basket", basketId },
+    });
+  };
 
+  // Execute single basket (after confirmation)
+  const executeBasketAction = async (basketId) => {
+    closeModal();
     setExecutingBasket(basketId);
     try {
       const res = await apiPost("broker-execute.php", {
@@ -79,6 +114,15 @@ export default function BrokerExecAdmin() {
       console.error("Basket execution failed:", err);
     }
     setExecutingBasket(null);
+  };
+
+  // Handle modal confirm
+  const handleModalConfirm = () => {
+    if (modal.data?.type === "all") {
+      executeAll();
+    } else if (modal.data?.type === "basket") {
+      executeBasketAction(modal.data.basketId);
+    }
   };
 
   const formatCurrency = (amt) =>
@@ -123,7 +167,7 @@ export default function BrokerExecAdmin() {
           🔄 Refresh
         </button>
         <button
-          onClick={executeAll}
+          onClick={confirmExecuteAll}
           disabled={executing || !summary?.total_orders}
           style={{
             padding: "0.625rem 1.25rem",
@@ -302,7 +346,7 @@ export default function BrokerExecAdmin() {
                     basket={basket}
                     symbols={symbols}
                     executing={executingBasket === basket.basket_id}
-                    onExecute={() => executeBasketAction(basket.basket_id)}
+                    onExecute={() => confirmExecuteBasket(basket.basket_id, basket.order_count)}
                     formatCurrency={formatCurrency}
                     formatDate={formatDate}
                   />
@@ -328,6 +372,18 @@ export default function BrokerExecAdmin() {
         exchange at market open (9:30 AM ET). Orders move from <code>placed → confirmed</code> with
         executed_price, executed_shares, and executed_amount populated.
       </div>
+
+      {/* Confirm Modal */}
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

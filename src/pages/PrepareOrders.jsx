@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
+import ConfirmModal from "../components/ConfirmModal";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -18,116 +19,6 @@ import OrderPipeline from "../components/OrderPipeline";
  *   - points = 0 → member bypassed
  *   - conversion_rate from merchant tier columns (tier1–tier6)
  */
-
-// ══════════════════════════════════════════════════════════════════════════════
-// CONFIRM MODAL COMPONENT
-// ══════════════════════════════════════════════════════════════════════════════
-function ConfirmModal({ 
-  show, 
-  title, 
-  message, 
-  details,
-  confirmText = "Confirm", 
-  cancelText = "Cancel",
-  confirmColor = "#007bff",
-  icon = "❓",
-  onConfirm, 
-  onCancel 
-}) {
-  if (!show) return null;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 3000,
-      }}
-      onClick={cancelText ? onCancel : undefined}
-    >
-      <div
-        style={{
-          backgroundColor: "white",
-          borderRadius: "8px",
-          padding: "24px",
-          maxWidth: "500px",
-          width: "90%",
-          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "600", display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "24px" }}>{icon}</span>
-          {title}
-        </h3>
-        
-        {typeof message === "string" ? (
-          <p style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
-            {message}
-          </p>
-        ) : (
-          <div style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
-            {message}
-          </div>
-        )}
-
-        {details && (
-          <div style={{
-            backgroundColor: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            borderRadius: "6px",
-            padding: "12px",
-            marginBottom: "16px",
-            fontSize: "13px",
-          }}>
-            {details}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-          {cancelText && (
-            <button
-              onClick={onCancel}
-              style={{
-                padding: "10px 20px",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                backgroundColor: "white",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-              }}
-            >
-              {cancelText}
-            </button>
-          )}
-          <button
-            onClick={onConfirm}
-            style={{
-              padding: "10px 20px",
-              border: "none",
-              borderRadius: "4px",
-              backgroundColor: confirmColor,
-              color: "white",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: "500",
-            }}
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function PrepareOrders() {
   const [activeTab, setActiveTab] = useState("preview");
