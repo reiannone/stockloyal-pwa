@@ -1071,14 +1071,14 @@ export default function StockPicker() {
 
   // --- Symbol search ---
   const handleSymbolSearch = async () => {
-    const sym = symbolInput.trim().toUpperCase();
-    if (!sym) return;
+    const input = symbolInput.trim();
+    if (!input) return;
 
     if (isCashOutsideLimits) return;
 
     try {
       setSearching(true);
-      setCategory(`Search: ${sym}`);
+      setCategory(`Search: ${input}`);
       setStockError("");
       setResults([]);
       setSelectedStocks([]);
@@ -1090,40 +1090,101 @@ export default function StockPicker() {
       setCurrentOffset(0);
       setHasMore(false);
 
-      const quoteResp = await apiPost("proxy.php", { symbol: sym });
+      // Determine if input looks like a symbol (1-5 uppercase letters) or a name search
+      const isSymbolSearch = /^[A-Za-z]{1,5}$/.test(input) && input === input.toUpperCase();
+      
+      let searchResults = [];
+      
+      if (isSymbolSearch) {
+        // Direct symbol lookup via proxy.php
+        const quoteResp = await apiPost("proxy.php", { symbol: input.toUpperCase() });
+        const quoteArr =
+          quoteResp?.data ??
+          quoteResp?.results ??
+          quoteResp?.finance?.result?.[0]?.quotes ??
+          [];
 
-      const quoteArr =
-        quoteResp?.data ??
-        quoteResp?.results ??
-        quoteResp?.finance?.result?.[0]?.quotes ??
-        [];
+        if (Array.isArray(quoteArr) && quoteArr.length > 0) {
+          searchResults = quoteArr.map((q) => ({
+            symbol: q.symbol || q.Symbol || input.toUpperCase(),
+            name: q.name || q.shortName || q.longName || input.toUpperCase(),
+            price:
+              q.price ??
+              q.regularMarketPrice ??
+              q.postMarketPrice ??
+              q.preMarketPrice ??
+              null,
+            change:
+              q.change ??
+              q.regularMarketChangePercent ??
+              q.postMarketChangePercent ??
+              q.preMarketChangePercent ??
+              0,
+          }));
+        }
+      }
+      
+      // If no results from symbol search, or input looks like a name, try name search
+      if (searchResults.length === 0) {
+        const searchResp = await apiPost("proxy.php", { search: input });
+        const searchArr = searchResp?.quotes || searchResp?.data || [];
+        
+        if (Array.isArray(searchArr) && searchArr.length > 0) {
+          // Filter to only equity types (stocks) and get symbols
+          const symbols = searchArr
+            .filter(q => q.quoteType === 'EQUITY' || q.typeDisp === 'Equity' || !q.quoteType)
+            .map(q => q.symbol)
+            .filter(Boolean)
+            .slice(0, 10); // Limit to 10 results
+          
+          if (symbols.length > 0) {
+            // Get full quote data for each symbol
+            const quoteResp = await apiPost("proxy.php", { symbol: symbols.join(",") });
+            const quoteArr =
+              quoteResp?.data ??
+              quoteResp?.results ??
+              quoteResp?.finance?.result?.[0]?.quotes ??
+              [];
 
-      if (!Array.isArray(quoteArr) || quoteArr.length === 0) {
-        setStockError(`No results found for "${sym}"`);
+            // Build a map of search results for name fallback
+            const searchMap = new Map();
+            searchArr.forEach(q => {
+              if (q.symbol) {
+                searchMap.set(q.symbol.toUpperCase(), q.shortname || q.longname || q.symbol);
+              }
+            });
+
+            if (Array.isArray(quoteArr)) {
+              searchResults = quoteArr.map((q) => ({
+                symbol: q.symbol || q.Symbol,
+                name: q.name || q.shortName || q.longName || searchMap.get((q.symbol || "").toUpperCase()) || q.symbol,
+                price:
+                  q.price ??
+                  q.regularMarketPrice ??
+                  q.postMarketPrice ??
+                  q.preMarketPrice ??
+                  null,
+                change:
+                  q.change ??
+                  q.regularMarketChangePercent ??
+                  q.postMarketChangePercent ??
+                  q.preMarketChangePercent ??
+                  0,
+              }));
+            }
+          }
+        }
+      }
+
+      if (searchResults.length === 0) {
+        setStockError(`No results found for "${input}"`);
         return;
       }
 
-      const fetched = quoteArr.map((q) => ({
-        symbol: q.symbol || q.Symbol || sym,
-        name: q.name || q.shortName || q.longName || sym,
-        price:
-          q.price ??
-          q.regularMarketPrice ??
-          q.postMarketPrice ??
-          q.preMarketPrice ??
-          null,
-        change:
-          q.change ??
-          q.regularMarketChangePercent ??
-          q.postMarketChangePercent ??
-          q.preMarketChangePercent ??
-          0,
-      }));
-
-      setResults(fetched);
+      setResults(searchResults);
     } catch (err) {
-      console.error("[StockPicker] symbol search error:", err);
-      setStockError(`Failed to search for "${sym}"`);
+      console.error("[StockPicker] search error:", err);
+      setStockError(`Failed to search for "${input}"`);
     } finally {
       setSearching(false);
       setLoadingCategory(false);
@@ -1482,12 +1543,12 @@ export default function StockPicker() {
         </label>
         <input
           type="text"
-          placeholder="AAPL"
+          placeholder="AAPL or Apple"
           value={symbolInput}
           onChange={(e) => setSymbolInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSymbolSearch()}
           className="form-input"
-          style={{ width: "100px", fontSize: "0.9rem", flexShrink: 0 }}
+          style={{ width: "140px", fontSize: "0.9rem", flexShrink: 0 }}
           disabled={isCashOutsideLimits}
         />
         <button

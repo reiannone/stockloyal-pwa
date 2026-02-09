@@ -4,11 +4,11 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
-import { Search, Heart, HeartOff, Trash2 } from "lucide-react";
+import { Search, Heart, HeartOff, Trash2, ShoppingBasket, ClipboardCheck, Wallet as WalletIcon } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
-const MY_PICKS = "My Active List"; // ✅ Member's persisted list of securities for sweeps
+const MY_PICKS = "My Basket"; // ✅ Member's persisted list of securities for sweeps
 const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
 // ✅ Map categories -> API screener IDs
@@ -122,7 +122,7 @@ export default function StockPicker() {
   const [memberPicks, setMemberPicks] = useState(new Set());
   const [savingPick, setSavingPick] = useState(null); // Track which symbol is being saved/removed
 
-  // ✅ NEW: Persistent My Active List data (always visible on page)
+  // ✅ NEW: Persistent My Basket data (always visible on page)
   const [myActiveListData, setMyActiveListData] = useState([]);
   const [loadingMyActiveList, setLoadingMyActiveList] = useState(true);
   const [myActiveListSelected, setMyActiveListSelected] = useState([]); // Selected symbols from persistent table
@@ -203,7 +203,7 @@ export default function StockPicker() {
     };
   }, []);
 
-  // ✅ NEW: Load member's saved picks AND My Active List data on mount
+  // ✅ NEW: Load member's saved picks AND My Basket data on mount
   useEffect(() => {
     if (!memberId) return;
     
@@ -222,12 +222,12 @@ export default function StockPicker() {
         console.error("[StockPicker] Failed to load member picks:", err);
       }
 
-      // Load full My Active List data with price enrichment
+      // Load full My Basket data with price enrichment
       await loadMyActiveList();
     })();
   }, [memberId]);
 
-  // ✅ Function to load My Active List with Yahoo quote enrichment
+  // ✅ Function to load My Basket with Yahoo quote enrichment
   const loadMyActiveList = async () => {
     if (!memberId) return;
     
@@ -241,7 +241,7 @@ export default function StockPicker() {
       });
       
       if (!data?.success) {
-        console.error("[StockPicker] Failed to load My Active List:", data?.error);
+        console.error("[StockPicker] Failed to load My Basket:", data?.error);
         setMyActiveListData([]);
         setLoadingMyActiveList(false);
         return;
@@ -315,23 +315,23 @@ export default function StockPicker() {
 
       setMyActiveListData(merged);
       
-      // Auto-select all stocks in My Active List
+      // Auto-select all stocks in My Basket
       setMyActiveListSelected(merged.map((s) => s.symbol));
       
     } catch (err) {
-      console.error("[StockPicker] My Active List load error:", err);
+      console.error("[StockPicker] My Basket load error:", err);
       setMyActiveListData([]);
     } finally {
       setLoadingMyActiveList(false);
     }
   };
 
-  // ✅ Sync basket with My Active List selections
-  // This ensures the basket always reflects what's selected in My Active List
+  // ✅ Sync basket with My Basket selections
+  // This ensures the basket always reflects what's selected in My Basket
   useEffect(() => {
     if (loadingMyActiveList || myActiveListData.length === 0) return;
     
-    // Clear basket and rebuild from My Active List selections
+    // Clear basket and rebuild from My Basket selections
     clearBasket();
     
     const selectedData = myActiveListData.filter((s) =>
@@ -494,7 +494,7 @@ export default function StockPicker() {
         )} and $${maxOrderAmount.toFixed(2)} for your broker.`
       : "";
 
-  // ✅ NEW: Save a stock to My Active List
+  // ✅ NEW: Save a stock to My Basket
   const handleSaveToPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -511,9 +511,9 @@ export default function StockPicker() {
       if (data?.success) {
         setMemberPicks(prev => new Set([...prev, sym]));
         // Show brief feedback
-        console.log(`✅ Added ${sym} to My Active List`);
+        console.log(`✅ Added ${sym} to My Basket`);
         
-        // ✅ Reload My Active List to get updated data with prices
+        // ✅ Reload My Basket to get updated data with prices
         await loadMyActiveList();
       } else {
         console.error("Failed to save pick:", data?.error);
@@ -527,7 +527,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ NEW: Remove a stock from My Active List
+  // ✅ NEW: Remove a stock from My Basket
   const handleRemoveFromPicks = async (symbol) => {
     if (!memberId || !symbol) return;
     
@@ -548,17 +548,17 @@ export default function StockPicker() {
           return next;
         });
         
-        // If we're in My Active List view, also remove from results
+        // If we're in My Basket view, also remove from results
         if (category === MY_PICKS) {
           setResults(prev => prev.filter(s => s.symbol !== sym));
           setSelectedStocks(prev => prev.filter(s => s !== sym));
         }
         
-        // ✅ Also remove from persistent My Active List table
+        // ✅ Also remove from persistent My Basket table
         setMyActiveListData(prev => prev.filter(s => s.symbol !== sym));
         setMyActiveListSelected(prev => prev.filter(s => s !== sym));
         
-        console.log(`🗑️ Removed ${sym} from My Active List`);
+        console.log(`🗑️ Removed ${sym} from My Basket`);
       } else {
         console.error("Failed to remove pick:", data?.error);
         alert(data?.error || "Failed to remove pick");
@@ -571,10 +571,10 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ Continue with selected stocks from persistent My Active List
+  // ✅ Continue with selected stocks from persistent My Basket
   const handleContinueWithMyActiveList = () => {
     if (myActiveListSelected.length === 0) {
-      alert("Please select at least one stock from My Active List");
+      alert("Please select at least one stock from My Basket");
       return;
     }
 
@@ -606,8 +606,48 @@ export default function StockPicker() {
       });
     });
 
-    // Navigate to basket
-    navigate("/basket");
+    // ✅ Use handleProceedToOrder to enrich + navigate (replaces old navigate("/order"))
+    // Small delay to let basket context update
+    setTimeout(() => handleProceedToOrder(), 50);
+  };
+
+  // ✅ Proceed to Order — enriches basket with shares/allocation (replaces Basket.jsx)
+  const handleProceedToOrder = () => {
+    const basketArray = Array.isArray(basket) ? basket : [];
+    if (basketArray.length === 0) {
+      alert("Your basket is empty. Please select stocks first.");
+      return;
+    }
+
+    const investedAmount = cashValue;
+    const basketCount = basketArray.length;
+
+    // 🔥 Persist values so Order.jsx and other pages can access them
+    localStorage.setItem("lastPointsUsed", String(selectedPoints));
+    localStorage.setItem("lastInvestedAmount", String(investedAmount));
+    localStorage.setItem("basket_pointsUsed", String(selectedPoints));
+    localStorage.setItem("basket_amount", String(investedAmount));
+
+    // ✅ Enrich basket with allocation + shares (same logic as Basket.jsx)
+    const enrichedBasket = basketArray.map((stock) => {
+      const allocation = investedAmount / basketCount;
+      const price = Number(stock.price || 0);
+      const shares = price > 0 ? allocation / price : 0;
+      return {
+        ...stock,
+        allocatedAmount: allocation,
+        shares: parseFloat(shares.toFixed(4)),
+      };
+    });
+
+    navigate("/order", {
+      state: {
+        basket: enrichedBasket,
+        amount: investedAmount,
+        pointsUsed: selectedPoints,
+        memberId,
+      },
+    });
   };
 
   // --- Yahoo Screener via proxy.php ---
@@ -743,7 +783,7 @@ export default function StockPicker() {
 
         return {
           symbol: r.symbol,
-          name: `${displayName} — Purchased ${r.purchases.toLocaleString()} times`,
+          name: displayName,
           price: q?.price ?? null,
           change: q?.change ?? 0,
         };
@@ -758,7 +798,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ My Active List - Member's persisted picks from junction table
+  // ✅ My Basket - Member's persisted picks from junction table
   // autoLoadToBasket: false = just show the list, true = load to basket and navigate
   const handleMyPicks = async (autoLoadToBasket = false) => {
     if (isCashOutsideLimits) return;
@@ -858,11 +898,11 @@ export default function StockPicker() {
 
       setResults(merged);
       
-      // ✅ Auto-select all stocks for My Active List
+      // ✅ Auto-select all stocks for My Basket
       const allSymbols = merged.map((s) => s.symbol);
       setSelectedStocks(allSymbols);
 
-      // ✅ If autoLoadToBasket, add all picks to basket and navigate
+      // ✅ If autoLoadToBasket, add all picks to basket and navigate with enrichment
       if (autoLoadToBasket && merged.length > 0) {
         // Calculate amount per stock (equal split or use allocation_pct)
         merged.forEach((stock) => {
@@ -883,14 +923,14 @@ export default function StockPicker() {
 
         // ✅ localStorage is already synced via useEffect when slider changes
 
-        // Close the modal and navigate to basket
+        // Close the modal and navigate via enriched order flow
         setIsStockListOpen(false);
         setLoadingCategory(false);
-        navigate("/basket");
+        setTimeout(() => handleProceedToOrder(), 50);
         return;
       }
     } catch (err) {
-      console.error("[StockPicker] My Active List error:", err);
+      console.error("[StockPicker] My Basket error:", err);
       setStockError("Failed to load your picks.");
     } finally {
       setLoadingCategory(false);
@@ -966,7 +1006,7 @@ export default function StockPicker() {
   };
 
   // --- Toggle stock selection ---
-  // ✅ Also adds to My Active List when selecting
+  // ✅ Also adds to My Basket when selecting
   const toggleSelect = (symbol) => {
     const sym = symbol.toUpperCase();
     const isCurrentlySelected = selectedStocks.includes(sym);
@@ -975,10 +1015,10 @@ export default function StockPicker() {
       // Deselecting - just remove from selected list
       setSelectedStocks((prev) => prev.filter((s) => s !== sym));
     } else {
-      // Selecting - add to selected list AND add to My Active List
+      // Selecting - add to selected list AND add to My Basket
       setSelectedStocks((prev) => [...prev, sym]);
       
-      // Also add to My Active List if not already in picks
+      // Also add to My Basket if not already in picks
       if (!memberPicks.has(sym)) {
         handleSaveToPicks(sym);
       }
@@ -1134,7 +1174,7 @@ export default function StockPicker() {
     const isSaving = savingPick === sym;
 
     if (category === MY_PICKS) {
-      // In My Active List view, show remove button
+      // In My Basket view, show remove button
       return (
         <button
           type="button"
@@ -1143,7 +1183,7 @@ export default function StockPicker() {
             handleRemoveFromPicks(sym);
           }}
           disabled={isSaving}
-          title="Remove from My Active List"
+          title="Remove from My Basket"
           style={{
             background: "transparent",
             border: "none",
@@ -1173,7 +1213,7 @@ export default function StockPicker() {
           }
         }}
         disabled={isSaving}
-        title={isPicked ? "Remove from My Active List" : "Add to My Active List"}
+        title={isPicked ? "Remove from My Basket" : "Add to My Basket"}
         style={{
           background: "transparent",
           border: "none",
@@ -1215,33 +1255,10 @@ export default function StockPicker() {
 
   return (
     <div className="wallet-container" style={{ paddingBottom: "100px" }}>
-      <h1 className="page-title">Pick Your Securities</h1>
-      <p style={{ textAlign: "center", color: "#6b7280", marginBottom: "1rem" }}>
-        All orders are placed through your broker, {brokerName}.
-      </p>
-
-      {/* Sweep Schedule Notice */}
-      {(sweepDay === "T+1" || formatSweepDay(sweepDay)) && (
-        <div style={{
-          background: "#fef3c7",
-          border: "1px solid #f59e0b",
-          borderRadius: "8px",
-          padding: "0.75rem 1rem",
-          marginBottom: "1rem",
-          textAlign: "center",
-          fontSize: "0.875rem",
-          color: "#92400e"
-        }}>
-          {sweepDay === "T+1" ? (
-            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day.</>
-          ) : (
-            <>📅 <strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month.</>
-          )}
-        </div>
-      )}
+      <h1 className="page-title">Build My Basket of Securities</h1>
 
       {/* Points / Cash display */}
-      <div
+      <div class="card card--accent"
         style={{
           background: "#f9fafb",
           borderRadius: "12px",
@@ -1343,6 +1360,10 @@ export default function StockPicker() {
           </p>
         )}
       </div>
+
+      <p style={{ fontSize: "0.9rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+        Select from these categories
+      </p>
 
        {/* ✅ Category slider at TOP */}
       <div
@@ -1489,15 +1510,7 @@ export default function StockPicker() {
         </button>
       </div>
 
-      {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
-<p className="form-disclosure">
-  <strong>My Active List:</strong> Securities saved under <em>My Active List</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
-  established between {merchantName} and {brokerName}. You can add securities to your <em>My Active List</em> by selecting 
-  them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
-  To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
-</p>
-
-      {/* ✅ PERSISTENT My Active List Table */}
+      {/* ✅ PERSISTENT My Basket Table */}
       <div
         style={{
           background: "#f9fafb",
@@ -1515,18 +1528,18 @@ export default function StockPicker() {
             marginBottom: "0.75rem",
           }}
         >
-          <h3
+          <h1
             style={{
               margin: 0,
-              fontSize: "1rem",
+              fontSize: "1.5rem",
               fontWeight: "700",
-              color: "#1f2937",
+              color: "#0056b3", 
               display: "flex",
               alignItems: "center",
               gap: "0.5rem",
             }}
           >
-            📋 My Active List
+            <ShoppingBasket size={18} style={{ verticalAlign: "middle" }} /> My Basket
             {myActiveListData.length > 0 && (
               <span
                 style={{
@@ -1545,8 +1558,29 @@ export default function StockPicker() {
                 {myActiveListData.length}
               </span>
             )}
-          </h3>
+          </h1>
         </div>
+
+        {/* ✅ Basket investment summary (from Basket.jsx) */}
+        {myActiveListSelected.length > 0 && cashValue > 0 && (
+          <div style={{
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            borderRadius: "8px",
+            padding: "0.6rem 1rem",
+            marginBottom: "0.75rem",
+            textAlign: "center",
+            fontSize: "0.875rem",
+            color: "#1e40af",
+          }}>
+            Investing <strong>${Number(cashValue).toFixed(2)}</strong> across{" "}
+            {myActiveListSelected.length} stock{myActiveListSelected.length !== 1 ? "s" : ""}, using{" "}
+            <strong>{Number(selectedPoints).toLocaleString()}</strong> points
+            {myActiveListSelected.length > 0 && (
+              <> — <strong>${(cashValue / myActiveListSelected.length).toFixed(2)}</strong> per stock</>
+            )}
+          </div>
+        )}
 
         {loadingMyActiveList ? (
           <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
@@ -1578,7 +1612,12 @@ export default function StockPicker() {
                   <th>Symbol</th>
                   <th>Name</th>
                   <th style={{ textAlign: "right" }}>Price</th>
-                  <th style={{ textAlign: "right" }}>Change</th>
+                  <th style={{ textAlign: "right" }}>
+                    Shares
+                    <div style={{ fontSize: "0.7rem", fontWeight: "normal", color: "#6b7280" }}>
+                      Allocation
+                    </div>
+                  </th>
                   <th style={{ width: "40px", textAlign: "center" }}>Remove</th>
                 </tr>
               </thead>
@@ -1616,20 +1655,23 @@ export default function StockPicker() {
                     <td style={{ textAlign: "right" }}>
                       {stock.price != null ? `$${Number(stock.price).toFixed(2)}` : "N/A"}
                     </td>
-                    <td
-                      style={{
-                        textAlign: "right",
-                        color:
-                          stock.change > 0
-                            ? "#22c55e"
-                            : stock.change < 0
-                            ? "#ef4444"
-                            : "#6b7280",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {stock.change > 0 ? "+" : ""}
-                      {typeof stock.change === "number" ? stock.change.toFixed(2) : "0.00"}%
+                    <td style={{ textAlign: "right" }}>
+                      {(() => {
+                        const selectedCount = myActiveListSelected.length;
+                        const isSelected = myActiveListSelected.includes(stock.symbol);
+                        if (!isSelected || selectedCount === 0 || cashValue <= 0) return "—";
+                        const allocation = cashValue / selectedCount;
+                        const price = Number(stock.price || 0);
+                        const shares = price > 0 ? allocation / price : 0;
+                        return (
+                          <>
+                            <div style={{ fontWeight: 600 }}>{shares.toFixed(4)}</div>
+                            <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                              ${allocation.toFixed(2)}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td style={{ textAlign: "center" }}>
                       <button
@@ -1643,7 +1685,7 @@ export default function StockPicker() {
                           padding: "4px",
                           opacity: savingPick === stock.symbol ? 0.5 : 1,
                         }}
-                        title="Remove from My Active List"
+                        title="Remove from My Basket"
                       >
                         <Trash2 size={18} color="#ef4444" />
                       </button>
@@ -1703,7 +1745,7 @@ export default function StockPicker() {
                 <div className="stocklist-sheet-handle" />
                 <div className="stocklist-sheet-title-row">
                   <h2 className="stocklist-heading">
-                    {category ? `${category} Stocks` : "Stocks"}
+                    {category ? `${category}` : "Securities"}
                   </h2>
                   <button
                     type="button"
@@ -1860,29 +1902,56 @@ export default function StockPicker() {
         )}
         {/* Bottom Action Bar */}
       <div className="stockpicker-bottom-actions">
+        {/* ✅ Place Order — enriches basket and navigates to Order.jsx */}
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={handleProceedToOrder}
+          disabled={!basket || basket.length === 0 || isCashOutsideLimits}
+          style={{
+            opacity: (!basket || basket.length === 0 || isCashOutsideLimits) ? 0.5 : 1,
+            cursor: (!basket || basket.length === 0 || isCashOutsideLimits) ? "not-allowed" : "pointer",
+          }}
+        >
+           <ClipboardCheck size={16} style={{ verticalAlign: "middle", marginRight: 4 }} />{" "} Submit Buy Order with {brokerName} {basket?.length > 0 && `(${basket.length})`}
+        </button>
         <button
           type="button"
           className="btn-secondary"
           onClick={() => navigate("/wallet")}
         >
-          Go back to Wallet
-        </button>
-
-        {/* ✅ Go to Basket - shows basket item count */}
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => navigate("/basket")}
-          disabled={!basket || basket.length === 0}
-          style={{
-            opacity: (!basket || basket.length === 0) ? 0.5 : 1,
-            cursor: (!basket || basket.length === 0) ? "not-allowed" : "pointer",
-          }}
-        >
-          Go to Basket {basket?.length > 0 && `(${basket.length})`}
+          <WalletIcon size={16} style={{ verticalAlign: "middle", marginRight: 4 }} />{" "}Go back to Wallet
         </button>
       </div>
 
+      {/* Sweep Schedule Notice */}
+      {(sweepDay === "T+1" || formatSweepDay(sweepDay)) && (
+        <div style={{
+          background: "#fef3c7",
+          border: "1px solid #f59e0b",
+          borderRadius: "8px",
+          padding: "0.75rem 1rem",
+          marginTop: "3rem",
+          marginBottom: "1rem",
+          textAlign: "center",
+          fontSize: "0.875rem",
+          color: "#92400e"
+        }}>
+          {sweepDay === "T+1" ? (
+            <><strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day through your broker, <strong>{brokerName}</strong>.</>
+          ) : (
+            <><strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month through your broker, <strong>{brokerName}</strong>.</>
+          )}
+        </div>
+      )}
+
+      {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
+      <p className="form-disclosure">
+        <strong>My Basket:</strong> Securities saved under <em>My Basket</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
+        established between {merchantName} and {brokerName}. You can add securities to your <em>My Basket</em> by selecting 
+        them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
+        To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
+      </p>
     </div>
   );
 }
