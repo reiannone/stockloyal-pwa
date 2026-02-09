@@ -18,6 +18,116 @@ import { apiPost } from "../api";
  *   - conversion_rate from merchant tier columns (tier1–tier6)
  */
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CONFIRM MODAL COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+function ConfirmModal({ 
+  show, 
+  title, 
+  message, 
+  details,
+  confirmText = "Confirm", 
+  cancelText = "Cancel",
+  confirmColor = "#007bff",
+  icon = "❓",
+  onConfirm, 
+  onCancel 
+}) {
+  if (!show) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 3000,
+      }}
+      onClick={cancelText ? onCancel : undefined}
+    >
+      <div
+        style={{
+          backgroundColor: "white",
+          borderRadius: "8px",
+          padding: "24px",
+          maxWidth: "500px",
+          width: "90%",
+          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ margin: "0 0 16px 0", fontSize: "18px", fontWeight: "600", display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "24px" }}>{icon}</span>
+          {title}
+        </h3>
+        
+        {typeof message === "string" ? (
+          <p style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
+            {message}
+          </p>
+        ) : (
+          <div style={{ margin: "0 0 16px 0", color: "#666", fontSize: "14px", lineHeight: "1.5" }}>
+            {message}
+          </div>
+        )}
+
+        {details && (
+          <div style={{
+            backgroundColor: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: "6px",
+            padding: "12px",
+            marginBottom: "16px",
+            fontSize: "13px",
+          }}>
+            {details}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+          {cancelText && (
+            <button
+              onClick={onCancel}
+              style={{
+                padding: "10px 20px",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                backgroundColor: "white",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontWeight: "500",
+              }}
+            >
+              {cancelText}
+            </button>
+          )}
+          <button
+            onClick={onConfirm}
+            style={{
+              padding: "10px 20px",
+              border: "none",
+              borderRadius: "4px",
+              backgroundColor: confirmColor,
+              color: "white",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+            }}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PrepareOrders() {
   const [activeTab, setActiveTab] = useState("preview");
 
@@ -45,6 +155,22 @@ export default function PrepareOrders() {
 
   // ── Actions in progress ──
   const [actionLoading, setActionLoading] = useState(false);
+
+  // ── Unified Modal State ──
+  const [modal, setModal] = useState({
+    show: false,
+    type: null,        // 'prepare' | 'approve' | 'discard' | 'monthly-warning'
+    title: "",
+    message: "",
+    details: null,
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    confirmColor: "#007bff",
+    icon: "❓",
+    data: null,        // Additional data (e.g., batchId)
+  });
+
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // ── Helpers ──
   const fmt$ = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v || 0);
@@ -91,16 +217,74 @@ export default function PrepareOrders() {
     setBatchesLoading(false);
   }, []);
 
-  // ── Prepare (stage) ──
-  const handlePrepare = async () => {
-    const openBatches = batches.filter((b) => b.status === "staged");
-    let confirmMsg = "Stage orders for all eligible members?";
-    if (openBatches.length > 0) {
-      confirmMsg += `\n\n⚠️ ${openBatches.length} open staged batch(es) will be discarded automatically.`;
-    }
-    confirmMsg += "\n\nAny existing pending orders (not yet swept) will also be cancelled.";
+  // ── Prepare (stage) - show modal ──
+  const showPrepareModal = () => {
+    // Check if there's an approved batch for the current month
+    const currentMonth = new Date().toISOString().slice(0, 7); // "2026-02"
+    const approvedThisMonth = batches.filter(
+      (b) => b.status === "approved" && b.batch_id?.startsWith(`PREP-${currentMonth}`)
+    );
 
-    if (!window.confirm(confirmMsg)) return;
+    if (approvedThisMonth.length > 0) {
+      // Show monthly warning modal
+      setModal({
+        show: true,
+        type: "monthly-warning",
+        title: "Prep Already Run This Month",
+        icon: "⚠️",
+        message: (
+          <>
+            A preparation batch has already been <strong>approved</strong> for <strong>{currentMonth}</strong>.
+            <div style={{ marginTop: "12px" }}>
+              Running prep again will create <strong>additional</strong> orders.
+            </div>
+          </>
+        ),
+        details: (
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: "8px", color: "#92400e" }}>Previous batch(es):</div>
+            {approvedThisMonth.map((b) => (
+              <div key={b.batch_id} style={{ marginBottom: "4px" }}>
+                • <strong>{b.batch_id}</strong> — {fmtN(b.total_orders)} orders, {fmt$(b.total_amount)}
+              </div>
+            ))}
+          </div>
+        ),
+        confirmText: "Override & Continue",
+        confirmColor: "#dc2626",
+        data: { forceOverride: true },
+      });
+      return;
+    }
+
+    // Normal prepare modal
+    const openBatches = batches.filter((b) => b.status === "staged");
+    const warnings = [];
+    if (openBatches.length > 0) {
+      warnings.push(`${openBatches.length} open staged batch(es) will be discarded automatically.`);
+    }
+    warnings.push("Any existing pending orders (not yet swept) will also be cancelled.");
+
+    setModal({
+      show: true,
+      type: "prepare",
+      title: "Stage Orders",
+      icon: "📋",
+      message: "Stage orders for all eligible members?",
+      details: warnings.length > 0 ? (
+        <ul style={{ margin: 0, paddingLeft: "20px" }}>
+          {warnings.map((w, i) => <li key={i} style={{ marginBottom: "4px" }}>{w}</li>)}
+        </ul>
+      ) : null,
+      confirmText: "Stage Orders",
+      confirmColor: "#6366f1",
+      data: { forceOverride: false },
+    });
+  };
+
+  // ── Execute prepare ──
+  const executePrepare = async () => {
+    closeModal();
     setPreparing(true);
     setPrepareResult(null);
 
@@ -156,30 +340,103 @@ export default function PrepareOrders() {
     setDrillLoading(false);
   };
 
-  // ── Approve ──
-  const handleApprove = async (batchId) => {
-    if (!window.confirm(`Approve batch "${batchId}"?\n\nThis will create pending orders in the orders table.`)) return;
+  // ── Approve - show modal ──
+  const showApproveModal = (batchId) => {
+    const batch = batches.find(b => b.batch_id === batchId);
+    setModal({
+      show: true,
+      type: "approve",
+      title: "Approve Batch",
+      icon: "✅",
+      message: `Approve batch "${batchId}"?`,
+      details: batch ? (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          <span>Members: <strong>{fmtN(batch.total_members)}</strong></span>
+          <span>Orders: <strong>{fmtN(batch.total_orders)}</strong></span>
+          <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
+        </div>
+      ) : null,
+      confirmText: "Approve",
+      confirmColor: "#10b981",
+      data: { batchId },
+    });
+  };
+
+  // ── Execute approve ──
+  const executeApprove = async (batchId) => {
+    closeModal();
     setActionLoading(true);
     try {
       const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batchId });
       if (res.success) {
-        const mp = res.missing_prices ? `\n⚠️ ${res.missing_prices} orders had no price (shares=0).` : "";
-        alert(`✅ Approved! ${res.orders_created} orders created in ${res.duration_seconds}s.${mp}`);
+        const mp = res.missing_prices ? ` (⚠️ ${res.missing_prices} orders had no price)` : "";
+        setModal({
+          show: true,
+          type: "result",
+          title: "Batch Approved",
+          icon: "✅",
+          message: `${fmtN(res.orders_created)} orders created in ${res.duration_seconds}s.${mp}`,
+          confirmText: "OK",
+          confirmColor: "#10b981",
+          data: { resultOnly: true },
+        });
         await loadBatches();
         setActiveBatchId(null);
         setBatchStats(null);
       } else {
-        alert("❌ " + (res.error || "Approve failed."));
+        setModal({
+          show: true,
+          type: "result",
+          title: "Approve Failed",
+          icon: "❌",
+          message: res.error || "Unknown error occurred.",
+          confirmText: "OK",
+          confirmColor: "#ef4444",
+          data: { resultOnly: true },
+        });
       }
     } catch (err) {
-      alert("❌ " + err.message);
+      setModal({
+        show: true,
+        type: "result",
+        title: "Error",
+        icon: "❌",
+        message: err.message,
+        confirmText: "OK",
+        confirmColor: "#ef4444",
+        data: { resultOnly: true },
+      });
     }
     setActionLoading(false);
   };
 
-  // ── Discard ──
-  const handleDiscard = async (batchId) => {
-    if (!window.confirm(`Discard batch "${batchId}"?\n\nStaged orders will be marked discarded.`)) return;
+  // ── Discard - show modal ──
+  const showDiscardModal = (batchId) => {
+    const batch = batches.find(b => b.batch_id === batchId);
+    setModal({
+      show: true,
+      type: "discard",
+      title: "Discard Batch",
+      icon: "🗑️",
+      message: `Discard batch "${batchId}"?`,
+      details: batch ? (
+        <div>
+          <div style={{ marginBottom: "8px" }}>Staged orders will be marked as discarded.</div>
+          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+            <span>Orders: <strong>{fmtN(batch.total_orders)}</strong></span>
+            <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
+          </div>
+        </div>
+      ) : "Staged orders will be marked as discarded.",
+      confirmText: "Discard",
+      confirmColor: "#ef4444",
+      data: { batchId },
+    });
+  };
+
+  // ── Execute discard ──
+  const executeDiscard = async (batchId) => {
+    closeModal();
     setActionLoading(true);
     try {
       const res = await apiPost("prepare_orders.php", { action: "discard", batch_id: batchId });
@@ -188,12 +445,51 @@ export default function PrepareOrders() {
         setActiveBatchId(null);
         setBatchStats(null);
       } else {
-        alert("❌ " + (res.error || "Discard failed."));
+        setModal({
+          show: true,
+          type: "result",
+          title: "Discard Failed",
+          icon: "❌",
+          message: res.error || "Unknown error occurred.",
+          confirmText: "OK",
+          confirmColor: "#ef4444",
+          data: { resultOnly: true },
+        });
       }
     } catch (err) {
-      alert("❌ " + err.message);
+      setModal({
+        show: true,
+        type: "result",
+        title: "Error",
+        icon: "❌",
+        message: err.message,
+        confirmText: "OK",
+        confirmColor: "#ef4444",
+        data: { resultOnly: true },
+      });
     }
     setActionLoading(false);
+  };
+
+  // ── Handle modal confirm ──
+  const handleModalConfirm = () => {
+    switch (modal.type) {
+      case "prepare":
+      case "monthly-warning":
+        executePrepare();
+        break;
+      case "approve":
+        executeApprove(modal.data?.batchId);
+        break;
+      case "discard":
+        executeDiscard(modal.data?.batchId);
+        break;
+      case "result":
+        closeModal();
+        break;
+      default:
+        closeModal();
+    }
   };
 
   // ── Initial load ──
@@ -240,6 +536,23 @@ export default function PrepareOrders() {
 
   return (
     <div style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
+      
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* UNIFIED CONFIRM MODAL                                                  */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        details={modal.details}
+        confirmText={modal.confirmText}
+        cancelText={modal.data?.resultOnly ? null : modal.cancelText}
+        confirmColor={modal.confirmColor}
+        icon={modal.icon}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
+
       {/* ── Header ── */}
       <h1 style={{ fontSize: "1.75rem", fontWeight: "bold", color: "#1e293b", marginBottom: "1.5rem" }}>
         📋 Prepare Orders
@@ -355,7 +668,7 @@ export default function PrepareOrders() {
               {previewLoading ? "Loading..." : "🔄 Refresh"}
             </button>
             <button
-              onClick={handlePrepare}
+              onClick={showPrepareModal}
               disabled={preparing || !preview?.eligible_members}
               style={{
                 padding: "0.5rem 1.25rem",
@@ -568,14 +881,14 @@ export default function PrepareOrders() {
                         {b.status === "staged" && (
                           <>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleApprove(b.batch_id); }}
+                              onClick={(e) => { e.stopPropagation(); showApproveModal(b.batch_id); }}
                               disabled={actionLoading}
                               style={actionBtn("#10b981")}
                             >
                               ✅ Approve
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleDiscard(b.batch_id); }}
+                              onClick={(e) => { e.stopPropagation(); showDiscardModal(b.batch_id); }}
                               disabled={actionLoading}
                               style={actionBtn("#ef4444")}
                             >
