@@ -64,6 +64,9 @@ export default function Login() {
     localStorage.setItem("broker", next.broker || "");
     localStorage.setItem("memberTimezone", next.memberTimezone || "");
     localStorage.setItem("lastLoginAt", new Date().toISOString());
+    
+    // ✅ Clear cached portfolio_value to prevent flash of stale data on Wallet load
+    localStorage.removeItem("portfolio_value");
 
     window.dispatchEvent(new Event("member-updated"));
   };

@@ -46,14 +46,13 @@ try {
     $holdingsStmt = $conn->prepare("
         SELECT 
             symbol,
-            SUM(shares) as total_shares,
-            SUM(amount) as total_cost
+            SUM(COALESCE(executed_shares, shares)) as total_shares,
+            SUM(COALESCE(executed_amount, amount)) as total_cost
         FROM orders
         WHERE member_id = :member_id
-        AND status IN ('executed', 'confirmed')
-        AND order_type IN ('buy', 'market', 'Market', 'gtc')
+          AND status = 'settled'
         GROUP BY symbol
-        HAVING SUM(shares) > 0
+        HAVING SUM(COALESCE(executed_shares, shares)) > 0
     ");
     $holdingsStmt->execute([":member_id" => $memberId]);
     $holdings = $holdingsStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -107,11 +106,10 @@ try {
     // If no holdings found or all API calls failed, fallback to simple sum
     if (count($holdings) === 0 || !$useMarketPrices) {
         $fallbackStmt = $conn->prepare("
-            SELECT COALESCE(SUM(amount), 0) as total_amount
+            SELECT COALESCE(SUM(COALESCE(executed_amount, amount)), 0) as total_amount
             FROM orders
             WHERE member_id = :member_id
-            AND status IN ('executed', 'confirmed')
-            AND order_type IN ('buy', 'market', 'Market', 'gtc')
+              AND status = 'settled'
         ");
         $fallbackStmt->execute([":member_id" => $memberId]);
         $fallbackResult = $fallbackStmt->fetch(PDO::FETCH_ASSOC);

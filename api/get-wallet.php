@@ -65,8 +65,18 @@ try {
         exit;
     }
 
-    // Portfolio value is already stored in wallet table
-    // Background update happens via update-portfolio-value.php
+    // ✅ Calculate portfolio value fresh from settled orders (not cached)
+    $portfolioStmt = $conn->prepare("
+        SELECT COALESCE(SUM(COALESCE(executed_amount, amount)), 0) as portfolio_value
+        FROM orders
+        WHERE member_id = :member_id
+          AND status = 'settled'
+    ");
+    $portfolioStmt->execute([":member_id" => $memberId]);
+    $portfolioResult = $portfolioStmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Override wallet table's cached value with calculated value
+    $wallet['portfolio_value'] = (float)$portfolioResult['portfolio_value'];
 
     // ✅ Normalize numeric fields
     foreach ([

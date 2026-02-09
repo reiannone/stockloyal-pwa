@@ -30,16 +30,16 @@ if (!$memberId) {
 }
 
 try {
-    // ✅ Step 1: Aggregate all confirmed/executed orders by symbol only
+    // ✅ Step 1: Aggregate all settled orders by symbol only
     $stmt = $conn->prepare("
         SELECT 
             UPPER(TRIM(symbol)) AS symbol,
-            SUM(COALESCE(shares, 0)) AS total_shares,
-            SUM(COALESCE(amount, 0)) AS total_invested,
+            SUM(COALESCE(executed_shares, shares)) AS total_shares,
+            SUM(COALESCE(executed_amount, amount)) AS total_invested,
             MAX(placed_at) AS last_trade_date
         FROM orders
         WHERE member_id = :member_id
-          AND LOWER(status) IN ('confirmed', 'executed')
+          AND status = 'settled'
         GROUP BY UPPER(TRIM(symbol))
         ORDER BY last_trade_date DESC
     ");

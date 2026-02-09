@@ -52,9 +52,9 @@ try {
         if (isset($order['amount'])) {
             $order['amount'] = (float) $order['amount'];
         }
-        // Add to portfolio if status is confirmed or executed
-        if (isset($order['status']) && in_array(strtolower($order['status']), ['confirmed','executed'])) {
-            $portfolioTotal += (float) $order['amount'];
+        // Add to portfolio if status is settled (paid and completed)
+        if (isset($order['status']) && strtolower($order['status']) === 'settled') {
+            $portfolioTotal += (float) ($order['executed_amount'] ?? $order['amount']);
         }
     }
 
