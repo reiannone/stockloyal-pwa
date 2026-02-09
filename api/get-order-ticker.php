@@ -22,9 +22,9 @@ try {
         LEFT JOIN transactions_ledger t
                ON t.order_id = o.order_id
               AND t.tx_type = 'redeem_points'
-        WHERE o.status IN ('pending','executed','confirmed')
+        WHERE o.status IN ('pending','executed','confirmed', 'placed', 'settled')
         ORDER BY COALESCE(t.created_at, o.placed_at) DESC, o.order_id DESC
-        LIMIT 500
+        LIMIT 25
     ";
 
     $stmt = $conn->prepare($sql);
