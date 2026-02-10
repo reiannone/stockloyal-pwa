@@ -177,8 +177,8 @@ export function generateMember(index, opts = {}) {
     // ── Broker credentials ──
     broker: opts.broker || "Robinhood",
     brokerUsername: memberId,  // broker username = StockLoyal member_id
-    // Password different from username to avoid rejection test case
-    brokerPassword: `Str0ng!${lastName}${randInt(100, 9999)}`,
+    // Password = memberId without hyphen (e.g., "robot00001")
+    brokerPassword: memberId.replace(/-/g, ""),
 
     // ── Stock preferences ──
     stockPicks: opts.stockPicks || [

@@ -136,7 +136,7 @@ async function stepLogin(page, member) {
   const url = page.url();
 
   if (!url.includes("/login")) {
-    await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/#/login`, { waitUntil: "networkidle" });
     await page.waitForTimeout(3000);
   }
 
@@ -205,7 +205,7 @@ async function stepLogin(page, member) {
 async function stepMemberOnboard(page, member) {
   const url = page.url();
   if (!url.includes("member-onboard")) {
-    await page.goto(`${BASE_URL}/member-onboard`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/#/member-onboard`, { waitUntil: "networkidle" });
   }
   await page.waitForTimeout(1000);
 
@@ -281,7 +281,7 @@ async function stepMemberOnboard(page, member) {
 async function stepSelectBroker(page, member) {
   const url = page.url();
   if (!url.includes("select-broker")) {
-    await page.goto(`${BASE_URL}/select-broker`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/#/select-broker`, { waitUntil: "networkidle" });
   }
   await page.waitForTimeout(1000);
 
@@ -370,7 +370,7 @@ async function stepSelectBroker(page, member) {
 async function stepTerms(page, member) {
   const url = page.url();
   if (!url.includes("terms")) {
-    await page.goto(`${BASE_URL}/terms`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/#/terms`, { waitUntil: "networkidle" });
   }
   await page.waitForTimeout(500);
 
@@ -390,7 +390,7 @@ async function stepTerms(page, member) {
 async function stepElection(page, member) {
   const url = page.url();
   if (!url.includes("election")) {
-    await page.goto(`${BASE_URL}/election`, { waitUntil: "networkidle" });
+    await page.goto(`${BASE_URL}/#/election`, { waitUntil: "networkidle" });
   }
   await page.waitForTimeout(1000);
 
@@ -438,33 +438,111 @@ async function stepElection(page, member) {
 }
 
 /**
- * Step 7: StockPicker — search and select a stock
+ * Step 7: StockPicker — pick category, select stocks, submit order
+ * 
+ * Flow:
+ *   1. Wait for wallet data to load (points slider auto-sets from sweep_percentage)
+ *   2. If slider is at 0, drag it to set points
+ *   3. Click a category button (e.g., "Most Active") to open stock list overlay
+ *   4. Check 1-2 stock checkboxes in the overlay
+ *   5. Click "Continue with Selected" to add to basket
+ *   6. Click "Submit Buy Order with {brokerName}" to proceed to Order page
  */
 async function stepStockPicker(page, member) {
   // Election navigates to /wallet which may redirect — force navigate to stock-picker
-  await page.goto(`${BASE_URL}/stock-picker`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(1000);
+  await page.goto(`${BASE_URL}/#/stock-picker`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(2000); // Wait for wallet fetch + auto-sweep calculation
 
-  const ticker = member.stockPicks[0] || "AAPL";
-
-  const searchInput = page.locator('input[type="search"], input[placeholder*="Search"], input[placeholder*="search"], input[name="search"]').first();
-  if (await searchInput.isVisible().catch(() => false)) {
-    await searchInput.fill(ticker);
-    await page.waitForTimeout(2000);
-
-    const result = page.locator(`text=${ticker}`).first();
-    if (await result.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await result.click();
-      await page.waitForTimeout(500);
+  // ── Step 1: Ensure points slider has a value ──
+  const slider = page.locator('input[type="range"]').first();
+  if (await slider.isVisible({ timeout: 5000 }).catch(() => false)) {
+    const sliderVal = await slider.inputValue();
+    console.log(`  [stockpicker] Points slider value: ${sliderVal}`);
+    
+    if (!sliderVal || parseInt(sliderVal) === 0) {
+      // Slider is at 0 — set it to max (all points)
+      const max = await slider.getAttribute('max');
+      if (max && parseInt(max) > 0) {
+        await slider.fill(max);
+        await page.waitForTimeout(500);
+        console.log(`  [stockpicker] Set slider to max: ${max}`);
+      }
     }
   }
 
-  const nextBtn = page.locator('button:has-text("Continue"), button:has-text("Next"), button:has-text("Confirm"), button:has-text("Select")').first();
-  if (await nextBtn.isVisible().catch(() => false)) {
-    await nextBtn.click();
+  // Check for cash limit error — if present, adjust slider
+  const cashError = page.locator('.form-error, text=must be between');
+  if (await cashError.isVisible({ timeout: 1000 }).catch(() => false)) {
+    console.log(`  [stockpicker] ⚠️ Cash outside broker limits — adjusting slider`);
+    // Try setting slider to a middle value
+    const max = await slider.getAttribute('max');
+    const midVal = Math.floor(parseInt(max || "1000") / 2);
+    await slider.fill(String(midVal));
+    await page.waitForTimeout(500);
   }
 
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(1000);
+
+  // ── Step 2: Click a category button ──
+  // Categories: "Most Active", "Growth Tech", "Large Caps", etc.
+  const categoryBtn = page.locator('button.category-btn').first();
+  if (await categoryBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    // Skip first one (Popular Member Picks) — use the second (Most Active)
+    const allCategoryBtns = page.locator('button.category-btn');
+    const count = await allCategoryBtns.count();
+    const targetIdx = count > 1 ? 1 : 0; // Pick "Most Active" if available
+    await allCategoryBtns.nth(targetIdx).click();
+    console.log(`  [stockpicker] Clicked category button #${targetIdx + 1}`);
+  } else {
+    console.log(`  [stockpicker] ⚠️ No category buttons found — may be disabled`);
+    return;
+  }
+
+  // ── Step 3: Wait for stock list overlay to appear ──
+  await page.waitForTimeout(3000); // Wait for Yahoo API to return stocks
+
+  const stockListOverlay = page.locator('.stocklist-overlay, .stocklist-sheet').first();
+  if (await stockListOverlay.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    console.log(`  [stockpicker] Stock list overlay opened`);
+
+    // ── Step 4: Check first 1-2 stock checkboxes ──
+    const checkboxes = page.locator('.stocklist-sheet input[type="checkbox"], .stocklist-table input[type="checkbox"]');
+    const cbCount = await checkboxes.count();
+    const toSelect = Math.min(cbCount, 2);
+    
+    for (let i = 0; i < toSelect; i++) {
+      await checkboxes.nth(i).check();
+      await page.waitForTimeout(300);
+    }
+    console.log(`  [stockpicker] Selected ${toSelect} stocks`);
+
+    // ── Step 5: Click "Continue with Selected" ──
+    const continueBtn = page.locator('button:has-text("Continue with Selected")');
+    if (await continueBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await continueBtn.click();
+      await page.waitForTimeout(1500);
+      console.log(`  [stockpicker] Clicked "Continue with Selected"`);
+    }
+  } else {
+    console.log(`  [stockpicker] ⚠️ Stock list overlay did not appear`);
+    return;
+  }
+
+  // ── Step 6: Click "Submit Buy Order" button ──
+  const orderBtn = page.locator('button:has-text("Submit Buy Order")');
+  if (await orderBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    const isDisabled = await orderBtn.isDisabled();
+    if (!isDisabled) {
+      await orderBtn.click();
+      console.log(`  [stockpicker] Clicked "Submit Buy Order"`);
+    } else {
+      console.log(`  [stockpicker] ⚠️ Submit Buy Order button is disabled (empty basket?)`);
+    }
+  } else {
+    console.log(`  [stockpicker] ⚠️ Submit Buy Order button not found`);
+  }
+
+  await page.waitForTimeout(2000);
 }
 
 /**
