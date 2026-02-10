@@ -1,0 +1,104 @@
+MySQL [stockloyal]> show tables;
++-------------------------------------------+
+| Tables_in_stockloyal                      |
++-------------------------------------------+
+| analytics_daily                           |
+| analytics_daily_by_broker                 |
+| analytics_daily_by_merchant               |
+| basket                                    |
+| broker_credentials                        |
+| broker_master                             |
+| broker_notifications                      |
+| csv_files                                 |
+| faq                                       |
+| member_stock_picks                        |
+| members                                   |
+| merchant                                  |
+| merchant_brokers                          |
+| merchant_fees                             |
+| merchant_notifications                    |
+| orders                                    |
+| password_resets                           |
+| pending_inbound                           |
+| prepare_batches                           |
+| prepared_orders                           |
+| social_comments                           |
+| social_likes                              |
+| social_posts                              |
+| sweep_log                                 |
+| sweep_prepare_log                         |
+| transactions_ledger                       |
+| transactions_ledger_backup_before_cleanup |
+| wallet                                    |
+| webhook_config                            |
+| webhook_logs                              |
+| webhook_logs_recent                       |
++-------------------------------------------+
+
+
+-- ============================================================
+-- DATA CLEANUP: Delete records before February 1, 2026
+-- Run these in order due to potential foreign key constraints
+-- ============================================================
+
+-- Set the cutoff date
+SET @cutoff = '2026-02-05 00:00:00';
+
+-- 1. transactions_ledger
+DELETE FROM transactions_ledger 
+WHERE created_at < @cutoff;
+
+-- 2. orders
+DELETE FROM orders 
+WHERE placed_at < @cutoff;
+
+-- 3. merchant_notifications
+DELETE FROM merchant_notifications 
+WHERE created_at < @cutoff;
+
+-- 4. broker_notifications
+DELETE FROM broker_notifications 
+WHERE created_at < @cutoff;
+
+-- 5. pending_inbound
+DELETE FROM pending_inbound 
+WHERE created_at < @cutoff;
+
+-- 6. prepare_batches
+DELETE FROM prepare_batches 
+WHERE created_at < @cutoff;
+
+-- 7. prepared_orders
+DELETE FROM prepared_orders 
+WHERE created_at < @cutoff;
+
+-- 8. sweep_log
+DELETE FROM sweep_log 
+WHERE created_at < @cutoff;
+
+-- 9. sweep_prepare_log
+DELETE FROM sweep_prepare_log 
+WHERE created_at < @cutoff;
+
+-- 10. webhook_logs
+DELETE FROM webhook_logs 
+WHERE created_at < @cutoff;
+
+-- 11. webhook_logs_recent
+DELETE FROM webhook_logs_recent 
+WHERE created_at < @cutoff;
+
+-- ============================================================
+-- VERIFY: Check remaining record counts
+-- ============================================================
+SELECT 'transactions_ledger' AS table_name, COUNT(*) AS remaining FROM transactions_ledger
+UNION ALL SELECT 'orders', COUNT(*) FROM orders
+UNION ALL SELECT 'merchant_notifications', COUNT(*) FROM merchant_notifications
+UNION ALL SELECT 'broker_notifications', COUNT(*) FROM broker_notifications
+UNION ALL SELECT 'pending_inbound', COUNT(*) FROM pending_inbound
+UNION ALL SELECT 'prepare_batches', COUNT(*) FROM prepare_batches
+UNION ALL SELECT 'prepared_orders', COUNT(*) FROM prepared_orders
+UNION ALL SELECT 'sweep_log', COUNT(*) FROM sweep_log
+UNION ALL SELECT 'sweep_prepare_log', COUNT(*) FROM sweep_prepare_log
+UNION ALL SELECT 'webhook_logs', COUNT(*) FROM webhook_logs
+UNION ALL SELECT 'webhook_logs_recent', COUNT(*) FROM webhook_logs_recent;

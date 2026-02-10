@@ -20,7 +20,7 @@ require_once 'config.php';
 try {
     $input = json_decode(file_get_contents("php://input"), true) ?? [];
     
-    $memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id']) : '';
+    $memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_id'])) : '';
     $symbol = isset($input['symbol']) ? strtoupper(trim($input['symbol'])) : '';
     $hardDelete = isset($input['hard_delete']) ? (bool)$input['hard_delete'] : false;
 

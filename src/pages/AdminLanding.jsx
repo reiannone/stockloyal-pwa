@@ -382,7 +382,7 @@ export default function AdminLanding() {
         </div>
       </div>
 
-      {/* Tiles Grid */}
+      {/* Main Content */}
       <div
         style={{
           maxWidth: "800px",
@@ -390,76 +390,10 @@ export default function AdminLanding() {
           padding: "0 16px",
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-            gap: "16px",
-          }}
-        >
-          {adminTiles.map(({ to, label, icon, color, bgColor }) => (
-            <button
-              key={to}
-              onClick={() => navigate(to)}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "24px 16px",
-                backgroundColor: "white",
-                border: "1px solid #e5e7eb",
-                borderRadius: "12px",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                minHeight: "140px",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-4px)";
-                e.currentTarget.style.boxShadow = "0 8px 25px rgba(0,0,0,0.1)";
-                e.currentTarget.style.borderColor = color;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
-                e.currentTarget.style.borderColor = "#e5e7eb";
-              }}
-            >
-              <div
-                style={{
-                  width: "56px",
-                  height: "56px",
-                  borderRadius: "12px",
-                  backgroundColor: bgColor,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: "12px",
-                  color: color,
-                }}
-              >
-                {icon}
-              </div>
-              <span
-                style={{
-                  fontSize: "13px",
-                  fontWeight: "600",
-                  color: "#374151",
-                  textAlign: "center",
-                  lineHeight: 1.3,
-                }}
-              >
-                {label}
-              </span>
-            </button>
-          ))}
-        </div>
-
         {/* Order Processing Pipeline - Subway Timeline */}
         <div
           style={{
-            marginTop: "32px",
+            marginBottom: "32px",
             padding: "24px",
             backgroundColor: "white",
             borderRadius: "12px",
@@ -679,6 +613,73 @@ export default function AdminLanding() {
               })}
             </div>
           </div>
+        </div>
+
+        {/* Tiles Grid */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+            gap: "16px",
+          }}
+        >
+          {adminTiles.map(({ to, label, icon, color, bgColor }) => (
+            <button
+              key={to}
+              onClick={() => navigate(to)}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "24px 16px",
+                backgroundColor: "white",
+                border: "1px solid #e5e7eb",
+                borderRadius: "12px",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                minHeight: "140px",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-4px)";
+                e.currentTarget.style.boxShadow = "0 8px 25px rgba(0,0,0,0.1)";
+                e.currentTarget.style.borderColor = color;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.05)";
+                e.currentTarget.style.borderColor = "#e5e7eb";
+              }}
+            >
+              <div
+                style={{
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "12px",
+                  backgroundColor: bgColor,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: "12px",
+                  color: color,
+                }}
+              >
+                {icon}
+              </div>
+              <span
+                style={{
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  color: "#374151",
+                  textAlign: "center",
+                  lineHeight: 1.3,
+                }}
+              >
+                {label}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

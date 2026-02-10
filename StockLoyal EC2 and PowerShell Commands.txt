@@ -64,6 +64,10 @@ scp -i $KEY "$BASE_DIR\delete-broker.php" "${EC2}:/home/ec2-user/"
 # Move to web directory and set permissions
 ssh -i $KEY $EC2 "sudo mv /home/ec2-user/get-brokers.php /var/www/html/api/ && sudo mv /home/ec2-user/save-broker.php /var/www/html/api/ && sudo mv /home/ec2-user/delete-broker.php /var/www/html/api/ && sudo chown apache:apache /var/www/html/api/get-brokers.php /var/www/html/api/save-broker.php /var/www/html/api/delete-broker.php && sudo chmod 644 /var/www/html/api/get-brokers.php /var/www/html/api/save-broker.php /var/www/html/api/delete-broker.php"
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+scp -i "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem" -r .\dist\* ec2-user@3.150.49.91:/var/www/html/stockloyal-pwa/
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After MULTIPLE uploads, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
