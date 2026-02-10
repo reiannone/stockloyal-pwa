@@ -13,7 +13,7 @@ $appEnv = getenv('APP_ENV');
 if ($appEnv === false || $appEnv === '') $appEnv = 'production';
 
 // Pick env file based on APP_ENV
-$envFile = __DIR__ . ($appEnv === 'development' ? '/' : '/');
+$envFile = __DIR__ . ($appEnv === 'development' ? '/.env.development' : '/.env.production');
 
 // -------- 2) Load  key=value pairs --------
 if (!is_file($envFile)) {

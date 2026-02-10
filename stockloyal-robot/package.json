@@ -1,0 +1,22 @@
+{
+  "name": "stockloyal-onboarding-robot",
+  "version": "1.0.0",
+  "description": "High-volume onboarding test automation for StockLoyal",
+  "scripts": {
+    "install:browsers": "npx playwright install chromium",
+    "robot": "npx playwright test onboarding-robot.spec.js",
+    "robot:headed": "npx playwright test onboarding-robot.spec.js --headed",
+    "robot:debug": "npx playwright test onboarding-robot.spec.js --headed --workers=1 --debug",
+    "robot:single": "cross-env ROBOT_COUNT=1 ROBOT_API=https://api.stockloyal.com/api ROBOT_MERCHANT=merchant001 npx playwright test onboarding-robot.spec.js --headed --workers=1",
+    "robot:small": "cross-env ROBOT_COUNT=10 ROBOT_API=https://api.stockloyal.com/api npx playwright test onboarding-robot.spec.js --workers=2",
+    "robot:medium": "cross-env ROBOT_COUNT=100 ROBOT_API=https://api.stockloyal.com/api npx playwright test onboarding-robot.spec.js --workers=5",
+    "robot:large": "cross-env ROBOT_COUNT=500 ROBOT_API=https://api.stockloyal.com/api npx playwright test onboarding-robot.spec.js --workers=8",
+    "robot:stress": "cross-env ROBOT_COUNT=1000 ROBOT_API=https://api.stockloyal.com/api npx playwright test onboarding-robot.spec.js --workers=10",
+    "report": "npx playwright show-report"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "cross-env": "^7.0.3"
+  }
+}
