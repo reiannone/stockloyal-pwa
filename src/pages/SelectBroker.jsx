@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBroker } from "../context/BrokerContext";
 import { apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 import { AlertTriangle, ExternalLink } from "lucide-react";
 
 /* ────────────────────────────────────────────
@@ -83,9 +84,25 @@ export default function SelectBroker() {
     url: "",
   });
 
+  // ── Credential validation state ──
+  const [validationModal, setValidationModal] = useState({
+    open: false,
+    validated: false,
+    message: "",
+  });
+  const [failCount, setFailCount] = useState(0);
+  const MAX_FAILS = 10;
+
   const navigate = useNavigate();
   const { updateBroker } = useBroker();
   const memberId = localStorage.getItem("memberId");
+
+  // ── Redirect to Goodbye if max fails exceeded ──
+  useEffect(() => {
+    if (failCount >= MAX_FAILS) {
+      navigate("/goodbye", { replace: true });
+    }
+  }, [failCount, navigate]);
 
   // ✅ Filtered brokers based on merchant relationship
   const brokers = useMemo(() => {
@@ -142,6 +159,15 @@ export default function SelectBroker() {
           const currentMerchantId =
             data.wallet.merchant_id || localStorage.getItem("merchantId");
           const creds = data.broker_credentials || {};
+
+          // ── Load server-side fail count ──
+          const serverFailCount = parseInt(creds.credential_fail_count || "0", 10);
+          setFailCount(serverFailCount);
+          if (creds.locked_at) {
+            // Already locked server-side — redirect immediately
+            navigate("/goodbye", { replace: true });
+            return;
+          }
 
           setMerchantId(currentMerchantId);
 
@@ -227,12 +253,58 @@ export default function SelectBroker() {
       return;
     }
 
+    if (failCount >= MAX_FAILS) {
+      navigate("/goodbye", { replace: true });
+      return;
+    }
+
     setError("");
     setSubmitting(true);
 
     try {
       const broker = brokers.find((b) => b.id === selected);
 
+      // ── Step 1: Validate credentials with broker webhook ──
+      const validationRes = await apiPost("validate-broker-credentials.php", {
+        member_id: memberId,
+        broker: selected,
+        username,
+        password,
+      });
+
+      if (!validationRes?.success || !validationRes?.validated) {
+        // Credential validation failed — use server-side count
+        const serverFailCount = validationRes?.fail_count ?? (failCount + 1);
+        setFailCount(serverFailCount);
+
+        if (validationRes?.locked || serverFailCount >= MAX_FAILS) {
+          navigate("/goodbye", { replace: true });
+          return;
+        }
+
+        const remainingAttempts = MAX_FAILS - serverFailCount;
+        setValidationModal({
+          open: true,
+          validated: false,
+          message:
+            validationRes?.message ||
+            "The broker could not verify your credentials.",
+          remainingAttempts,
+        });
+        setSubmitting(false);
+        return;
+      }
+
+      // ── Step 2: Credentials validated — show success, then store ──
+      setValidationModal({
+        open: true,
+        validated: true,
+        message:
+          validationRes?.message ||
+          "Your broker credentials have been verified successfully.",
+      });
+
+      // Store credentials after showing success
       const payload = {
         member_id: memberId,
         broker: selected,
@@ -245,6 +317,7 @@ export default function SelectBroker() {
 
       if (!data?.success) {
         setError(data?.error || "Failed to link broker");
+        setSubmitting(false);
         return;
       }
 
@@ -252,16 +325,28 @@ export default function SelectBroker() {
         localStorage.setItem("memberId", data.member_id);
       }
 
+      // Clear fail counter (server already reset it)
+      setFailCount(0);
+
       updateBroker(selected);
       localStorage.setItem("broker", selected);
       localStorage.setItem("broker_url", broker?.url || "");
 
-      navigate("/terms");
+      // Navigation happens when user dismisses success modal (see handleValidationDismiss)
     } catch (err) {
       console.error("SelectBroker error:", err);
       setError("Network error — please try again.");
-    } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ── Handle dismiss of validation modal ──
+  const handleValidationDismiss = () => {
+    const wasValid = validationModal.validated;
+    setValidationModal({ open: false, validated: false, message: "" });
+    setSubmitting(false);
+    if (wasValid) {
+      navigate("/terms");
     }
   };
 
@@ -369,6 +454,26 @@ export default function SelectBroker() {
       )}
 
       <h2 className="page-title">Connect your broker</h2>
+
+      {/* ── Credential Validation Result Modal ── */}
+      <ConfirmModal
+        isOpen={validationModal.open}
+        title={validationModal.validated ? "✅ Credentials Verified" : "❌ Verification Failed"}
+        message={
+          validationModal.validated
+            ? validationModal.message
+            : `${validationModal.message}${
+                validationModal.remainingAttempts
+                  ? `\n\nYou have ${validationModal.remainingAttempts} attempt${validationModal.remainingAttempts !== 1 ? "s" : ""} remaining.`
+                  : ""
+              }`
+        }
+        confirmLabel={validationModal.validated ? "Continue" : "Try Again"}
+        cancelLabel={null}
+        variant={validationModal.validated ? "info" : "danger"}
+        onConfirm={handleValidationDismiss}
+        onCancel={handleValidationDismiss}
+      />
       <p className="page-deck">
         Select your broker and enter your existing login to link your investment
         account to your rewards program.
@@ -527,10 +632,26 @@ export default function SelectBroker() {
         </div>
 
         <button type="submit" disabled={!canSubmit} className="btn-primary">
-          {submitting ? "Linking…" : "Save and Continue"}
+          {submitting ? "Verifying with broker…" : "Save and Continue"}
         </button>
 
         {error && <p className="form-error">{error}</p>}
+
+        {failCount > 0 && failCount < MAX_FAILS && (
+          <p
+            style={{
+              textAlign: "center",
+              fontSize: "0.85rem",
+              color: failCount >= 7 ? "#dc2626" : "#f59e0b",
+              fontWeight: 600,
+              marginTop: 8,
+            }}
+          >
+            {failCount >= 7
+              ? `⚠️ Warning: ${MAX_FAILS - failCount} attempt${MAX_FAILS - failCount !== 1 ? "s" : ""} remaining before your account is locked.`
+              : `${failCount} failed verification attempt${failCount !== 1 ? "s" : ""}.`}
+          </p>
+        )}
       </form>
 
       {/* --- Footer --- */}

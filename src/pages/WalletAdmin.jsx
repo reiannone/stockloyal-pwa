@@ -312,6 +312,12 @@ export default function WalletAdmin() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteData, setDeleteData] = useState(null);
 
+  // ── Broker credential lockout state ──
+  const [lockoutInfo, setLockoutInfo] = useState(null);
+  const [lockoutLoading, setLockoutLoading] = useState(false);
+  const [lockoutResetting, setLockoutResetting] = useState(false);
+  const [lockoutMsg, setLockoutMsg] = useState("");
+
   // --- delete wallet ---
   const deleteWallet = async (record_id) => {
     if (!selected?.member_id) {
@@ -412,6 +418,56 @@ export default function WalletAdmin() {
     setDeleteData(null);
   };
 
+  // ── Fetch broker lockout info for a member ──
+  const fetchLockoutInfo = async (memberId) => {
+    setLockoutLoading(true);
+    setLockoutInfo(null);
+    setLockoutMsg("");
+    try {
+      const data = await apiPost("get-wallet.php", { member_id: memberId });
+      if (data?.success) {
+        const creds = data.broker_credentials || {};
+        setLockoutInfo({
+          fail_count: parseInt(creds.credential_fail_count || "0", 10),
+          locked_at: creds.locked_at || null,
+          fail_reset_at: creds.fail_reset_at || null,
+          has_credentials: !!creds.username,
+        });
+      } else {
+        setLockoutInfo({ fail_count: 0, locked_at: null, fail_reset_at: null, has_credentials: false });
+      }
+    } catch (err) {
+      console.error("[WalletAdmin] lockout fetch error:", err);
+      setLockoutInfo(null);
+    } finally {
+      setLockoutLoading(false);
+    }
+  };
+
+  // ── Reset lockout for selected member ──
+  const handleResetLockout = async () => {
+    if (!selected?.member_id) return;
+    setLockoutResetting(true);
+    setLockoutMsg("");
+    try {
+      const res = await apiPost("admin-reset-broker-lockout.php", {
+        member_id: selected.member_id,
+      });
+      if (res?.success) {
+        setLockoutMsg(res.message || "Lockout reset successfully.");
+        // Refresh lockout info
+        await fetchLockoutInfo(selected.member_id);
+      } else {
+        setLockoutMsg("Reset failed: " + (res?.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error("[WalletAdmin] lockout reset error:", err);
+      setLockoutMsg("Network error during reset.");
+    } finally {
+      setLockoutResetting(false);
+    }
+  };
+
   // --- handle field changes (LIVE RECALC) ---
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -481,6 +537,8 @@ export default function WalletAdmin() {
     setNewPassword("");
     setConfirmPassword("");
     setShowPw(false);
+    setLockoutMsg("");
+    fetchLockoutInfo(withCalc.member_id);
     setTimeout(() => {
       editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -1033,6 +1091,100 @@ export default function WalletAdmin() {
                 onChange={handleChange}
               />
             </FormRow>
+
+            {/* ── Broker Credential Lockout ── */}
+            {lockoutInfo?.has_credentials && (
+              <div
+                style={{
+                  margin: "12px 0 16px",
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  border: `1px solid ${lockoutInfo.locked_at ? "#fecaca" : lockoutInfo.fail_count > 0 ? "#fed7aa" : "#e5e7eb"}`,
+                  background: lockoutInfo.locked_at ? "#fef2f2" : lockoutInfo.fail_count > 0 ? "#fffbeb" : "#f9fafb",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#374151" }}>
+                    Broker Credential Status
+                  </span>
+                  {lockoutInfo.locked_at ? (
+                    <span style={{
+                      padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
+                      fontWeight: 700, background: "#fee2e2", color: "#991b1b",
+                    }}>
+                      🔒 LOCKED
+                    </span>
+                  ) : lockoutInfo.fail_count > 0 ? (
+                    <span style={{
+                      padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
+                      fontWeight: 700, background: "#fef3c7", color: "#92400e",
+                    }}>
+                      ⚠️ {lockoutInfo.fail_count}/10 fails
+                    </span>
+                  ) : (
+                    <span style={{
+                      padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
+                      fontWeight: 700, background: "#dcfce7", color: "#166534",
+                    }}>
+                      ✅ OK
+                    </span>
+                  )}
+                </div>
+
+                {lockoutInfo.locked_at && (
+                  <div style={{ fontSize: "0.8rem", color: "#991b1b", marginBottom: 6 }}>
+                    Locked at: {lockoutInfo.locked_at}
+                  </div>
+                )}
+                {lockoutInfo.fail_reset_at && (
+                  <div style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 6 }}>
+                    Last reset: {lockoutInfo.fail_reset_at}
+                  </div>
+                )}
+
+                {(lockoutInfo.fail_count > 0 || lockoutInfo.locked_at) && (
+                  <button
+                    type="button"
+                    onClick={handleResetLockout}
+                    disabled={lockoutResetting}
+                    style={{
+                      width: "100%",
+                      marginTop: 6,
+                      padding: "8px 14px",
+                      borderRadius: 6,
+                      border: "none",
+                      fontWeight: 700,
+                      fontSize: "0.82rem",
+                      cursor: lockoutResetting ? "not-allowed" : "pointer",
+                      background: lockoutInfo.locked_at ? "#dc2626" : "#f59e0b",
+                      color: "#fff",
+                      opacity: lockoutResetting ? 0.6 : 1,
+                    }}
+                  >
+                    {lockoutResetting
+                      ? "Resetting…"
+                      : lockoutInfo.locked_at
+                      ? "🔓 Unlock Account & Reset Fails"
+                      : `Reset Fail Count (${lockoutInfo.fail_count})`}
+                  </button>
+                )}
+
+                {lockoutMsg && (
+                  <div style={{
+                    marginTop: 8, fontSize: "0.8rem", fontWeight: 600,
+                    color: lockoutMsg.includes("fail") || lockoutMsg.includes("error") ? "#dc2626" : "#166534",
+                  }}>
+                    {lockoutMsg}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {lockoutLoading && lockoutInfo === null && (
+              <div style={{ fontSize: "0.8rem", color: "#6b7280", padding: "8px 0" }}>
+                Loading lockout status…
+              </div>
+            )}
 
             <FormRow label="Election Type">
               <input

@@ -13,6 +13,7 @@ declare(strict_types=1);
  *   sweep.orders → acknowledges batch of orders from sweep process
  *   order.executed / order.rejected / order.cancelled
  *   order.sold → updates "sell" to "sold" (triggered by portfolio recalc)
+ *   credentials.validate → simulates broker credential verification
  * 
  * Endpoint: https://api.stockloyal.com/api/broker-receiver.php
  */
@@ -543,6 +544,93 @@ function handleOrderSold(PDO $conn, array $payload, string $logFile): array {
 }
 
 /**
+ * Handle credentials.validate event
+ * Simulates broker credential validation.
+ * 
+ * Current simulation rules:
+ *   - If username === password → REJECTED (test case for bad credentials)
+ *   - All other combinations  → APPROVED (simulated success)
+ * 
+ * Returns: validated (bool), message, reason (if rejected)
+ */
+function handleCredentialsValidate(PDO $conn, array $payload, string $logFile): array {
+    $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
+    $brokerId = $payload['broker_id'] ?? $payload['broker'] ?? '';
+    $username = $payload['username'] ?? '';
+    $password = $payload['password'] ?? '';
+
+    if (empty($memberId) || empty($username) || empty($password)) {
+        throw new Exception('Missing required fields: member_id, username, password');
+    }
+
+    logMessage($logFile, "Processing credentials.validate: member_id={$memberId}, broker={$brokerId}, username={$username}");
+
+    // ── Simulation logic ──────────────────────────────────────────────────
+    // Test case: username === password → rejection
+    $isRejected = ($username === $password);
+
+    if ($isRejected) {
+        logMessage($logFile, "❌ Credentials REJECTED for {$memberId} (test case: username matches password)");
+
+        // Log rejection to broker_notifications
+        try {
+            $stmt = $conn->prepare("
+                INSERT INTO broker_notifications
+                (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+                VALUES (?, ?, 'credentials.validate', 'rejected', ?, NULL, ?, NOW())
+            ");
+            $stmt->execute([
+                $brokerId,
+                $payload['broker_name'] ?? null,
+                $memberId,
+                json_encode([
+                    'username' => $username,
+                    'result'   => 'rejected',
+                    'reason'   => 'Invalid credentials',
+                ])
+            ]);
+        } catch (PDOException $e) {
+            logMessage($logFile, "⚠️ notification log: " . $e->getMessage());
+        }
+
+        return [
+            'event'     => 'credentials.validate',
+            'validated' => false,
+            'message'   => 'The broker could not verify your credentials. Please check your username and password and try again.',
+            'reason'    => 'invalid_credentials',
+        ];
+    }
+
+    // ── Approved (simulated) ──────────────────────────────────────────────
+    logMessage($logFile, "✅ Credentials APPROVED for {$memberId} at broker {$brokerId}");
+
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO broker_notifications
+            (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+            VALUES (?, ?, 'credentials.validate', 'approved', ?, NULL, ?, NOW())
+        ");
+        $stmt->execute([
+            $brokerId,
+            $payload['broker_name'] ?? null,
+            $memberId,
+            json_encode([
+                'username' => $username,
+                'result'   => 'approved',
+            ])
+        ]);
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ notification log: " . $e->getMessage());
+    }
+
+    return [
+        'event'     => 'credentials.validate',
+        'validated' => true,
+        'message'   => 'Your broker credentials have been verified successfully.',
+    ];
+}
+
+/**
  * Handle test.connection event
  */
 function handleTestConnection(array $payload, string $logFile): array {
@@ -625,6 +713,7 @@ try {
         'order.rejected', 'order_rejected' => handleOrderRejected($conn, $payload, $logFile),
         'order.cancelled', 'order_cancelled' => handleOrderCancelled($conn, $payload, $logFile),
         'order.sold', 'order_sold' => handleOrderSold($conn, $payload, $logFile),
+        'credentials.validate', 'credentials_validate' => handleCredentialsValidate($conn, $payload, $logFile),
         'sweep.orders', 'sweep_orders' => handleOrderAcknowledged($conn, $payload, $logFile),
         'test.connection', 'test' => handleTestConnection($payload, $logFile),
         default => [
@@ -638,6 +727,7 @@ try {
                 'order.rejected',
                 'order.cancelled',
                 'order.sold',
+                'credentials.validate',
                 'sweep.orders',
                 'test.connection'
             ]
