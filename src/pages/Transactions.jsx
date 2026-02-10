@@ -269,6 +269,8 @@ export default function Transactions() {
                   <option value="placed">Placed</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="executed">Executed</option>
+                  <option value="sell">Sell</option>
+                  <option value="sold">Sold</option>
                   <option value="failed">Failed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
@@ -836,6 +838,12 @@ function getStatusPillStyle(statusRaw) {
   } else if (status === "failed" || status === "cancelled") {
     bg = "#fee2e2";
     color = "#991b1b";
+  } else if (status === "sell") {
+    bg = "#fef3c7";
+    color = "#92400e";
+  } else if (status === "sold") {
+    bg = "#dbeafe";
+    color = "#1e40af";
   } else if (status === "pending") {
     bg = "#fef9c3";
     color = "#854d0e";

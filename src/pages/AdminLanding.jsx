@@ -213,6 +213,13 @@ export default function AdminLanding() {
       color: "#a855f7",
       bgColor: "#faf5ff",
     },
+    {
+      to: "/broker-sell-order",
+      label: "Broker Sell Order Simulator",
+      icon: <LogOut size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
   ];
 
   // Auth prompt modal

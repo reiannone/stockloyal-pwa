@@ -12,6 +12,7 @@ declare(strict_types=1);
  * Also handles:
  *   sweep.orders → acknowledges batch of orders from sweep process
  *   order.executed / order.rejected / order.cancelled
+ *   order.sold → updates "sell" to "sold" (triggered by portfolio recalc)
  * 
  * Endpoint: https://api.stockloyal.com/api/broker-receiver.php
  */
@@ -466,6 +467,82 @@ function handleOrderCancelled(PDO $conn, array $payload, string $logFile): array
 }
 
 /**
+ * Handle order.sold event
+ * Broker completed sell — updates status from "sell" to "sold"
+ * Triggered by update-portfolio-value.php when it detects orders marked as "sell"
+ */
+function handleOrderSold(PDO $conn, array $payload, string $logFile): array {
+    $memberId = strtolower(trim((string)($payload['member_id'] ?? '')));
+    $orderIds = $payload['order_ids'] ?? [];
+
+    if (empty($memberId)) {
+        throw new Exception('Missing member_id');
+    }
+
+    logMessage($logFile, "Processing order.sold: member_id={$memberId}, order_ids=" . count($orderIds));
+
+    $ordersUpdated = 0;
+
+    if (!empty($orderIds)) {
+        // Update specific order IDs from "sell" to "sold"
+        $placeholders = implode(",", array_fill(0, count($orderIds), "?"));
+        $params = array_merge($orderIds, [$memberId]);
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'sold',
+                executed_at = NOW()
+            WHERE order_id IN ($placeholders)
+              AND member_id = ?
+              AND status = 'sell'
+        ");
+        $stmt->execute($params);
+        $ordersUpdated = $stmt->rowCount();
+    } else {
+        // Update ALL "sell" orders for this member
+        $stmt = $conn->prepare("
+            UPDATE orders
+            SET status = 'sold',
+                executed_at = NOW()
+            WHERE member_id = ?
+              AND status = 'sell'
+        ");
+        $stmt->execute([$memberId]);
+        $ordersUpdated = $stmt->rowCount();
+    }
+
+    logMessage($logFile, "✅ Updated {$ordersUpdated} orders from 'sell' to 'sold'");
+
+    // Log to broker_notifications for audit trail
+    try {
+        $notifStmt = $conn->prepare("
+            INSERT INTO broker_notifications
+            (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+            VALUES (?, ?, 'order.sold', 'received', ?, ?, ?, NOW())
+        ");
+        $notifStmt->execute([
+            $payload['broker_id'] ?? 'system',
+            $payload['broker_name'] ?? 'StockLoyal Internal',
+            $memberId,
+            null,
+            json_encode([
+                'orders_sold' => $ordersUpdated,
+                'order_ids'   => $orderIds,
+                'source'      => $payload['source'] ?? 'update-portfolio-value',
+            ])
+        ]);
+    } catch (PDOException $e) {
+        logMessage($logFile, "⚠️ notification log: " . $e->getMessage());
+    }
+
+    return [
+        'event'          => 'order.sold',
+        'member_id'      => $memberId,
+        'orders_updated' => $ordersUpdated,
+        'new_status'     => 'sold',
+    ];
+}
+
+/**
  * Handle test.connection event
  */
 function handleTestConnection(array $payload, string $logFile): array {
@@ -547,6 +624,7 @@ try {
         'order.executed', 'order_executed' => handleOrderExecuted($conn, $payload, $logFile),
         'order.rejected', 'order_rejected' => handleOrderRejected($conn, $payload, $logFile),
         'order.cancelled', 'order_cancelled' => handleOrderCancelled($conn, $payload, $logFile),
+        'order.sold', 'order_sold' => handleOrderSold($conn, $payload, $logFile),
         'sweep.orders', 'sweep_orders' => handleOrderAcknowledged($conn, $payload, $logFile),
         'test.connection', 'test' => handleTestConnection($payload, $logFile),
         default => [
@@ -559,6 +637,7 @@ try {
                 'order.executed',
                 'order.rejected',
                 'order.cancelled',
+                'order.sold',
                 'sweep.orders',
                 'test.connection'
             ]

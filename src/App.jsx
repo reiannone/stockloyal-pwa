@@ -37,6 +37,7 @@ import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
 import PrepareOrders from "./pages/PrepareOrders.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
+import BrokerSellOrder from "./pages/BrokerSellOrder.jsx";
 import BrokerExecAdmin from "./pages/BrokerExecAdmin.jsx";
 import SocialPostsAdmin from "./pages/SocialPostsAdmin.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
@@ -368,6 +369,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <BrokerExecAdmin />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/broker-sell-order"
+                element={
+                  <PageWrapper>
+                    <BrokerSellOrder />
                   </PageWrapper>
                 }
               />

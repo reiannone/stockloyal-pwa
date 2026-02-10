@@ -21,6 +21,8 @@ function getStatusPillStyle(statusRaw) {
   else if (status === "confirmed") { bg = "#dbeafe"; color = "#1e40af"; }
   else if (status === "placed") { bg = "#dcfce7"; color = "#166534"; }
   else if (status === "failed" || status === "cancelled") { bg = "#fee2e2"; color = "#991b1b"; }
+  else if (status === "sell") { bg = "#fef3c7"; color = "#92400e"; }
+  else if (status === "sold") { bg = "#dbeafe"; color = "#1e40af"; }
   else if (status === "pending") { bg = "#fef3c7"; color = "#92400e"; }
   else if (status === "partial" || status === "mixed") { bg = "#f3e8ff"; color = "#6b21a8"; }
   return {
@@ -397,6 +399,8 @@ export default function OrdersAdmin() {
             <option value="placed">Placed</option>
             <option value="confirmed">Confirmed</option>
             <option value="executed">Executed</option>
+            <option value="sell">Sell</option>
+            <option value="sold">Sold</option>
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -518,6 +522,8 @@ export default function OrdersAdmin() {
                 <option value="placed">Placed</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="executed">Executed</option>
+                <option value="sell">Sell</option>
+                <option value="sold">Sold</option>
                 <option value="failed">Failed</option>
                 <option value="cancelled">Cancelled</option>
               </select>

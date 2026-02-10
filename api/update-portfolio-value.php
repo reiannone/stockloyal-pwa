@@ -41,8 +41,62 @@ try {
     $currentWallet = $currentStmt->fetch(PDO::FETCH_ASSOC);
     $oldPortfolioValue = (float)($currentWallet['portfolio_value'] ?? 0);
 
-    // Calculate portfolio value from orders table with real-time market prices
-    // First, get all holdings grouped by symbol
+    // ── Trigger sell → sold via broker-receiver webhook ──────────────────────
+    // If this member has any orders with status = 'sell', call the broker
+    // webhook to transition them to 'sold' before calculating portfolio value.
+    $sellCheckStmt = $conn->prepare("
+        SELECT order_id 
+        FROM orders 
+        WHERE member_id = :member_id 
+          AND status = 'sell'
+    ");
+    $sellCheckStmt->execute([":member_id" => $memberId]);
+    $sellOrderIds = $sellCheckStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (!empty($sellOrderIds)) {
+        $webhookUrl = 'https://api.stockloyal.com/api/broker-receiver.php';
+
+        // In local/dev environment, use localhost
+        if (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false) {
+            $webhookUrl = 'http://localhost/api/broker-receiver.php';
+        }
+
+        $webhookPayload = json_encode([
+            'event_type' => 'order.sold',
+            'member_id'  => $memberId,
+            'order_ids'  => $sellOrderIds,
+            'source'     => 'update-portfolio-value',
+        ]);
+
+        $ch = curl_init($webhookUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $webhookPayload,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'X-Event-Type: order.sold',
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_CONNECTTIMEOUT => 3,
+        ]);
+        $webhookResponse = curl_exec($ch);
+        $webhookHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $webhookError    = curl_error($ch);
+        curl_close($ch);
+
+        if ($webhookHttpCode === 200) {
+            $webhookResult = json_decode($webhookResponse, true);
+            error_log("update-portfolio-value.php: sell→sold webhook OK for {$memberId}: "
+                      . ($webhookResult['orders_updated'] ?? 0) . " orders updated");
+        } else {
+            error_log("update-portfolio-value.php: sell→sold webhook failed for {$memberId}: "
+                      . "HTTP {$webhookHttpCode}, error: {$webhookError}");
+        }
+    }
+
+    // ── Calculate portfolio value ─────────────────────────────────────────────
+    // Only include settled, confirmed, and executed orders (NOT sell or sold)
     $holdingsStmt = $conn->prepare("
         SELECT 
             symbol,
@@ -50,7 +104,7 @@ try {
             SUM(COALESCE(executed_amount, amount)) as total_cost
         FROM orders
         WHERE member_id = :member_id
-          AND status = 'settled'
+          AND status IN ('settled', 'confirmed', 'executed')
         GROUP BY symbol
         HAVING SUM(COALESCE(executed_shares, shares)) > 0
     ");
@@ -109,7 +163,7 @@ try {
             SELECT COALESCE(SUM(COALESCE(executed_amount, amount)), 0) as total_amount
             FROM orders
             WHERE member_id = :member_id
-              AND status = 'settled'
+              AND status IN ('settled', 'confirmed', 'executed')
         ");
         $fallbackStmt->execute([":member_id" => $memberId]);
         $fallbackResult = $fallbackStmt->fetch(PDO::FETCH_ASSOC);
@@ -134,7 +188,8 @@ try {
         "success" => true,
         "portfolio_value" => (float)$totalPortfolioValue,
         "old_value" => $oldPortfolioValue,
-        "value_changed" => $valueChanged
+        "value_changed" => $valueChanged,
+        "orders_sold" => count($sellOrderIds ?? []),
     ]);
 
 } catch (Exception $e) {
