@@ -1210,7 +1210,22 @@ export default function StockPicker() {
 
   // --- Cash input handlers ---
   const handleCashInputChange = (e) => {
-    setCashInput(e.target.value);
+    const raw = e.target.value;
+    setCashInput(raw);
+
+    // ✅ Real-time reverse calculation: cash → points → slider
+    const val = parseFloat(raw);
+    if (Number.isNaN(val) || val < 0) return;
+
+    const points = Math.round(val / conversionRate);
+    const max = parseInt(wallet?.points ?? "0", 10) || 0;
+    const clampedPoints = Math.min(points, max);
+
+    setSelectedPoints(clampedPoints);
+
+    // Update cashValue immediately so limits and basket recalculate
+    const cents = Math.round(clampedPoints * conversionRate * 100);
+    setCashValue(Math.floor(cents / 100));
   };
 
   const handleCashInputFocus = () => {
@@ -1219,17 +1234,17 @@ export default function StockPicker() {
 
   const handleCashInputBlur = () => {
     setIsEditingCash(false);
+
+    // ✅ Final formatting: clamp and display clean value
     let val = parseFloat(cashInput);
     if (Number.isNaN(val) || val < 0) val = 0;
 
-    // Reverse calculate points from cash
     const points = Math.round(val / conversionRate);
     const max = parseInt(wallet?.points ?? "0", 10) || 0;
     const clampedPoints = Math.min(points, max);
 
     setSelectedPoints(clampedPoints);
 
-    // Recalculate cash from clamped points
     const cents = Math.round(clampedPoints * conversionRate * 100);
     const finalCash = Math.floor(cents / 100);
     setCashValue(finalCash);
