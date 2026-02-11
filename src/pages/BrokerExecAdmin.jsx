@@ -135,9 +135,9 @@ export default function BrokerExecAdmin() {
   return (
     <div className="app-container app-content">
       {/* Header */}
-      <h1 className="page-title">Broker Trade Execution</h1>
+      <h1 className="page-title">Broker Trade Execution <em>[Simulation]</em></h1>
       <p className="page-deck">
-        Simulate broker market execution for placed orders. In production, the broker executes trades automatically at market open.
+        Simulate broker market execution for placed orders. The broker executes trades automatically at market open, 9:30AM ET.
       </p>
 
       {/* ── Order Pipeline ── */}

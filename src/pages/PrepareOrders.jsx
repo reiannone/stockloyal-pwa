@@ -882,8 +882,7 @@ export default function PrepareOrders() {
                             </div>
 
                             {/* ── Drilldown toggle ── */}
-                            {b.status === "staged" && (
-                              <div>
+                            <div>
                                 <button
                                   onClick={() => {
                                     if (showDrilldown) {
@@ -907,7 +906,6 @@ export default function PrepareOrders() {
                                   {showDrilldown ? "Hide Member Detail" : "👤 Show Member Detail"}
                                 </button>
                               </div>
-                            )}
 
                             {/* ── Drilldown table ── */}
                             {showDrilldown && (
