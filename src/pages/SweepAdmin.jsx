@@ -28,6 +28,9 @@ export default function SweepAdmin() {
   const [selectedMerchant, setSelectedMerchant] = useState("");
   const [preview, setPreview] = useState(null);
   const [expandedBaskets, setExpandedBaskets] = useState({});
+  const [pendingView, setPendingView] = useState("webhook"); // "basket" | "webhook"
+  const [expandedWebhooks, setExpandedWebhooks] = useState({});
+  const [jsonViewMode, setJsonViewMode] = useState("formatted"); // "formatted" | "raw"
 
   // ── Modal State ──
   const [modal, setModal] = useState({
@@ -42,6 +45,114 @@ export default function SweepAdmin() {
   });
 
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  // ── JSON Viewer (formatted / raw toggle) ─────────────────────────────────
+  const JsonToggle = () => (
+    <div style={{ display: "flex", gap: 8 }}>
+      {[
+        { mode: "formatted", label: "📋 Formatted" },
+        { mode: "raw", label: "{ } Raw JSON" },
+      ].map(({ mode, label }) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => setJsonViewMode(mode)}
+          style={{
+            padding: "4px 12px",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            border: "1px solid #e2e8f0",
+            borderRadius: 4,
+            backgroundColor: jsonViewMode === mode ? "#6366f1" : "#fff",
+            color: jsonViewMode === mode ? "#fff" : "#64748b",
+            cursor: "pointer",
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderJsonValue = (val, depth = 0) => {
+    if (val === null || val === undefined) return <span style={{ color: "#94a3b8" }}>{String(val)}</span>;
+    if (typeof val === "boolean") return <span style={{ color: "#8b5cf6" }}>{val.toString()}</span>;
+    if (typeof val === "number") return <span style={{ color: "#0891b2" }}>{val}</span>;
+    if (typeof val === "string") {
+      if (/^\d{4}-\d{2}-\d{2}/.test(val)) return <span style={{ color: "#059669" }}>{val}</span>;
+      return <span style={{ color: "#dc2626" }}>"{val}"</span>;
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return <span style={{ color: "#64748b" }}>[]</span>;
+      return (
+        <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
+          {val.map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: 4 }}>
+              <span style={{ color: "#64748b" }}>[{i}]:</span>
+              {renderJsonValue(item, depth + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    if (typeof val === "object") {
+      const keys = Object.keys(val);
+      if (keys.length === 0) return <span style={{ color: "#64748b" }}>{"{}"}</span>;
+      return (
+        <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
+          {keys.map((key) => (
+            <div key={key} style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              <span style={{ color: "#6366f1", fontWeight: 600 }}>{key}:</span>
+              {renderJsonValue(val[key], depth + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return <span>{String(val)}</span>;
+  };
+
+  const JsonBlock = ({ data, maxHeight = 300, darkBg = false }) => {
+    if (!data) return <span style={{ color: "#94a3b8" }}>—</span>;
+    const parsed = typeof data === "string" ? (() => { try { return JSON.parse(data); } catch { return null; } })() : data;
+    const raw = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+
+    if (jsonViewMode === "raw") {
+      return (
+        <pre style={{
+          margin: 0,
+          padding: "0.75rem",
+          fontSize: "0.7rem",
+          fontFamily: "monospace",
+          background: darkBg ? "#1e293b" : "#fafafa",
+          color: darkBg ? "#e2e8f0" : "#1e293b",
+          borderRadius: darkBg ? "6px" : 0,
+          maxHeight,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}>
+          {raw}
+        </pre>
+      );
+    }
+
+    return (
+      <div style={{
+        padding: darkBg ? "0.75rem" : "0.5rem 0.75rem",
+        fontFamily: "monospace",
+        fontSize: "0.75rem",
+        lineHeight: 1.6,
+        maxHeight,
+        overflow: "auto",
+        background: darkBg ? "#f8fafc" : "#fafafa",
+        borderRadius: darkBg ? "6px" : 0,
+        border: darkBg ? "1px solid #e2e8f0" : "none",
+      }}>
+        {parsed ? renderJsonValue(parsed) : <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{raw}</pre>}
+      </div>
+    );
+  };
 
   // Load overview data
   const loadOverview = useCallback(async () => {
@@ -217,6 +328,72 @@ export default function SweepAdmin() {
     return grouped;
   };
 
+  // ✅ Group orders by merchant-broker combo (webhook batching)
+  const groupOrdersByMerchantBroker = (orders) => {
+    const grouped = {};
+    for (const order of orders) {
+      const key = `${order.merchant_id || "unknown"}::${order.broker || "unknown"}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          merchant_id: order.merchant_id,
+          merchant_name: order.merchant_name || order.merchant_id || "Unknown",
+          broker: order.broker || "Unknown",
+          orders: [],
+        };
+      }
+      grouped[key].orders.push(order);
+    }
+    return grouped;
+  };
+
+  // ✅ Build webhook payload preview for a merchant-broker group
+  const buildWebhookPayload = (group) => {
+    // Group member orders by member_id
+    const byMember = {};
+    for (const o of group.orders) {
+      const mid = o.member_id || "unknown";
+      if (!byMember[mid]) {
+        byMember[mid] = {
+          member_id: mid,
+          brokerage_id: o.brokerage_id || null,
+          basket_id: o.basket_id,
+          orders: [],
+          total_amount: 0,
+          total_shares: 0,
+          total_points: 0,
+        };
+      }
+      const amt = parseFloat(o.amount || 0);
+      const shares = parseFloat(o.shares || 0);
+      const pts = parseInt(o.points_used || 0, 10);
+      byMember[mid].orders.push({
+        order_id: o.order_id,
+        symbol: o.symbol,
+        shares: parseFloat(shares.toFixed(6)),
+        amount: parseFloat(amt.toFixed(2)),
+        points_used: pts,
+        price: parseFloat(parseFloat(o.price || 0).toFixed(2)),
+      });
+      byMember[mid].total_amount += amt;
+      byMember[mid].total_shares += shares;
+      byMember[mid].total_points += pts;
+    }
+
+    return {
+      merchant_id: group.merchant_id,
+      merchant_name: group.merchant_name,
+      broker: group.broker,
+      total_members: Object.keys(byMember).length,
+      total_orders: group.orders.length,
+      total_amount: parseFloat(group.orders.reduce((s, o) => s + parseFloat(o.amount || 0), 0).toFixed(2)),
+      members: Object.values(byMember).map((m) => ({
+        ...m,
+        total_amount: parseFloat(m.total_amount.toFixed(2)),
+        total_shares: parseFloat(m.total_shares.toFixed(6)),
+      })),
+    };
+  };
+
   return (
     <div className="app-container app-content">
       {/* Confirm Modal */}
@@ -389,10 +566,10 @@ export default function SweepAdmin() {
               {lastResult.results.basket_results?.length > 0 && (
                 <div style={{ marginTop: "0.75rem", borderTop: "1px solid rgba(0,0,0,0.1)", paddingTop: "0.75rem" }}>
                   <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.8rem", textTransform: "uppercase", color: "#475569" }}>
-                    Broker Notifications — Per Basket
+                    Broker Notifications — Per Merchant-Broker
                   </div>
                   {lastResult.results.basket_results.map((br, i) => (
-                    <BasketResultRow key={i} br={br} formatCurrency={formatCurrency} />
+                    <BasketResultRow key={i} br={br} formatCurrency={formatCurrency} jsonViewMode={jsonViewMode} JsonToggle={JsonToggle} JsonBlock={JsonBlock} />
                   ))}
                 </div>
               )}
@@ -566,16 +743,47 @@ export default function SweepAdmin() {
             </div>
           )}
 
-          {/* Pending Orders Tab - Grouped by Basket */}
+          {/* Pending Orders Tab */}
           {activeTab === "pending" && (
             <div>
+              {/* View Toggle + Filters */}
               <div style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+                {/* View toggle */}
+                <div style={{
+                  display: "inline-flex",
+                  borderRadius: "6px",
+                  border: "1px solid #d1d5db",
+                  overflow: "hidden",
+                }}>
+                  {[
+                    { key: "webhook", label: "📡 Webhook View" },
+                    { key: "basket", label: "🧺 Basket View" },
+                  ].map((v) => (
+                    <button
+                      key={v.key}
+                      onClick={() => setPendingView(v.key)}
+                      style={{
+                        padding: "0.4rem 0.75rem",
+                        background: pendingView === v.key ? "#4ECDC4" : "#fff",
+                        color: pendingView === v.key ? "#fff" : "#374151",
+                        border: "none",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+
                 <select
                   value={selectedMerchant}
                   onChange={(e) => {
                     setSelectedMerchant(e.target.value);
                     loadPendingOrders(e.target.value || null);
                     setExpandedBaskets({});
+                    setExpandedWebhooks({});
                   }}
                   style={{
                     padding: "0.5rem",
@@ -591,32 +799,11 @@ export default function SweepAdmin() {
                   ))}
                 </select>
                 <span style={{ color: "#64748b" }}>
-                  {pendingOrders.length} order(s) in {Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)
+                  {pendingOrders.length} order(s)
+                  {pendingView === "basket"
+                    ? ` in ${Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)`
+                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} merchant-broker combo(s)`}
                 </span>
-                <button
-                  onClick={() => {
-                    const baskets = groupOrdersByBasket(pendingOrders);
-                    const allExpanded = Object.keys(baskets).every(k => expandedBaskets[k]);
-                    if (allExpanded) {
-                      setExpandedBaskets({});
-                    } else {
-                      const newExpanded = {};
-                      Object.keys(baskets).forEach(k => newExpanded[k] = true);
-                      setExpandedBaskets(newExpanded);
-                    }
-                  }}
-                  style={{
-                    padding: "0.375rem 0.75rem",
-                    background: "#f3f4f6",
-                    color: "#374151",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "6px",
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  {Object.keys(groupOrdersByBasket(pendingOrders)).every(k => expandedBaskets[k]) ? "Collapse All" : "Expand All"}
-                </button>
               </div>
 
               {pendingOrders.length === 0 ? (
@@ -636,8 +823,240 @@ export default function SweepAdmin() {
                     No pending orders to display.
                   </span>
                 </div>
-              ) : (
+              ) : pendingView === "webhook" ? (
+                /* ═══════════════════════════════════════════════════════ */
+                /* WEBHOOK VIEW — Grouped by Merchant + Broker            */
+                /* ═══════════════════════════════════════════════════════ */
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {Object.entries(groupOrdersByMerchantBroker(pendingOrders)).map(([comboKey, group]) => {
+                    const isExpanded = expandedWebhooks[comboKey];
+                    const totalAmount = group.orders.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
+                    const totalShares = group.orders.reduce((s, o) => s + parseFloat(o.shares || 0), 0);
+                    const memberSet = new Set(group.orders.map((o) => o.member_id));
+                    const payload = isExpanded ? buildWebhookPayload(group) : null;
+
+                    return (
+                      <div
+                        key={comboKey}
+                        style={{
+                          background: "#fff",
+                          borderRadius: "8px",
+                          border: `1px solid ${isExpanded ? "#6366f1" : "#e2e8f0"}`,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {/* Combo Header */}
+                        <div
+                          onClick={() => setExpandedWebhooks((prev) => ({ ...prev, [comboKey]: !prev[comboKey] }))}
+                          style={{
+                            padding: "0.75rem 1rem",
+                            cursor: "pointer",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: isExpanded ? "#eef2ff" : "#fff",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b" }}>
+                                📡 {group.merchant_name}
+                              </span>
+                              <span style={{
+                                padding: "2px 8px",
+                                background: "#e0e7ff",
+                                color: "#3730a3",
+                                borderRadius: "999px",
+                                fontSize: "0.7rem",
+                                fontWeight: 600,
+                              }}>
+                                Broker: {group.broker}
+                              </span>
+                              <span style={{
+                                padding: "2px 8px",
+                                background: "#fef3c7",
+                                color: "#92400e",
+                                borderRadius: "999px",
+                                fontSize: "0.7rem",
+                                fontWeight: 600,
+                              }}>
+                                {group.orders.length} orders
+                              </span>
+                              <span style={{
+                                padding: "2px 8px",
+                                background: "#dcfce7",
+                                color: "#166534",
+                                borderRadius: "999px",
+                                fontSize: "0.7rem",
+                                fontWeight: 600,
+                              }}>
+                                {memberSet.size} members
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", gap: "16px", fontSize: "0.8rem", color: "#475569" }}>
+                              <span>Amount: <strong>{formatCurrency(totalAmount)}</strong></span>
+                              <span>Shares: <strong>{totalShares.toFixed(4)}</strong></span>
+                            </div>
+                          </div>
+                          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                            {isExpanded ? "▲" : "▼"}
+                          </span>
+                        </div>
+
+                        {/* Expanded Detail */}
+                        {isExpanded && payload && (
+                          <div style={{ borderTop: "1px solid #e2e8f0" }}>
+                            {/* Member Orders Table */}
+                            <div style={{ padding: "0.75rem 1rem" }}>
+                              <div style={{
+                                fontWeight: 600,
+                                fontSize: "0.8rem",
+                                textTransform: "uppercase",
+                                color: "#475569",
+                                marginBottom: "0.5rem",
+                                letterSpacing: "0.05em",
+                              }}>
+                                Member Orders ({payload.total_members} members, {payload.total_orders} orders)
+                              </div>
+                              <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "4px" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                                    <tr style={{ background: "#f8fafc" }}>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Member</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Brokerage ID</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Basket</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Symbol</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Shares</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Amount</th>
+                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Points</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {payload.members.map((m) =>
+                                      m.orders.map((o, oi) => (
+                                        <tr
+                                          key={`${m.member_id}-${o.order_id}`}
+                                          style={{
+                                            borderBottom: "1px solid #f1f5f9",
+                                            background: oi === 0 ? "#fafbff" : undefined,
+                                          }}
+                                        >
+                                          {oi === 0 ? (
+                                            <td
+                                              style={{ ...tdStyle, fontWeight: 600, verticalAlign: "top" }}
+                                              rowSpan={m.orders.length}
+                                            >
+                                              {m.member_id}
+                                              <div style={{ fontSize: "0.7rem", color: "#94a3b8", fontWeight: 400 }}>
+                                                {m.orders.length} order{m.orders.length !== 1 ? "s" : ""} · {formatCurrency(m.total_amount)}
+                                              </div>
+                                            </td>
+                                          ) : null}
+                                          {oi === 0 ? (
+                                            <td
+                                              style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.8rem", verticalAlign: "top" }}
+                                              rowSpan={m.orders.length}
+                                            >
+                                              {m.brokerage_id || <span style={{ color: "#ef4444", fontSize: "0.7rem" }}>not linked</span>}
+                                            </td>
+                                          ) : null}
+                                          {oi === 0 ? (
+                                            <td
+                                              style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.7rem", verticalAlign: "top" }}
+                                              rowSpan={m.orders.length}
+                                            >
+                                              {m.basket_id || "—"}
+                                            </td>
+                                          ) : null}
+                                          <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
+                                          <td style={tdStyle}>{o.shares.toFixed(4)}</td>
+                                          <td style={tdStyle}>{formatCurrency(o.amount)}</td>
+                                          <td style={tdStyle}>{o.points_used?.toLocaleString() || 0}</td>
+                                        </tr>
+                                      ))
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* Webhook Payload Preview */}
+                            <div style={{ padding: "0 1rem 1rem" }}>
+                              <div style={{
+                                fontWeight: 600,
+                                fontSize: "0.8rem",
+                                textTransform: "uppercase",
+                                color: "#475569",
+                                marginBottom: "0.5rem",
+                                letterSpacing: "0.05em",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                              }}>
+                                <span>📤 Webhook Payload Preview</span>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  <JsonToggle />
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+                                    }}
+                                    style={{
+                                      padding: "4px 12px",
+                                      background: "#f3f4f6",
+                                      border: "1px solid #d1d5db",
+                                      borderRadius: "4px",
+                                      fontSize: "0.7rem",
+                                      cursor: "pointer",
+                                      textTransform: "none",
+                                      fontWeight: 500,
+                                      letterSpacing: 0,
+                                    }}
+                                  >
+                                    📋 Copy JSON
+                                  </button>
+                                </div>
+                              </div>
+                              <JsonBlock data={payload} maxHeight={300} darkBg={jsonViewMode === "raw"} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* ═══════════════════════════════════════════════════════ */
+                /* BASKET VIEW — Original grouping by basket_id           */
+                /* ═══════════════════════════════════════════════════════ */
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                    <button
+                      onClick={() => {
+                        const baskets = groupOrdersByBasket(pendingOrders);
+                        const allExpanded = Object.keys(baskets).every(k => expandedBaskets[k]);
+                        if (allExpanded) {
+                          setExpandedBaskets({});
+                        } else {
+                          const newExpanded = {};
+                          Object.keys(baskets).forEach(k => newExpanded[k] = true);
+                          setExpandedBaskets(newExpanded);
+                        }
+                      }}
+                      style={{
+                        padding: "0.375rem 0.75rem",
+                        background: "#f3f4f6",
+                        color: "#374151",
+                        border: "1px solid #d1d5db",
+                        borderRadius: "6px",
+                        fontSize: "0.8rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {Object.keys(groupOrdersByBasket(pendingOrders)).every(k => expandedBaskets[k]) ? "Collapse All" : "Expand All"}
+                    </button>
+                  </div>
                   {Object.entries(groupOrdersByBasket(pendingOrders)).map(([basketId, basketOrders]) => {
                     const isExpanded = expandedBaskets[basketId];
                     const totalAmount = basketOrders.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0);
@@ -880,7 +1299,7 @@ function StatCard({ label, value, subtext, color }) {
 }
 
 // Per-Basket Result Row with expandable request/response
-function BasketResultRow({ br, formatCurrency }) {
+function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlock }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -904,13 +1323,11 @@ function BasketResultRow({ br, formatCurrency }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           <span>{br.acknowledged ? "✅" : "⚠️"}</span>
-          <strong>{br.broker}</strong>
+          <strong>{br.merchant_name || br.merchant_id}</strong>
           <span style={{ color: "#64748b" }}>→</span>
-          <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "#6366f1" }}>
-            {br.basket_id}
-          </span>
+          <strong style={{ color: "#6366f1" }}>{br.broker}</strong>
           <span style={{ color: "#64748b" }}>
-            {br.member_id} · {br.order_count} order(s) · {formatCurrency(br.total_amount)}
+            {br.member_count || 1} member(s) · {br.order_count} order(s) · {formatCurrency(br.total_amount)}
           </span>
           {br.symbols && (
             <span style={{ color: "#94a3b8", fontSize: "0.75rem" }}>
@@ -951,6 +1368,11 @@ function BasketResultRow({ br, formatCurrency }) {
           borderRadius: "0 0 6px 6px",
           overflow: "hidden",
         }}>
+          {/* Toggle bar */}
+          <div style={{ padding: "0.5rem 0.75rem", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end" }}>
+            <JsonToggle />
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "120px" }}>
             {/* Request */}
             <div style={{ borderRight: "1px solid #e2e8f0" }}>
@@ -965,19 +1387,13 @@ function BasketResultRow({ br, formatCurrency }) {
               }}>
                 📤 Request Payload
               </div>
-              <pre style={{
-                margin: 0,
-                padding: "0.5rem 0.75rem",
-                fontSize: "0.7rem",
-                fontFamily: "monospace",
-                background: "#fafafa",
-                overflowX: "auto",
-                maxHeight: "300px",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}>
-                {br.request ? JSON.stringify(br.request, null, 2) : "— no request sent —"}
-              </pre>
+              {br.request ? (
+                <JsonBlock data={br.request} maxHeight={300} />
+              ) : (
+                <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.7rem", color: "#94a3b8", fontFamily: "monospace" }}>
+                  — no request sent —
+                </div>
+              )}
             </div>
 
             {/* Response */}
@@ -1002,23 +1418,13 @@ function BasketResultRow({ br, formatCurrency }) {
                   </span>
                 )}
               </div>
-              <pre style={{
-                margin: 0,
-                padding: "0.5rem 0.75rem",
-                fontSize: "0.7rem",
-                fontFamily: "monospace",
-                background: "#fafafa",
-                overflowX: "auto",
-                maxHeight: "300px",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}>
-                {br.response?.body
-                  ? JSON.stringify(br.response.body, null, 2)
-                  : br.response
-                    ? JSON.stringify(br.response, null, 2)
-                    : "— no response (webhook not configured) —"}
-              </pre>
+              {(br.response?.body || br.response) ? (
+                <JsonBlock data={br.response?.body || br.response} maxHeight={300} />
+              ) : (
+                <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.7rem", color: "#94a3b8", fontFamily: "monospace" }}>
+                  — no response (webhook not configured) —
+                </div>
+              )}
             </div>
           </div>
         </div>

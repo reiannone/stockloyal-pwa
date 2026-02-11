@@ -254,11 +254,13 @@ function getPendingOrders(PDO $conn, ?string $merchantId): array
 {
     $sql = "
         SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
-               o.symbol, o.shares, o.amount, o.broker,
+               o.symbol, o.shares, o.amount, o.points_used, o.broker,
                o.status, o.placed_at, o.order_type,
-               m.merchant_name
+               m.merchant_name,
+               bc.username AS brokerage_id
         FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
+        LEFT JOIN broker_credentials bc ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
         WHERE  LOWER(o.status) IN ('pending','queued')
     ";
 

@@ -148,11 +148,121 @@ function authenticateBroker(PDO $conn, string $logFile): ?array {
  * Both update pending → placed and return acknowledgement with timestamp.
  */
 function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): array {
-    $basketId       = $payload['basket_id'] ?? '';
-    $memberId       = strtolower(trim((string)($payload['member_id'] ?? '')));
-    $brokerOrderId  = $payload['broker_order_id'] ?? null;
     $acknowledgedAt = gmdate('c');
     $isSweepOrigin  = !empty($payload['batch_id']);  // sweep engine includes batch_id
+    $brokerBatchId  = 'BRK-' . date('Ymd-His') . '-' . substr(uniqid(), -4);
+
+    // ── Grouped payload (merchant-broker sweep) ──────────────────────────
+    // New format: members[] array with each member having their own basket_id
+    if (!empty($payload['members']) && is_array($payload['members'])) {
+        $members = $payload['members'];
+        $merchantId   = $payload['merchant_id'] ?? '';
+        $merchantName = $payload['merchant_name'] ?? '';
+        $brokerId     = $payload['broker_id'] ?? '';
+        $brokerName   = $payload['broker_name'] ?? '';
+
+        logMessage($logFile, "Processing GROUPED order.placed: merchant={$merchantId}, broker={$brokerId}, "
+                   . count($members) . " member(s), sweep_origin=" . ($isSweepOrigin ? 'yes' : 'no'));
+
+        $totalOrdersUpdated = 0;
+        $memberResults = [];
+
+        foreach ($members as $member) {
+            $memberId  = strtolower(trim((string)($member['member_id'] ?? '')));
+            $basketId  = $member['basket_id'] ?? '';
+            $brokerageId = $member['brokerage_id'] ?? '';
+
+            if (empty($basketId)) {
+                logMessage($logFile, "⚠️ Skipping member {$memberId} — no basket_id");
+                continue;
+            }
+
+            // Update orders from "pending"/"queued" to "placed"
+            $stmt = $conn->prepare("
+                UPDATE orders 
+                SET status = 'placed',
+                    placed_at = NOW()
+                WHERE basket_id = ?
+                  AND LOWER(status) IN ('pending','queued')
+            ");
+            $stmt->execute([$basketId]);
+            $rowsUpdated = $stmt->rowCount();
+            $totalOrdersUpdated += $rowsUpdated;
+
+            // Fetch actual order rows for this basket
+            $detailStmt = $conn->prepare("
+                SELECT order_id, symbol, shares, amount, points_used, status, order_type
+                FROM   orders
+                WHERE  basket_id = ?
+                ORDER  BY order_id ASC
+            ");
+            $detailStmt->execute([$basketId]);
+            $orderRows = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            logMessage($logFile, "  ✅ Member {$memberId}: basket={$basketId}, {$rowsUpdated} updated, " . count($orderRows) . " total orders");
+
+            $memberResults[] = [
+                'member_id'    => $memberId,
+                'brokerage_id' => $brokerageId,
+                'basket_id'    => $basketId,
+                'orders_received' => count($orderRows),
+                'orders_updated'  => $rowsUpdated,
+                'orders'          => $orderRows,
+                'new_status'      => 'placed',
+            ];
+        }
+
+        // Log notification for NON-sweep requests only
+        if (!$isSweepOrigin) {
+            try {
+                $notifStmt = $conn->prepare("
+                    INSERT INTO broker_notifications 
+                    (broker_id, broker_name, event_type, status, member_id, basket_id, payload, sent_at)
+                    VALUES (?, ?, 'order.acknowledged', 'received', ?, ?, ?, NOW())
+                ");
+                $notifStmt->execute([
+                    $brokerId,
+                    $brokerName,
+                    'grouped',  // multiple members
+                    $payload['batch_id'] ?? null,
+                    json_encode([
+                        'broker_batch_id' => $brokerBatchId,
+                        'acknowledged_at' => $acknowledgedAt,
+                        'merchant_id'     => $merchantId,
+                        'member_count'    => count($memberResults),
+                        'total_orders'    => $totalOrdersUpdated,
+                    ])
+                ]);
+            } catch (PDOException $e) {
+                logMessage($logFile, "⚠️ Failed to log notification: " . $e->getMessage());
+            }
+        } else {
+            logMessage($logFile, "ℹ️ Sweep-origin — skipping duplicate notification (sweep_process logs it)");
+        }
+
+        logMessage($logFile, "✅ Acknowledged grouped batch → broker_batch_id={$brokerBatchId}, "
+                   . count($memberResults) . " member(s), {$totalOrdersUpdated} orders updated");
+
+        return [
+            'event'            => 'order.acknowledged',
+            'acknowledged'     => true,
+            'acknowledged_at'  => $acknowledgedAt,
+            'broker_batch_id'  => $brokerBatchId,
+            'merchant_id'      => $merchantId,
+            'merchant_name'    => $merchantName,
+            'broker_id'        => $brokerId,
+            'broker_name'      => $brokerName,
+            'member_count'     => count($memberResults),
+            'total_orders'     => $totalOrdersUpdated,
+            'members'          => $memberResults,
+            'new_status'       => 'placed',
+            'message'          => $totalOrdersUpdated . ' order(s) across ' . count($memberResults) . ' member(s) acknowledged for processing',
+        ];
+    }
+
+    // ── Legacy single-basket payload ─────────────────────────────────────
+    $basketId  = $payload['basket_id'] ?? '';
+    $memberId  = strtolower(trim((string)($payload['member_id'] ?? '')));
 
     if (empty($basketId)) {
         throw new Exception('Missing basket_id');
@@ -161,7 +271,7 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
     logMessage($logFile, "Processing order.placed/acknowledged: basket_id={$basketId}, "
                . "member_id={$memberId}, sweep_origin=" . ($isSweepOrigin ? 'yes' : 'no'));
 
-    // Update orders from "pending"/"queued" to "placed" (may already be placed by sweep — that's OK)
+    // Update orders from "pending"/"queued" to "placed"
     $stmt = $conn->prepare("
         UPDATE orders 
         SET status = 'placed',
@@ -174,7 +284,7 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
 
     logMessage($logFile, "✅ Updated {$rowsUpdated} orders to 'placed'");
 
-    // Fetch actual order rows for this basket to echo back in response
+    // Fetch actual order rows for this basket
     $detailStmt = $conn->prepare("
         SELECT order_id, symbol, shares, amount, points_used, status, order_type
         FROM   orders
@@ -184,11 +294,7 @@ function handleOrderAcknowledged(PDO $conn, array $payload, string $logFile): ar
     $detailStmt->execute([$basketId]);
     $orderRows = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Generate a broker-side reference ID
-    $brokerBatchId = 'BRK-' . date('Ymd-His') . '-' . substr(uniqid(), -4);
-
-    // Only log notification for NON-sweep requests (external broker callbacks)
-    // Sweep-originated requests are already logged by sweep_process.php with full response
+    // Log notification for NON-sweep requests only
     if (!$isSweepOrigin) {
         try {
             $notifStmt = $conn->prepare("

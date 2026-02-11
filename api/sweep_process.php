@@ -68,48 +68,51 @@ class SweepProcess
             return $this->buildResult(0, 0, 0, [], [], microtime(true) - $startTime);
         }
 
-        // 2. Group: basket_id → orders[]
-        $baskets = $this->groupByBasket($orders);
+        // 2. Group: merchant+broker → baskets → orders[]
+        $groups = $this->groupByMerchantBroker($orders);
 
-        $this->log("Found " . count($orders) . " order(s) in "
-                    . count($baskets) . " basket(s)");
+        $this->log("Found " . count($orders) . " order(s) across "
+                    . count($groups) . " merchant-broker group(s)");
 
-        $totalPlaced  = 0;
-        $totalFailed  = 0;
-        $merchantSet  = [];
-        $basketResults = [];
+        $totalPlaced   = 0;
+        $totalFailed   = 0;
+        $merchantSet   = [];
+        $groupResults  = [];
 
-        // 3. Process each basket individually
-        foreach ($baskets as $basketId => $basketOrders) {
-            $first       = $basketOrders[0];
-            $memberId    = $first['member_id'];
-            $brokerName  = $first['broker'] ?? 'unknown';
-            $merchId     = $first['merchant_id'] ?? null;
-            $merchName   = $first['merchant_name'] ?? null;
+        // 3. Process each merchant-broker group (one webhook per group)
+        foreach ($groups as $comboKey => $group) {
+            $merchId    = $group['merchant_id'];
+            $merchName  = $group['merchant_name'];
+            $brokerName = $group['broker'];
+            $allOrders  = $group['orders'];
 
             if ($merchId) $merchantSet[$merchId] = true;
 
-            $this->log("--- Basket: {$basketId}  member={$memberId}  "
-                        . "broker={$brokerName}  orders=" . count($basketOrders) . " ---");
+            $basketCount  = count(array_unique(array_column($allOrders, 'basket_id')));
+            $memberCount  = count(array_unique(array_column($allOrders, 'member_id')));
+
+            $this->log("=== Group: {$merchName} / {$brokerName}  "
+                        . "members={$memberCount}  baskets={$basketCount}  "
+                        . "orders=" . count($allOrders) . " ===");
 
             try {
-                $result = $this->processBasket($basketId, $basketOrders);
+                $result = $this->processMerchantBrokerGroup($group);
                 $totalPlaced += $result['orders_placed'];
                 $totalFailed += $result['orders_failed'];
-                $basketResults[] = $result;
+                $groupResults[] = $result;
             } catch (\Exception $e) {
-                $this->log("❌ Basket {$basketId} EXCEPTION: " . $e->getMessage());
-                $this->errors[] = "Basket {$basketId}: " . $e->getMessage();
-                $totalFailed += count($basketOrders);
+                $this->log("❌ Group {$comboKey} EXCEPTION: " . $e->getMessage());
+                $this->errors[] = "Group {$comboKey}: " . $e->getMessage();
+                $totalFailed += count($allOrders);
 
-                $basketResults[] = [
-                    'basket_id'     => $basketId,
-                    'member_id'     => $memberId,
-                    'broker'        => $brokerName,
+                $groupResults[] = [
                     'merchant_id'   => $merchId,
                     'merchant_name' => $merchName,
+                    'broker'        => $brokerName,
                     'orders_placed' => 0,
-                    'orders_failed' => count($basketOrders),
+                    'orders_failed' => count($allOrders),
+                    'member_count'  => $memberCount,
+                    'basket_count'  => $basketCount,
                     'acknowledged'  => false,
                     'error'         => $e->getMessage(),
                     'request'       => null,
@@ -122,7 +125,7 @@ class SweepProcess
 
         // 4. Collect unique broker names that acknowledged
         $brokersNotified = array_values(array_unique(array_filter(
-            array_map(fn($r) => $r['acknowledged'] ? $r['broker'] : null, $basketResults)
+            array_map(fn($r) => $r['acknowledged'] ? $r['broker'] : null, $groupResults)
         )));
 
         // 5. Log batch to sweep_log
@@ -130,12 +133,12 @@ class SweepProcess
                              count($merchantSet), $brokersNotified, $duration);
 
         $this->log("SWEEP DONE: placed={$totalPlaced}  failed={$totalFailed}  "
-                    . "baskets=" . count($baskets) . "  duration=" . round($duration, 2) . "s");
+                    . "groups=" . count($groups) . "  duration=" . round($duration, 2) . "s");
         $this->log(str_repeat('-', 80));
 
         return $this->buildResult(
             $totalPlaced, $totalFailed, count($merchantSet),
-            $brokersNotified, $basketResults, $duration
+            $brokersNotified, $groupResults, $duration
         );
     }
 
@@ -149,9 +152,11 @@ class SweepProcess
             SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
                    o.symbol, o.shares, o.amount, o.points_used,
                    o.status, o.placed_at, o.broker, o.order_type,
-                   m.merchant_name
+                   m.merchant_name,
+                   bc.username AS brokerage_id
             FROM   orders o
             LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
+            LEFT JOIN broker_credentials bc ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
             WHERE  LOWER(o.status) IN ('pending','queued')
         ";
 
@@ -169,14 +174,22 @@ class SweepProcess
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    private function groupByBasket(array $orders): array
+    private function groupByMerchantBroker(array $orders): array
     {
-        $baskets = [];
+        $groups = [];
         foreach ($orders as $o) {
-            $bid = $o['basket_id'] ?? 'no_basket';
-            $baskets[$bid][] = $o;
+            $key = ($o['merchant_id'] ?? 'unknown') . '::' . ($o['broker'] ?? 'unknown');
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'merchant_id'   => $o['merchant_id'] ?? null,
+                    'merchant_name' => $o['merchant_name'] ?? null,
+                    'broker'        => $o['broker'] ?? 'unknown',
+                    'orders'        => [],
+                ];
+            }
+            $groups[$key]['orders'][] = $o;
         }
-        return $baskets;
+        return $groups;
     }
 
     private function getBrokerInfo(string $brokerName): array
@@ -192,52 +205,55 @@ class SweepProcess
     }
 
     // ====================================================================
-    // PRIVATE — per-basket processing
+    // PRIVATE — per merchant-broker group processing
     // ====================================================================
 
-    private function processBasket(string $basketId, array $orders): array
+    private function processMerchantBrokerGroup(array $group): array
     {
-        $first      = $orders[0];
-        $memberId   = $first['member_id'];
-        $brokerName = $first['broker'] ?? 'unknown';
-        $merchId    = $first['merchant_id'] ?? null;
-        $merchName  = $first['merchant_name'] ?? null;
+        $brokerName = $group['broker'];
+        $merchId    = $group['merchant_id'];
+        $merchName  = $group['merchant_name'];
+        $allOrders  = $group['orders'];
 
         // 1. Look up broker webhook
         $brokerInfo = $this->getBrokerInfo($brokerName);
         $webhookUrl = $brokerInfo['webhook_url'] ?? null;
 
-        // 2. Mark orders → 'placed'
-        $placedCount = $this->markOrdersPlaced($orders);
-        $this->log("✅ {$placedCount} / " . count($orders) . " → 'placed'");
+        // 2. Mark all orders → 'placed'
+        $placedCount = $this->markOrdersPlaced($allOrders);
+        $this->log("✅ {$placedCount} / " . count($allOrders) . " → 'placed'");
 
-        // 3. Build per-basket payload
-        $payload = $this->buildBasketPayload($basketId, $orders, $brokerInfo);
+        // 3. Build grouped payload (all members/baskets for this merchant-broker)
+        $payload = $this->buildGroupPayload($group, $brokerInfo);
 
-        // 4. Send to broker
+        // 4. Send single webhook for entire merchant-broker group
         $response = null;
         if (!empty($webhookUrl)) {
-            $this->log("📡 POST → {$webhookUrl}");
+            $this->log("📡 POST → {$webhookUrl}  ({$merchId} / {$brokerName})");
             $response = $this->sendWebhook($webhookUrl, $payload, $brokerInfo);
         } else {
             $this->log("⚠️ No webhook_url for '{$brokerName}' — skipping notification");
         }
 
-        // 5. Log to broker_notifications (request + response)
-        $this->logNotification($brokerInfo, $basketId, $memberId, $payload, $response);
+        // 5. Log to broker_notifications
+        $comboLabel = "{$merchId}::{$brokerName}";
+        $this->logNotification($brokerInfo, $comboLabel, $comboLabel, $payload, $response);
+
+        $basketIds   = array_unique(array_column($allOrders, 'basket_id'));
+        $memberIds   = array_unique(array_column($allOrders, 'member_id'));
 
         return [
-            'basket_id'       => $basketId,
-            'member_id'       => $memberId,
-            'broker'          => $brokerName,
-            'broker_id'       => $brokerInfo['broker_id'] ?? null,
             'merchant_id'     => $merchId,
             'merchant_name'   => $merchName,
+            'broker'          => $brokerName,
+            'broker_id'       => $brokerInfo['broker_id'] ?? null,
+            'member_count'    => count($memberIds),
+            'basket_count'    => count($basketIds),
             'orders_placed'   => $placedCount,
-            'orders_failed'   => count($orders) - $placedCount,
-            'order_count'     => count($orders),
-            'total_amount'    => round((float) array_sum(array_column($orders, 'amount')), 2),
-            'symbols'         => implode(', ', array_unique(array_column($orders, 'symbol'))),
+            'orders_failed'   => count($allOrders) - $placedCount,
+            'order_count'     => count($allOrders),
+            'total_amount'    => round((float) array_sum(array_column($allOrders, 'amount')), 2),
+            'symbols'         => implode(', ', array_unique(array_column($allOrders, 'symbol'))),
             'webhook_url'     => $webhookUrl,
             'acknowledged'    => $response['acknowledged'] ?? false,
             'acknowledged_at' => $response['acknowledged_at'] ?? null,
@@ -272,50 +288,97 @@ class SweepProcess
     }
 
     // ====================================================================
-    // PRIVATE — build per-basket payload
+    // PRIVATE — build grouped payload (merchant + broker + all members)
     // ====================================================================
 
-    private function buildBasketPayload(string $basketId, array $orders, array $brokerInfo): array
+    private function buildGroupPayload(array $group, array $brokerInfo): array
     {
-        $items = [];
+        $allOrders  = $group['orders'];
+        $merchId    = $group['merchant_id'];
+        $merchName  = $group['merchant_name'];
+
+        // Sub-group orders by member (basket)
+        $byMember = [];
+        foreach ($allOrders as $o) {
+            $mid = $o['member_id'] ?? 'unknown';
+            if (!isset($byMember[$mid])) {
+                $byMember[$mid] = [
+                    'member_id'    => $mid,
+                    'brokerage_id' => $o['brokerage_id'] ?? null,
+                    'basket_id'    => $o['basket_id'] ?? null,
+                    'orders'       => [],
+                ];
+            }
+            $byMember[$mid]['orders'][] = $o;
+        }
+
+        // Build per-member payload with nested orders
+        $members     = [];
         $totalAmount = 0.0;
         $totalShares = 0.0;
         $totalPoints = 0;
+        $allSymbols  = [];
 
-        foreach ($orders as $o) {
-            $amt = (float)  ($o['amount']      ?? 0);
-            $shr = (float)  ($o['shares']       ?? 0);
-            $pts = (int)    ($o['points_used']  ?? 0);
-            $totalAmount += $amt;
-            $totalShares += $shr;
-            $totalPoints += $pts;
+        foreach ($byMember as $mid => $memberData) {
+            $memberOrders = [];
+            $mAmount = 0.0;
+            $mShares = 0.0;
+            $mPoints = 0;
 
-            $items[] = [
-                'order_id'    => (int) $o['order_id'],
-                'symbol'      => $o['symbol'],
-                'shares'      => round($shr, 4),
-                'amount'      => round($amt, 2),
-                'points_used' => $pts,
-                'order_type'  => $o['order_type'] ?? 'market',
+            foreach ($memberData['orders'] as $o) {
+                $amt = (float)  ($o['amount']     ?? 0);
+                $shr = (float)  ($o['shares']      ?? 0);
+                $pts = (int)    ($o['points_used'] ?? 0);
+                $mAmount += $amt;
+                $mShares += $shr;
+                $mPoints += $pts;
+
+                $memberOrders[] = [
+                    'order_id'    => (int) $o['order_id'],
+                    'symbol'      => $o['symbol'],
+                    'shares'      => round($shr, 4),
+                    'amount'      => round($amt, 2),
+                    'points_used' => $pts,
+                    'order_type'  => $o['order_type'] ?? 'market',
+                ];
+
+                $allSymbols[] = $o['symbol'];
+            }
+
+            $totalAmount += $mAmount;
+            $totalShares += $mShares;
+            $totalPoints += $mPoints;
+
+            $members[] = [
+                'member_id'    => $mid,
+                'brokerage_id' => $memberData['brokerage_id'],
+                'basket_id'    => $memberData['basket_id'],
+                'orders'       => $memberOrders,
+                'summary'      => [
+                    'order_count'  => count($memberOrders),
+                    'total_amount' => round($mAmount, 2),
+                    'total_shares' => round($mShares, 6),
+                    'total_points' => $mPoints,
+                    'symbols'      => array_values(array_unique(array_column($memberOrders, 'symbol'))),
+                ],
             ];
         }
 
         return [
             'event_type'    => 'order.placed',
             'batch_id'      => $this->batchId,
-            'basket_id'     => $basketId,
-            'member_id'     => $orders[0]['member_id'],
-            'merchant_id'   => $orders[0]['merchant_id'] ?? null,
-            'merchant_name' => $orders[0]['merchant_name'] ?? null,
+            'merchant_id'   => $merchId,
+            'merchant_name' => $merchName,
             'broker_id'     => $brokerInfo['broker_id'] ?? null,
             'broker_name'   => $brokerInfo['broker_name'] ?? null,
-            'orders'        => $items,
+            'members'       => $members,
             'summary'       => [
-                'order_count'  => count($items),
+                'member_count' => count($members),
+                'order_count'  => count($allOrders),
                 'total_amount' => round($totalAmount, 2),
                 'total_shares' => round($totalShares, 6),
                 'total_points' => $totalPoints,
-                'symbols'      => array_values(array_unique(array_column($items, 'symbol'))),
+                'symbols'      => array_values(array_unique($allSymbols)),
             ],
             'placed_at'     => gmdate('c'),
             'request_id'    => uniqid('swp_', true),
