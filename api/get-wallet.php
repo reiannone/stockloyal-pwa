@@ -42,6 +42,12 @@ try {
             w.*,
             m.merchant_name,
             m.conversion_rate,
+            m.tier1_name, m.tier1_conversion_rate,
+            m.tier2_name, m.tier2_conversion_rate,
+            m.tier3_name, m.tier3_conversion_rate,
+            m.tier4_name, m.tier4_conversion_rate,
+            m.tier5_name, m.tier5_conversion_rate,
+            m.tier6_name, m.tier6_conversion_rate,
             b.min_order_amount,
             b.max_order_amount
         FROM wallet w
@@ -69,6 +75,33 @@ try {
     // which fetches real-time market prices from Yahoo Finance for mark-to-market valuation
     // We just return the cached value here; the frontend calls update-portfolio-value.php
     // in the background to refresh it with current prices
+
+    // ✅ Resolve tier-specific conversion rate from merchant tier columns
+    // Match member_tier against tier1_name–tier6_name; override conversion_rate if found
+    $memberTier = isset($wallet['member_tier']) ? trim((string)$wallet['member_tier']) : '';
+    $baseRate = $wallet['conversion_rate'] ?? null;
+
+    if ($memberTier !== '') {
+        for ($i = 1; $i <= 6; $i++) {
+            $tierNameCol = "tier{$i}_name";
+            $tierRateCol = "tier{$i}_conversion_rate";
+            $tierName = isset($wallet[$tierNameCol]) ? trim((string)$wallet[$tierNameCol]) : '';
+
+            if ($tierName !== '' && strcasecmp($tierName, $memberTier) === 0) {
+                $tierRate = isset($wallet[$tierRateCol]) ? (float)$wallet[$tierRateCol] : 0;
+                if ($tierRate > 0) {
+                    $wallet['conversion_rate'] = $tierRate;
+                    error_log("get-wallet.php: Member {$memberId} tier '{$memberTier}' matched tier{$i} -> rate {$tierRate} (base: {$baseRate})");
+                }
+                break;
+            }
+        }
+    }
+
+    // Clean up tier columns from response (frontend doesn't need them)
+    for ($i = 1; $i <= 6; $i++) {
+        unset($wallet["tier{$i}_name"], $wallet["tier{$i}_min_points"], $wallet["tier{$i}_conversion_rate"]);
+    }
 
     // ✅ Normalize numeric fields
     foreach ([

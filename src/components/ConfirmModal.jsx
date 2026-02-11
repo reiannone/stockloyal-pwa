@@ -108,13 +108,17 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     zIndex: 9999,
+    padding: "env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0)",
+    overflowY: "auto",
   },
   modal: {
     backgroundColor: "#ffffff",
     borderRadius: "12px",
     padding: "24px",
     maxWidth: "500px",
-    width: "90%",
+    width: "calc(100% - 32px)",
+    margin: "0 16px",
+    boxSizing: "border-box",
     boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
   },
   title: {

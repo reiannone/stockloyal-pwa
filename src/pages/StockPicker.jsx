@@ -448,11 +448,22 @@ export default function StockPicker() {
     })();
   }, [memberId, initialPoints]);
 
+  // ✅ Use member's tier-specific conversion rate from wallet (mirrors Wallet.jsx line 629)
   useEffect(() => {
+    if (wallet?.conversion_rate) {
+      let r = Number(wallet.conversion_rate);
+      if (r >= 1) r = r / 100;
+      if (r > 0) {
+        setConversionRate(r);
+        console.log(`[StockPicker] Tier conversion rate: ${r} (tier: ${wallet.member_tier || localStorage.getItem("memberTier") || "default"})`);
+        return;
+      }
+    }
+    // Fallback to localStorage while wallet is loading
     let r = parseFloat(localStorage.getItem("conversion_rate") || "0");
     if (r >= 1) r = r / 100;
     setConversionRate(r > 0 ? r : 0.01);
-  }, []);
+  }, [wallet]);
 
   // --- Sync cash value to points ---
   useEffect(() => {
@@ -1398,7 +1409,7 @@ export default function StockPicker() {
                 marginTop: "0.25rem",
               }}
             >
-              @ {conversionRate}/pt conversion rate
+              @ {conversionRate}/pt conversion rate{wallet?.member_tier ? ` (${wallet.member_tier})` : ""}
             </div>
           </div>
         </div>
