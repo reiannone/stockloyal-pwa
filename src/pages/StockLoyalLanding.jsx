@@ -166,7 +166,7 @@ export default function StockLoyalLanding() {
     },
     {
       to: "/transactions",
-      label: "Order History",
+      label: "Order Tracker",
       icon: <ClipboardList size={32} />,
       color: "#3b82f6",
       bgColor: "#eff6ff",

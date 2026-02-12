@@ -933,7 +933,7 @@ export default function Wallet() {
           <div style={{ width: 40, height: 40, borderRadius: 10, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <ClipboardCheck size={20} color="#d97706" />
           </div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>Trade Orders</div>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>Order Tracker</div>
           {pendingCount > 0 && (
             <span style={{
               background: "#fef3c7",

@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+import STOCKLOYAL_KNOWLEDGE from "../data/stockloyal-knowledge.js";
 import {
   Mic,
   MicOff,
@@ -25,27 +26,23 @@ import {
 } from "lucide-react";
 
 // ── Intent definitions ───────────────────────────────────────────────────────
+// ONLY match explicit navigation commands. Questions go to Claude API.
+// "go to wallet" → navigate. "what is my wallet?" → Claude answers.
 const INTENTS = [
-  { id: "greeting",       patterns: [/^(hi|hello|hey|good\s*(morning|afternoon|evening)|howdy|sup)/i] },
-  { id: "help",           patterns: [/\b(help|what can you|how do i|guide|assist|instructions)\b/i] },
-  { id: "check_points",   patterns: [/\b(points|how many points|point balance|my points|loyalty)\b/i] },
-  { id: "check_balance",  patterns: [/\b(balance|cash|available|how much|cash value|spendable)\b/i] },
-  { id: "check_portfolio",patterns: [/\b(portfolio|investments|stocks i own|my stocks|holdings|shares)\b/i] },
-  { id: "navigate_profile",patterns: [/\b(profile|personal info|edit profile|update profile|my info|onboard)\b/i] },
-  { id: "navigate_broker", patterns: [/\b(broker|select broker|choose broker|brokerage|fidelity|robinhood)\b/i] },
-  { id: "navigate_election",patterns: [/\b(election|sweep|monthly|subscription|invest.*type|auto.*invest)\b/i] },
-  { id: "navigate_wallet", patterns: [/\b(wallet|go to wallet|open wallet|show wallet|my wallet)\b/i] },
-  { id: "navigate_picker", patterns: [/\b(stock picker|pick stocks|buy stocks|invest|build.*basket|fill.*basket|securities)\b/i] },
-  { id: "navigate_portfolio",patterns: [/\b(show portfolio|view portfolio|go to portfolio|open portfolio)\b/i] },
-  { id: "navigate_orders", patterns: [/\b(orders|order history|transactions|trade.*order|pending.*order|my order)\b/i] },
-  { id: "navigate_ledger", patterns: [/\b(ledger|transaction ledger|all transactions)\b/i] },
-  { id: "navigate_home",  patterns: [/\b(home|landing|main|dashboard|start)\b/i] },
-  { id: "navigate_terms", patterns: [/\b(terms|conditions|terms.*conditions|legal)\b/i] },
-  { id: "navigate_social", patterns: [/\b(social|community|feed|community.*feed|posts)\b/i] },
-  { id: "navigate_promos", patterns: [/\b(promo|promotion|deals|offers|rewards)\b/i] },
-  { id: "navigate_about",  patterns: [/\b(about|faq|help.*page|frequently)\b/i] },
-  { id: "status",         patterns: [/\b(status|where am i|what.*step|my.*progress|setup.*status|onboarding)\b/i] },
-  { id: "goodbye",        patterns: [/\b(bye|goodbye|see you|thanks|thank you|that's all|close)\b/i] },
+  { id: "navigate_profile", patterns: [/\b(go to|open|show|take me to)\b.*\b(profile|onboard)/i] },
+  { id: "navigate_broker",  patterns: [/\b(go to|open|show|take me to)\b.*\bbroker/i] },
+  { id: "navigate_election",patterns: [/\b(go to|open|show|take me to)\b.*\belection/i] },
+  { id: "navigate_wallet",  patterns: [/\b(go to|open|show|take me to)\b.*\bwallet/i] },
+  { id: "navigate_picker",  patterns: [/\b(go to|open|show|take me to)\b.*\b(stock picker|picker|basket)/i, /^(pick stocks|buy stocks|fill.*basket)$/i] },
+  { id: "navigate_portfolio",patterns: [/\b(go to|open|show|take me to)\b.*\bportfolio/i] },
+  { id: "navigate_orders",  patterns: [/\b(go to|open|show|take me to)\b.*\b(orders|order history|transactions)/i] },
+  { id: "navigate_ledger",  patterns: [/\b(go to|open|show|take me to)\b.*\bledger/i] },
+  { id: "navigate_home",    patterns: [/\b(go to|open|take me to)\b.*\b(home|landing|dashboard)/i, /^(go home)$/i] },
+  { id: "navigate_terms",   patterns: [/\b(go to|open|show|take me to)\b.*\bterms/i] },
+  { id: "navigate_social",  patterns: [/\b(go to|open|show|take me to)\b.*\b(social|community|feed)/i] },
+  { id: "navigate_promos",  patterns: [/\b(go to|open|show|take me to)\b.*\b(promo|promotion)/i] },
+  { id: "navigate_about",   patterns: [/\b(go to|open|show|take me to)\b.*\b(about|faq)/i] },
+  { id: "goodbye",          patterns: [/^(bye|goodbye|see you|that's all|close)$/i, /^(thanks|thank you)$/i] },
 ];
 
 function matchIntent(text) {
@@ -75,6 +72,58 @@ const NAV_MAP = {
   navigate_about:     { path: "/about",              label: "About & FAQs" },
 };
 
+// ── Build system prompt from knowledge base ──────────────────────────────────
+function buildSystemPrompt(memberContext, liveFaqs) {
+  const sections = Object.entries(STOCKLOYAL_KNOWLEDGE)
+    .map(([key, val]) => `## ${key.toUpperCase()}\n${val.trim()}`)
+    .join("\n\n");
+
+  const faqBlock = liveFaqs
+    ? `\n\nLIVE FAQ FROM DATABASE (most up-to-date — prefer these over static FAQ above):\n${liveFaqs}`
+    : "";
+
+  return `You are the StockLoyal AI Voice Assistant embedded in the StockLoyal app.
+You help members navigate the app, understand features, and manage their investments.
+
+CRITICAL RULES:
+- Keep responses SHORT (1-3 sentences max) — they will be spoken aloud
+- Never fabricate account data. Only reference numbers from MEMBER CONTEXT below.
+- Never give specific investment advice (don't recommend specific stocks)
+- If asked to navigate somewhere, respond with EXACTLY this format on its own line:
+  [NAV:/route-path]
+  Example: "Taking you to your wallet now. [NAV:/wallet]"
+  Valid routes: /stockloyal-landing, /login, /member-onboard, /select-broker, 
+  /election, /terms, /wallet, /stock-picker, /fill-basket, /points-slider,
+  /portfolio, /transactions, /ledger, /promotions, /social, /about
+- If the member asks you to close or says goodbye, respond with [CLOSE]
+
+MEMBER CONTEXT (live data from their account):
+${memberContext}
+
+APP KNOWLEDGE BASE:
+${sections}${faqBlock}`;
+}
+
+// ── Call Claude API via PHP proxy (keeps API key server-side) ────────────────
+async function callClaudeAPI(systemPrompt, conversationHistory) {
+  try {
+    const data = await apiPost("voice-assistant-ai.php", {
+      system: systemPrompt,
+      messages: conversationHistory.slice(-10),
+    });
+
+    if (data?.success && data?.reply) {
+      return data.reply;
+    }
+
+    console.error("[VoiceAssistant] AI proxy error:", data?.error);
+    return null;
+  } catch (err) {
+    console.error("[VoiceAssistant] AI proxy call failed:", err);
+    return null;
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function VoiceAssistant() {
   const navigate = useNavigate();
@@ -99,6 +148,24 @@ export default function VoiceAssistant() {
   const synthRef = useRef(window.speechSynthesis);
   const messagesEndRef = useRef(null);
   const panelRef = useRef(null);
+  const conversationHistoryRef = useRef([]); // Claude API message history
+  const [faqKnowledge, setFaqKnowledge] = useState(""); // Live FAQ from database
+
+  // ── Fetch FAQ knowledge from database when panel opens ─────────────────────
+  useEffect(() => {
+    if (!isOpen || faqKnowledge) return; // Only fetch once per session
+    (async () => {
+      try {
+        const data = await apiPost("get-faq-knowledge.php", {});
+        if (data?.success && data?.text_block) {
+          setFaqKnowledge(data.text_block);
+          console.log(`[VoiceAssistant] Loaded ${data.count} FAQs from database`);
+        }
+      } catch (err) {
+        console.warn("[VoiceAssistant] Could not load FAQs:", err);
+      }
+    })();
+  }, [isOpen]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -225,118 +292,102 @@ export default function VoiceAssistant() {
   // ── Intent processor ───────────────────────────────────────────────────────
   const processIntent = async (intent, rawText) => {
     const memberId = localStorage.getItem("memberId");
-    const merchantName = localStorage.getItem("merchantName") || "your merchant";
-    const brokerName = localStorage.getItem("broker") || localStorage.getItem("brokerName") || "";
 
-    // ── Greeting ──
-    if (intent === "greeting") {
-      const name = localStorage.getItem("userName") || "";
-      return name
-        ? `Hey ${name}! How can I help you today? You can ask about your balance, portfolio, or say "guide me" to walk through the setup steps.`
-        : `Hello! Welcome to StockLoyal. How can I help? Try saying "check my balance" or "help me get started."`;
-    }
-
-    // ── Help ──
-    if (intent === "help") {
-      return `Here's what I can do: Check your points balance or cash value. Show your portfolio value. Navigate to any page — just say "go to wallet" or "open stock picker." Walk you through the setup steps. Say "what's my status" to see your onboarding progress.`;
-    }
-
-    // ── Check points / balance ──
-    if (intent === "check_points" || intent === "check_balance") {
-      if (!memberId) return "You'll need to log in first. Say 'go to login' or tap the home button.";
-      try {
-        const data = await apiPost("get-wallet.php", { member_id: memberId });
-        if (data?.success && data?.wallet) {
-          const w = data.wallet;
-          const pts = parseInt(w.points || "0", 10).toLocaleString();
-          const rate = Number(w.conversion_rate || 0.01);
-          const effectiveRate = rate >= 1 ? rate / 100 : rate;
-          const cash = (parseInt(w.points || "0", 10) * effectiveRate).toFixed(2);
-          const cashBal = Number(w.cash_balance || 0).toFixed(2);
-          const tier = w.member_tier || localStorage.getItem("memberTier") || "";
-
-          if (intent === "check_points") {
-            return `You have ${pts} loyalty points from ${merchantName}.${tier ? ` Your tier is ${tier}.` : ""} That converts to about $${cash} in investment value.`;
-          } else {
-            return `Your available cash balance is $${cashBal}, and your points convert to about $${cash}. You have ${pts} points available.`;
-          }
-        }
-        return "I couldn't load your wallet. Please try again.";
-      } catch (e) {
-        return "There was a network error fetching your balance. Please try again.";
-      }
-    }
-
-    // ── Check portfolio ──
-    if (intent === "check_portfolio") {
-      if (!memberId) return "Please log in first so I can check your portfolio.";
-      try {
-        const data = await apiPost("get-wallet.php", { member_id: memberId });
-        if (data?.success && data?.wallet) {
-          const pv = Number(data.wallet.portfolio_value || 0);
-          const broker = data.wallet.broker || brokerName || "your broker";
-          if (pv > 0) {
-            return `Your StockLoyal portfolio is valued at $${pv.toFixed(2)}, held at ${broker}. Would you like me to open the full portfolio view?`;
-          }
-          return `You don't have any investments yet. Say "pick stocks" or "go to stock picker" to get started!`;
-        }
-        return "I couldn't load your portfolio data. Please try again.";
-      } catch (e) {
-        return "Network error while checking your portfolio. Please try again.";
-      }
-    }
-
-    // ── Status / progress check ──
-    if (intent === "status") {
-      if (!memberId) return "You're not logged in yet. Say 'go to home' to start the onboarding process.";
-      try {
-        const data = await apiPost("get-wallet.php", { member_id: memberId });
-        if (data?.success && data?.wallet) {
-          const w = data.wallet;
-          const steps = [];
-
-          // Profile check
-          const profileFields = [w.first_name, w.last_name, w.member_email, w.member_address_line1, w.member_town_city, w.member_state, w.member_zip, w.member_country, w.member_timezone];
-          const profileDone = profileFields.every((f) => !!f && String(f).trim());
-          steps.push(profileDone ? "✓ Profile complete" : "✗ Profile incomplete");
-
-          // Broker
-          const hasBroker = !!w.broker || !!localStorage.getItem("broker");
-          steps.push(hasBroker ? `✓ Broker set (${w.broker || localStorage.getItem("broker")})` : "✗ No broker selected");
-
-          // Election
-          const hasElection = !!w.election_type;
-          steps.push(hasElection ? `✓ Election set (${w.election_type})` : "✗ No election type set");
-
-          // Points
-          const pts = parseInt(w.points || "0", 10);
-          steps.push(pts > 0 ? `✓ ${pts.toLocaleString()} points available` : "✗ No points loaded");
-
-          const completedCount = steps.filter((s) => s.startsWith("✓")).length;
-
-          return `Here's your setup status — ${completedCount} of 4 steps done: ${steps.join(". ")}. ${completedCount < 4 ? "Want me to take you to the next incomplete step?" : "You're all set! Say 'pick stocks' to start investing."}`;
-        }
-        return "Couldn't load your status. Please try again.";
-      } catch (e) {
-        return "Network error checking your status.";
-      }
-    }
-
-    // ── Navigation intents ──
+    // ── Fast-path: Navigation intents (no API call needed) ──
     if (NAV_MAP[intent]) {
       const { path, label } = NAV_MAP[intent];
       setTimeout(() => navigate(path), 600);
-      return `Taking you to ${label} now.`;
+      const reply = `Taking you to ${label} now.`;
+      conversationHistoryRef.current.push(
+        { role: "user", content: rawText },
+        { role: "assistant", content: reply }
+      );
+      return reply;
     }
 
-    // ── Goodbye ──
+    // ── Fast-path: Goodbye ──
     if (intent === "goodbye") {
       setTimeout(() => setIsOpen(false), 1500);
-      return "You're welcome! Feel free to tap the mic anytime you need help. Happy investing!";
+      return "You're welcome! Feel free to tap the mic anytime. Happy investing!";
     }
 
-    // ── Unknown — try to be helpful ──
-    return `I'm not sure I understood "${rawText}." Try saying things like: "check my balance," "go to wallet," "pick stocks," or "what's my status." You can also say "help" for a full list.`;
+    // ── Build member context from live data ──
+    let memberContext = "Not logged in — no member data available.";
+    if (memberId) {
+      try {
+        const data = await apiPost("get-wallet.php", { member_id: memberId });
+        if (data?.success && data?.wallet) {
+          const w = data.wallet;
+          const pts = parseInt(w.points || "0", 10);
+          const rate = Number(w.conversion_rate || 0.01);
+          const effectiveRate = rate >= 1 ? rate / 100 : rate;
+          const cashValue = (pts * effectiveRate).toFixed(2);
+
+          // Profile completeness
+          const profileFields = [w.first_name, w.last_name, w.member_email,
+            w.member_address_line1, w.member_town_city, w.member_state,
+            w.member_zip, w.member_country, w.member_timezone];
+          const profileComplete = profileFields.every((f) => !!f && String(f).trim());
+
+          memberContext = [
+            `Member ID: ${memberId}`,
+            `Name: ${w.first_name || ""} ${w.last_name || ""}`.trim() || "Not set",
+            `Email: ${w.member_email || "Not set"}`,
+            `Merchant: ${localStorage.getItem("merchantName") || "Unknown"}`,
+            `Points: ${pts.toLocaleString()}`,
+            `Conversion rate: ${effectiveRate} (1 point = $${effectiveRate})`,
+            `Cash value: $${cashValue}`,
+            `Cash balance: $${Number(w.cash_balance || 0).toFixed(2)}`,
+            `Portfolio value: $${Number(w.portfolio_value || 0).toFixed(2)}`,
+            `Broker: ${w.broker || localStorage.getItem("broker") || "Not set"}`,
+            `Election type: ${w.election_type || "Not set"}`,
+            `Sweep percentage: ${w.sweep_percentage || "N/A"}`,
+            `Tier: ${w.member_tier || localStorage.getItem("memberTier") || "None"}`,
+            `Profile complete: ${profileComplete ? "Yes" : "No — missing fields"}`,
+            `Current page: ${window.location.hash || window.location.pathname}`,
+          ].join("\n");
+        }
+      } catch (err) {
+        console.warn("[VoiceAssistant] Wallet fetch failed:", err);
+        memberContext = `Member ID: ${memberId} (wallet data unavailable — network error)`;
+      }
+    }
+
+    // ── Send to Claude API ──
+    const systemPrompt = buildSystemPrompt(memberContext, faqKnowledge);
+
+    conversationHistoryRef.current.push({ role: "user", content: rawText });
+
+    const aiReply = await callClaudeAPI(systemPrompt, conversationHistoryRef.current);
+
+    if (!aiReply) {
+      // Fallback if API fails — use basic intent matching
+      conversationHistoryRef.current.pop(); // Remove the user message we just added
+      return getFallbackResponse(intent, rawText, memberId);
+    }
+
+    // ── Parse navigation commands from Claude's response ──
+    let cleanReply = aiReply;
+    const navMatch = aiReply.match(/\[NAV:(\/[^\]]+)\]/);
+    if (navMatch) {
+      cleanReply = aiReply.replace(/\[NAV:\/[^\]]+\]/g, "").trim();
+      setTimeout(() => navigate(navMatch[1]), 600);
+    }
+
+    // ── Parse close command ──
+    if (aiReply.includes("[CLOSE]")) {
+      cleanReply = aiReply.replace(/\[CLOSE\]/g, "").trim();
+      setTimeout(() => setIsOpen(false), 1500);
+    }
+
+    conversationHistoryRef.current.push({ role: "assistant", content: cleanReply });
+
+    return cleanReply;
+  };
+
+  // ── Fallback responses when Claude API is unavailable ──────────────────────
+  const getFallbackResponse = (intent, rawText, memberId) => {
+    return `I'm having trouble connecting to AI right now. You can say "go to wallet," "go to portfolio," or any page name to navigate.`;
   };
 
   // ── Typed input ────────────────────────────────────────────────────────────

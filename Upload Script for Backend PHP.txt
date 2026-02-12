@@ -5,7 +5,7 @@ FRONTEND: FULL RELOAD (one-time) AWS Amplify and GitHub from PowerShell:
 # If you haven't initialized git yet
 git init
 git add .
-git commit -m "Added data quality check process as part of admin."
+git commit -m "Added address lookup."
 
 # Create a new repository on GitHub, then:
 git remote add origin https://github.com/reiannone/stockloyal-pwa.git
@@ -18,7 +18,7 @@ FRONTEND: CHANGES to AWS Amplify and GitHub from PowerShell:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 git add .
-git commit -m "Added My Picks to StockPicker "
+git commit -m "Fixed wallet portfolio mark-to-the-market pricing "
 git push
 
 
@@ -99,6 +99,10 @@ RestFUL URL: from Merchant
 
 http://localhost:5173/#/?member_id=stockloyal&tier=World%20Traveler&merchant_id=merchant001&points=260115&action=refresh%20points
 
+// ── Your Anthropic API key (keep this secret!) ──────────────────────────────
+// Option A: Set as environment variable (recommended)
+//   export ANTHROPIC_API_KEY=sk-ant-...
+// Option B: Hardcode here (quick-start, less secure)
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 MYSQL

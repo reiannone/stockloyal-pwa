@@ -241,7 +241,7 @@ export default function Transactions() {
   return (
     <div className="transactions-container">
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        My Baskets and Buy Order Transactions
+        My Baskets and Buy Order Tracker
       </h2>
 
       {/* --- Page Notice --- */}
