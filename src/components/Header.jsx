@@ -166,8 +166,8 @@ export default function Header() {
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
           <button
             type="button"
-            aria-label="Open menu"
-            onClick={() => setShowMenu(true)}
+            aria-label="Home"
+            onClick={() => navigate("/stockloyal-landing")}
             style={{
               width: 40,
               height: 40,

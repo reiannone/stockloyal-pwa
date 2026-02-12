@@ -7,6 +7,7 @@ import ErrorBoundary from "./ErrorBoundary.jsx";
 import FrameOnly from "./components/FrameOnly.jsx";
 import Layout from "./components/Layout.jsx";
 import AdminLanding from "./pages/AdminLanding";
+import StockLoyalLanding from "./pages/StockLoyalLanding";
 import SplashScreen from "./pages/SplashScreen.jsx";
 import Promotions from "./pages/Promotions.jsx";
 import Login from "./pages/Login.jsx";
@@ -22,6 +23,8 @@ import SelectBroker from "./pages/SelectBroker.jsx";
 import Election from "./pages/Election.jsx";
 import PointsSelect from "./pages/PointsSelect.jsx";
 import StockPicker from "./pages/StockPicker.jsx";
+import PointsSlider from "./pages/PointsSlider.jsx";
+import FillBasket from "./pages/FillBasket.jsx";
 import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
 import Transactions from "./pages/Transactions.jsx";
@@ -163,6 +166,7 @@ function App() {
 
             {/* Pages WITH layout (Header + Footer) */}
             <Route element={<Layout />}>
+              <Route path="/stockloyal-landing" element={<StockLoyalLanding />} />
               <Route path="/admin-home" element={<AdminLanding />} />
               <Route
                 path="/about"
@@ -241,6 +245,22 @@ function App() {
                 element={
                   <PageWrapper>
                     <StockPicker />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/points-slider"
+                element={
+                  <PageWrapper>
+                    <PointsSlider />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/fill-basket"
+                element={
+                  <PageWrapper>
+                    <FillBasket />
                   </PageWrapper>
                 }
               />

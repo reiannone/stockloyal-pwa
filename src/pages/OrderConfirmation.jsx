@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { CheckCircle, ShoppingBasket } from "lucide-react";
+import { CheckCircle, ShoppingBasket, Share2 } from "lucide-react";
+import SharePointsSheet from "../components/SharePointsSheet.jsx";
 
 export default function OrderConfirmation() {
   const navigate = useNavigate();
@@ -30,6 +31,9 @@ export default function OrderConfirmation() {
 
   // ✅ success banner (sound removed - plays elsewhere)
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // ✅ Social share sheet
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // ✅ passed from Order.jsx
   const totalAmount = Number(location.state?.amount || 0); // keep if referenced elsewhere
@@ -334,7 +338,19 @@ export default function OrderConfirmation() {
       )}
 
       <div className="basket-actions">
-        <button type="button" className="btn-primary" onClick={() => navigate("/wallet")}>
+        {/* ✅ Share Your Investment */}
+        {showSuccess && orders.length > 0 && (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setIsShareOpen(true)}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+          >
+            <Share2 size={18} /> Share Your Investment
+          </button>
+        )}
+
+        <button type="button" className="btn-secondary" onClick={() => navigate("/wallet")}>
           <ShoppingBasket size={18} /> Back to Wallet
         </button>
       </div>
@@ -346,6 +362,19 @@ export default function OrderConfirmation() {
         This confirmation reflects only the orders you just placed in this basket.
         Your official trade confirmations and records remain with {brokerName}.
       </p>
+
+      {/* ✅ Social share sheet */}
+      <SharePointsSheet
+        open={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        memberId={memberId}
+        pointsUsed={pointsUsed || orders.reduce((sum, o) => sum + (parseInt(o.points_used, 10) || 0), 0)}
+        cashValue={totalAmount || orders.reduce((sum, o) => sum + (parseFloat(o.amount) || 0), 0)}
+        primaryTicker={orders.length > 0 ? orders[0].symbol : null}
+        tickers={orders.map((o) => o.symbol).filter(Boolean)}
+        merchantName={merchantName}
+        broker={brokerName}
+      />
     </div>
   );
 }

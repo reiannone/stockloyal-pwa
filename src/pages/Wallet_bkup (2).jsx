@@ -851,17 +851,37 @@ export default function Wallet() {
               </span>
             )}
           </button>
+
+          <button
+            className="btn-secondary"
+            onClick={() => navigate("/transactions", { state: { filterStatus: "pending" } })}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+            }}
+          >
+            <ClipboardCheck size={18} /> My Pending Orders
+            <span style={{
+              background: pendingCount > 0 ? "#ef4444" : "#9ca3af",
+              color: "#fff",
+              borderRadius: "9999px",
+              padding: "1px 8px",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              lineHeight: "1.4",
+              minWidth: 20,
+              textAlign: "center",
+            }}>
+              {pendingCount}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* --- Portfolio Section (clickable → /portfolio) --- */}
-      <div
-        className="card"
-        style={{ marginTop: 14, cursor: "pointer", transition: "border-color 0.2s, box-shadow 0.2s" }}
-        onClick={() => navigate("/portfolio")}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#3b82f6"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(59,130,246,0.12)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = ""; e.currentTarget.style.boxShadow = ""; }}
-      >
+      {/* --- Portfolio Section --- */}
+      <div className="card" style={{ marginTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
@@ -893,86 +913,13 @@ export default function Wallet() {
             <div className="caption" style={{ marginTop: 6 }}>
               {formatLastUpdated(portfolioLastUpdated)}
             </div>
-            <div style={{ marginTop: 4, fontSize: "0.75rem", color: "#2563eb", fontWeight: 600 }}>
-              View Portfolio ›
-            </div>
           </div>
         </div>
 
-      </div>
-
-      {/* --- Quick Links Tile Grid --- */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
-          gap: 12,
-          marginTop: 14,
-        }}
-      >
-        {/* Trade Orders */}
-        <div
-          onClick={() => navigate("/transactions")}
-          style={{
-            background: "#f9fafb",
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: "14px 12px",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-            textAlign: "center",
-            transition: "border-color 0.2s, box-shadow 0.2s",
-            position: "relative",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#f59e0b"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(245,158,11,0.15)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.boxShadow = "none"; }}
-        >
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ClipboardCheck size={20} color="#d97706" />
-          </div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>Trade Orders</div>
-          {pendingCount > 0 && (
-            <span style={{
-              background: "#fef3c7",
-              color: "#92400e",
-              border: "1px solid #f59e0b",
-              borderRadius: "9999px",
-              padding: "1px 8px",
-              fontSize: "0.7rem",
-              fontWeight: 700,
-              lineHeight: "1.5",
-            }}>
-              {pendingCount} Pending
-            </span>
-          )}
-        </div>
-
-        {/* Transaction Ledger */}
-        <div
-          onClick={() => navigate("/ledger")}
-          style={{
-            background: "#f9fafb",
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            padding: "14px 12px",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-            textAlign: "center",
-            transition: "border-color 0.2s, box-shadow 0.2s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#10b981"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(16,185,129,0.15)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.boxShadow = "none"; }}
-        >
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#ecfdf5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <CreditCard size={20} color="#059669" />
-          </div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>Transactions</div>
+        <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
+          <button className="btn-secondary" onClick={() => navigate("/portfolio")}>StockLoyal Portfolio</button>
+          <button className="btn-secondary" onClick={() => navigate("/transactions")}>View Order History</button>
+          <button className="btn-secondary" onClick={() => navigate("/ledger")}>View Transactions</button>
         </div>
       </div>
 

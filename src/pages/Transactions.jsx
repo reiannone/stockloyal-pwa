@@ -77,6 +77,23 @@ export default function Transactions() {
     })();
   }, [memberId, detectedTz]);
 
+  // ── Auto-default filter to "pending" when pending orders exist ──
+  useEffect(() => {
+    // Skip if user already navigated with an explicit filter or manually changed it
+    if (location.state?.filterStatus) return;
+    if (loading || orders.length === 0) return;
+
+    const hasPending = orders.some((o) => {
+      const s = (o.status || "").toLowerCase();
+      return s === "pending" || s === "queued";
+    });
+
+    if (hasPending && !filterField) {
+      setFilterField("status");
+      setFilterValue("pending");
+    }
+  }, [orders, loading]);
+
   const formatDollars = (val) =>
     (parseFloat(val) || 0).toLocaleString("en-US", {
       style: "currency",
