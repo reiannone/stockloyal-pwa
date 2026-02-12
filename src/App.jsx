@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
-
+import VoiceAssistant from "./components/VoiceAssistant";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import FrameOnly from "./components/FrameOnly.jsx";
 import Layout from "./components/Layout.jsx";
@@ -502,6 +502,9 @@ function App() {
           primaryTicker={shareProps.primaryTicker}
           tickers={shareProps.tickers}
         />
+
+        {/* Voice-powered AI assistant overlay */}
+        <VoiceAssistant />
       </>
     </ErrorBoundary>
   );
