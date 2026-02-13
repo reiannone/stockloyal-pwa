@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
 import ConfirmModal from "../components/ConfirmModal";
-import { X, Image, Upload, Settings, Save, Trash2, Plus } from "lucide-react";
+import { X, Image, Upload, Settings, Save, Trash2, Plus, CircleCheckBig } from "lucide-react";
 
 
 const BROKER_TEMPLATE = {
