@@ -1,12 +1,14 @@
 // src/pages/AdminBroker.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
-import { Upload, X, Image } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
+import { X, Image, Upload, Settings, Save, Trash2, Plus } from "lucide-react";
+
 
 const BROKER_TEMPLATE = {
   broker_id: "",
   broker_name: "",
-  logo_url: "", // ✅ Broker logo image URL
+  logo_url: "", // Broker logo image URL
   ach_bank_name: "",
   ach_routing_num: "",
   ach_account_num: "",
@@ -40,12 +42,19 @@ export default function AdminBroker() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  // ✅ Logo upload state
+  // Logo upload state
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [logoPreview, setLogoPreview] = useState(null);
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const fileInputRef = useRef(null);
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // Load all brokers
   const fetchBrokers = async () => {
@@ -108,9 +117,21 @@ export default function AdminBroker() {
     }
   };
 
-  // Delete broker
-  const deleteBroker = async (broker_id) => {
-    if (!window.confirm("Delete this broker?")) return;
+  // Delete broker — show modal
+  const deleteBroker = (broker_id) => {
+    setModal({
+      show: true,
+      title: "Delete Broker",
+      icon: <Trash2 size={20} color="#ef4444" />,
+      message: `Delete broker "${broker_id}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { broker_id },
+    });
+  };
+
+  const executeDelete = async (broker_id) => {
+    closeModal();
     try {
       const res = await apiPost("delete-broker.php", { broker_id });
       if (res?.success) {
@@ -127,6 +148,10 @@ export default function AdminBroker() {
       console.error("[AdminBroker] delete-broker failed:", e);
       alert("Delete failed: network/server error");
     }
+  };
+
+  const handleModalConfirm = () => {
+    executeDelete(modal.data?.broker_id);
   };
 
   // Handle form input
@@ -146,7 +171,7 @@ export default function AdminBroker() {
     }));
   };
 
-  // ✅ Helper: resolve API base URL the same way api.js does
+  // Helper: resolve API base URL the same way api.js does
   const getApiBase = () =>
     window.__VITE_API_BASE__
     || window.__API_BASE__
@@ -156,7 +181,7 @@ export default function AdminBroker() {
       ? 'http://localhost/api'
       : 'https://api.stockloyal.com/api');
 
-  // ✅ Handle logo file upload from local machine
+  // Handle logo file upload from local machine
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -202,7 +227,7 @@ export default function AdminBroker() {
           logo_url: data.url,
         }));
         setLogoPreview(null);
-        console.log('✅ Logo uploaded:', data.url);
+        console.log(' Logo uploaded:', data.url);
       } else {
         alert('Upload failed: ' + (data?.error || 'Unknown error'));
         setLogoPreview(null);
@@ -219,7 +244,7 @@ export default function AdminBroker() {
     }
   };
 
-  // ✅ Handle logo fetch from external URL — downloads it to production server
+  // Handle logo fetch from external URL — downloads it to production server
   const handleLogoFromUrl = async () => {
     const url = logoUrlInput.trim();
     if (!url) {
@@ -259,7 +284,7 @@ export default function AdminBroker() {
         }));
         setLogoPreview(null);
         setLogoUrlInput('');
-        console.log('✅ Logo fetched & saved:', data.url);
+        console.log(' Logo fetched & saved:', data.url);
       } else {
         alert('Fetch failed: ' + (data?.error || 'Unknown error'));
         setLogoPreview(null);
@@ -273,7 +298,7 @@ export default function AdminBroker() {
     }
   };
 
-  // ✅ Remove logo
+  // Remove logo
   const handleRemoveLogo = () => {
     setSelected((prev) => ({
       ...prev,
@@ -295,7 +320,7 @@ export default function AdminBroker() {
     }, 50);
   };
 
-  // ✅ Click row to edit — SocialPostsAdmin pattern
+  // Click row to edit — SocialPostsAdmin pattern
   const handleEditClick = (broker) => {
     setSelected({ ...broker });
     setLogoPreview(null);
@@ -343,7 +368,7 @@ export default function AdminBroker() {
               />
             </FormRow>
 
-            {/* ✅ Logo Upload Section */}
+            {/* Logo Upload Section */}
             <div style={{ 
               gridColumn: '1 / -1', 
               marginTop: '0.5rem', 
@@ -503,7 +528,7 @@ export default function AdminBroker() {
                       border: '1px solid #a7f3d0',
                     }}>
                       <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 600 }}>
-                        ✅ Saved on server:
+                        <CircleCheckBig /> Saved on server:
                       </span>
                       <input
                         className="form-input"
@@ -654,7 +679,7 @@ export default function AdminBroker() {
               />
             </FormRow>
 
-            {/* ✅ Webhook Configuration Section */}
+            {/* Webhook Configuration Section */}
             <div style={{ 
               gridColumn: '1 / -1', 
               marginTop: '1rem', 
@@ -673,7 +698,7 @@ export default function AdminBroker() {
                 alignItems: 'center',
                 gap: '0.5rem'
               }}>
-                🔔 Webhook Configuration
+                <Settings size={16} /> Webhook Configuration
               </h4>
               <p style={{ 
                 margin: 0, 
@@ -793,7 +818,7 @@ export default function AdminBroker() {
 
             <div className="card-actions">
               <button type="submit" className="btn-primary">
-                Save Broker
+                <Save size={14} style={{ verticalAlign: "middle" }} /> Save Broker
               </button>
               {selected?.broker_id && (
                 <button
@@ -802,11 +827,11 @@ export default function AdminBroker() {
                   style={{ background: "#dc2626" }}
                   onClick={() => deleteBroker(selected.broker_id)}
                 >
-                  Delete Broker
+                  <Trash2 size={14} style={{ verticalAlign: "middle" }} /> Delete Broker
                 </button>
               )}
               <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
-                Close
+                <X size={14} style={{ verticalAlign: "middle" }} /> Close
               </button>
             </div>
           </form>
@@ -817,7 +842,7 @@ export default function AdminBroker() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
         <h2 className="subheading" style={{ margin: 0 }}>Broker Records</h2>
         <button type="button" className="btn-secondary" onClick={startNewBroker}>
-          + New Broker
+          <Plus size={14} style={{ verticalAlign: "middle" }} /> New Broker
         </button>
       </div>
       {loading ? (
@@ -875,6 +900,17 @@ export default function AdminBroker() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

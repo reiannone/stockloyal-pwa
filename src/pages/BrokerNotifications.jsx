@@ -1,6 +1,8 @@
 // src/pages/BrokerNotifications.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
+import { ClipboardList, RefreshCw } from "lucide-react";
 
 export default function BrokerNotifications() {
   const [rows, setRows] = useState([]);
@@ -14,6 +16,13 @@ export default function BrokerNotifications() {
   const [filterValue, setFilterValue] = useState("");
 
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // Browser-detected fallback timezone
   const detectedTz = useMemo(() => {
@@ -163,14 +172,24 @@ export default function BrokerNotifications() {
   };
 
   // --- delete row ---
-  const deleteRow = async (row) => {
+  const deleteRow = (row) => {
     const pk = primaryKey(row);
     if (!pk) {
       alert("Cannot determine primary key for this row.");
       return;
     }
-    if (!window.confirm(`Delete broker notification #${pk}?`)) return;
+    setModal({
+      show: true,
+      title: "Delete Notification",
+      message: `Delete broker notification #${pk}?`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { type: "delete", pk },
+    });
+  };
 
+  const executeDelete = async (pk) => {
+    closeModal();
     try {
       const res = await apiPost("delete-broker-notification.php", { id: pk });
       if (res?.success) {
@@ -188,14 +207,24 @@ export default function BrokerNotifications() {
   };
 
   // --- retry notification ---
-  const retryNotification = async (row) => {
+  const retryNotification = (row) => {
     const pk = primaryKey(row);
     if (!pk) {
       alert("Cannot determine primary key for this row.");
       return;
     }
-    if (!window.confirm(`Retry sending broker notification #${pk}?`)) return;
+    setModal({
+      show: true,
+      title: "Retry Notification",
+      message: `Retry sending broker notification #${pk}?`,
+      confirmText: "Retry",
+      confirmColor: "#f59e0b",
+      data: { type: "retry", pk },
+    });
+  };
 
+  const executeRetry = async (pk) => {
+    closeModal();
     try {
       const res = await apiPost("retry-broker-notification.php", { id: pk });
       if (res?.success) {
@@ -208,6 +237,14 @@ export default function BrokerNotifications() {
     } catch (err) {
       console.error("[BrokerNotifications] retry failed", err);
       alert("Retry failed: network/server error");
+    }
+  };
+
+  const handleModalConfirm = () => {
+    if (modal.data?.type === "delete") {
+      executeDelete(modal.data.pk);
+    } else if (modal.data?.type === "retry") {
+      executeRetry(modal.data.pk);
     }
   };
 
@@ -306,7 +343,7 @@ export default function BrokerNotifications() {
               cursor: "pointer",
             }}
           >
-            📋 Formatted
+            <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Formatted
           </button>
           <button
             type="button"
@@ -583,7 +620,7 @@ export default function BrokerNotifications() {
                 onClick={() => retryNotification(selected)}
                 disabled={selected.status === "sent"}
               >
-                🔄 Retry Send
+                <RefreshCw size={12} style={{ verticalAlign: "middle" }} /> Retry Send
               </button>
 
               <button type="button" className="btn-danger" onClick={() => deleteRow(selected)}>
@@ -675,6 +712,17 @@ export default function BrokerNotifications() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

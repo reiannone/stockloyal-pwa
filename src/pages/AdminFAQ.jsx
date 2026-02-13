@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
 
@@ -48,6 +49,13 @@ export default function AdminFAQ() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   const handleEditClick = useCallback((faq) => {
     setSelected({ ...faq });
@@ -105,8 +113,20 @@ export default function AdminFAQ() {
     alert("FAQ saved!");
   };
 
-  const deleteFaq = async (faq_id) => {
-    if (!window.confirm("Delete this FAQ?")) return;
+  const deleteFaq = (faq_id) => {
+    setModal({
+      show: true,
+      title: "Delete FAQ",
+      icon: null,
+      message: `Delete FAQ #${faq_id}? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { faq_id },
+    });
+  };
+
+  const executeDelete = async (faq_id) => {
+    closeModal();
     try {
       const res = await apiPost("delete-faq.php", { faq_id });
       if (!res?.success) {
@@ -121,6 +141,10 @@ export default function AdminFAQ() {
       console.error("[AdminFAQ] delete-faq failed:", e);
       alert("Delete failed: network/server error");
     }
+  };
+
+  const handleModalConfirm = () => {
+    executeDelete(modal.data?.faq_id);
   };
 
   const handleChange = (e) => {
@@ -344,6 +368,17 @@ export default function AdminFAQ() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

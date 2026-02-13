@@ -3,6 +3,23 @@ import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
 import AddressLookup from "../components/AddressLookup.jsx";
+import {
+  CreditCard,
+  BarChart2,
+  RefreshCw,
+  XCircle,
+  AlertTriangle,
+  ShoppingBasket,
+  ClipboardCheck,
+  Cog,
+  Upload, 
+  X, 
+  Image,
+  CalendarDays,
+  Briefcase,
+  CircleCheckBig,
+  Lock,
+} from "lucide-react";
 
 export default function WalletAdmin() {
   const location = useLocation();
@@ -1112,21 +1129,21 @@ export default function WalletAdmin() {
                       padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
                       fontWeight: 700, background: "#fee2e2", color: "#991b1b",
                     }}>
-                      🔒 LOCKED
+                      <Lock /> LOCKED
                     </span>
                   ) : lockoutInfo.fail_count > 0 ? (
                     <span style={{
                       padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
                       fontWeight: 700, background: "#fef3c7", color: "#92400e",
                     }}>
-                      ⚠️ {lockoutInfo.fail_count}/10 fails
+                      <AlertTriangle /> {lockoutInfo.fail_count}/10 fails
                     </span>
                   ) : (
                     <span style={{
                       padding: "2px 10px", borderRadius: 999, fontSize: "0.75rem",
                       fontWeight: 700, background: "#dcfce7", color: "#166534",
                     }}>
-                      ✅ OK
+                      <CircleCheckBig /> OK
                     </span>
                   )}
                 </div>

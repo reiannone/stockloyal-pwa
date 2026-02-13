@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { AlertTriangle, Lightbulb } from "lucide-react";
 
 export default function DataQualityCheck() {
   const navigate = useNavigate();
@@ -191,7 +192,7 @@ export default function DataQualityCheck() {
           {profileData.critical_issues?.length > 0 && (
             <div className="card" style={{ marginBottom: "1.5rem" }}>
               <h2 className="subheading" style={{ marginTop: 0, color: "#dc2626" }}>
-                ⚠️ Critical Issues Found
+                <AlertTriangle size={14} style={{ verticalAlign: "middle" }} /> Critical Issues Found
               </h2>
               
               {profileData.critical_issues.map((issue, idx) => {
@@ -621,7 +622,7 @@ export default function DataQualityCheck() {
           {profileData.recommendations?.length > 0 && (
             <div className="card" style={{ marginTop: "1.5rem" }}>
               <h2 className="subheading" style={{ marginTop: 0 }}>
-                💡 Recommendations
+                <Lightbulb size={14} style={{ verticalAlign: "middle" }} /> Recommendations
               </h2>
 
               <ul style={{ paddingLeft: "1.5rem", marginBottom: 0 }}>

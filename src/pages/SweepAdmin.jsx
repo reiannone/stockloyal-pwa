@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api"; // Use existing api helper
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Clock, ChevronUp, ChevronDown } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -40,8 +40,7 @@ export default function SweepAdmin() {
     details: null,
     confirmText: "Confirm",
     confirmColor: "#4ECDC4",
-    icon: "🔄",
-    data: null,
+    icon: <RefreshCw size={20} color="#4ECDC4" />,
   });
 
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
@@ -50,8 +49,8 @@ export default function SweepAdmin() {
   const JsonToggle = () => (
     <div style={{ display: "flex", gap: 8 }}>
       {[
-        { mode: "formatted", label: "📋 Formatted" },
-        { mode: "raw", label: "{ } Raw JSON" },
+        { mode: "formatted", label: <><ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Formatted</> },
+        { mode: "raw", label: <>{"{ }"} Raw JSON</> },
       ].map(({ mode, label }) => (
         <button
           key={mode}
@@ -234,7 +233,7 @@ export default function SweepAdmin() {
     setModal({
       show: true,
       title: merchantId ? "Run Merchant Sweep" : "Run Sweep for All Merchants",
-      icon: "🔄",
+      icon: <RefreshCw size={20} color="#4ECDC4" />,
       message: merchantId 
         ? `Run sweep for merchant "${merchantId}"?`
         : "Run sweep for ALL eligible merchants?",
@@ -328,7 +327,7 @@ export default function SweepAdmin() {
     return grouped;
   };
 
-  // ✅ Group orders by merchant-broker combo (webhook batching)
+  // Group orders by merchant-broker combo (webhook batching)
   const groupOrdersByMerchantBroker = (orders) => {
     const grouped = {};
     for (const order of orders) {
@@ -346,7 +345,7 @@ export default function SweepAdmin() {
     return grouped;
   };
 
-  // ✅ Build webhook payload preview for a merchant-broker group
+  // Build webhook payload preview for a merchant-broker group
   const buildWebhookPayload = (group) => {
     // Group member orders by member_id
     const byMember = {};
@@ -484,7 +483,7 @@ export default function SweepAdmin() {
                 fontSize: "14px",
               }}
             >
-              {sweepRunning ? "Running..." : "▶️ Run Sweep Now"}
+              {sweepRunning ? "Running..." : <><Play size={14} style={{ verticalAlign: "middle" }} /> Run Sweep Now</>}
             </button>
             <button
               onClick={loadOverview}
@@ -500,7 +499,7 @@ export default function SweepAdmin() {
                 fontSize: "14px",
               }}
             >
-              {loading ? "Loading..." : "🔄 Refresh"}
+              {loading ? "Loading..." : <><RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh</>}
             </button>
           </div>
         </div>
@@ -544,7 +543,7 @@ export default function SweepAdmin() {
           border: `1px solid ${lastResult.success ? "#10b981" : "#ef4444"}`
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong>{lastResult.success ? "✅ Sweep Completed" : "❌ Sweep Failed"}</strong>
+            <strong>{lastResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Sweep Completed</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Sweep Failed</>}</strong>
             {lastResult.results?.batch_id && (
               <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
                 {lastResult.results.batch_id}
@@ -555,11 +554,11 @@ export default function SweepAdmin() {
           {lastResult.results && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-                <span>📦 Orders Placed: <strong>{lastResult.results.orders_placed ?? 0}</strong></span>
-                <span>❌ Failed: <strong>{lastResult.results.orders_failed ?? 0}</strong></span>
-                <span>🏪 Merchants: <strong>{lastResult.results.merchants_processed ?? 0}</strong></span>
-                <span>🧺 Baskets: <strong>{lastResult.results.baskets_processed ?? 0}</strong></span>
-                <span>⏱ Duration: <strong>{lastResult.results.duration_seconds ?? 0}s</strong></span>
+                <span><Package size={12} style={{ verticalAlign: "middle" }} /> Orders Placed: <strong>{lastResult.results.orders_placed ?? 0}</strong></span>
+                <span><XCircle size={12} style={{ verticalAlign: "middle" }} /> Failed: <strong>{lastResult.results.orders_failed ?? 0}</strong></span>
+                <span><Store size={12} style={{ verticalAlign: "middle" }} /> Merchants: <strong>{lastResult.results.merchants_processed ?? 0}</strong></span>
+                <span><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Baskets: <strong>{lastResult.results.baskets_processed ?? 0}</strong></span>
+                <span><Clock size={12} style={{ verticalAlign: "middle" }} /> Duration: <strong>{lastResult.results.duration_seconds ?? 0}s</strong></span>
               </div>
 
               {/* Per-Basket Notification Results */}
@@ -578,7 +577,7 @@ export default function SweepAdmin() {
               {lastResult.results.errors?.length > 0 && (
                 <div style={{ marginTop: "0.5rem", color: "#dc2626", fontSize: "0.8rem" }}>
                   {lastResult.results.errors.map((e, i) => (
-                    <div key={i}>⚠️ {e}</div>
+                    <div key={i}><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> {e}</div>
                   ))}
                 </div>
               )}
@@ -643,7 +642,7 @@ export default function SweepAdmin() {
                   marginBottom: "1.5rem"
                 }}>
                   <h3 style={{ margin: "0 0 0.5rem", color: "#166534" }}>
-                    📅 Scheduled for Today ({overview.today.date})
+                    <Calendar size={16} style={{ verticalAlign: "middle" }} /> Scheduled for Today ({overview.today.date})
                   </h3>
                   <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                     {overview.today.scheduled_merchants.map((m) => (
@@ -715,7 +714,7 @@ export default function SweepAdmin() {
               {/* Upcoming Schedule */}
               {overview.upcoming_schedule?.length > 0 && (
                 <div style={{ marginTop: "1.5rem" }}>
-                  <h3 style={{ marginBottom: "0.75rem" }}>📆 Upcoming Sweeps (Next 7 Days)</h3>
+                  <h3 style={{ marginBottom: "0.75rem" }}><CalendarDays size={16} style={{ verticalAlign: "middle" }} /> Upcoming Sweeps (Next 7 Days)</h3>
                   <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem" }}>
                     {overview.upcoming_schedule.map((day) => (
                       <div 
@@ -756,8 +755,8 @@ export default function SweepAdmin() {
                   overflow: "hidden",
                 }}>
                   {[
-                    { key: "webhook", label: "📡 Webhook View" },
-                    { key: "basket", label: "🧺 Basket View" },
+                    { key: "webhook", label: <><Radio size={12} style={{ verticalAlign: "middle" }} /> Webhook View</> },
+                    { key: "basket", label: <><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Basket View</> },
                   ].map((v) => (
                     <button
                       key={v.key}
@@ -861,7 +860,7 @@ export default function SweepAdmin() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b" }}>
-                                📡 {group.merchant_name}
+                              <Radio size={14} style={{ verticalAlign: "middle" }} /> {group.merchant_name}
                               </span>
                               <span style={{
                                 padding: "2px 8px",
@@ -900,7 +899,7 @@ export default function SweepAdmin() {
                             </div>
                           </div>
                           <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                            {isExpanded ? "▲" : "▼"}
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </span>
                         </div>
 
@@ -994,7 +993,7 @@ export default function SweepAdmin() {
                                 justifyContent: "space-between",
                                 alignItems: "center",
                               }}>
-                                <span>📤 Webhook Payload Preview</span>
+                                <span><Upload size={14} style={{ verticalAlign: "middle" }} /> Webhook Payload Preview</span>
                                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                   <JsonToggle />
                                   <button
@@ -1014,7 +1013,7 @@ export default function SweepAdmin() {
                                       letterSpacing: 0,
                                     }}
                                   >
-                                    📋 Copy JSON
+                                    <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Copy JSON
                                   </button>
                                 </div>
                               </div>
@@ -1090,7 +1089,7 @@ export default function SweepAdmin() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.85rem", color: "#1e293b" }}>
-                                🧺 {basketId}
+                                <ShoppingBasket size={14} style={{ verticalAlign: "middle" }} /> {basketId}
                               </span>
                               <span style={{
                                 padding: "2px 8px",
@@ -1115,7 +1114,7 @@ export default function SweepAdmin() {
                             </div>
                           </div>
                           <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                            {isExpanded ? "▲" : "▼"}
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </span>
                         </div>
 
@@ -1322,7 +1321,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-          <span>{br.acknowledged ? "✅" : "⚠️"}</span>
+          <span>{br.acknowledged ? <CheckCircle2 size={14} color="#10b981" /> : <AlertTriangle size={14} color="#f59e0b" />}</span>
           <strong>{br.merchant_name || br.merchant_id}</strong>
           <span style={{ color: "#64748b" }}>→</span>
           <strong style={{ color: "#6366f1" }}>{br.broker}</strong>
@@ -1355,7 +1354,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
             )}
           </div>
           <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-            {expanded ? "▲" : "▼"}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </div>
       </div>
@@ -1385,7 +1384,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 color: "#475569",
                 letterSpacing: "0.05em",
               }}>
-                📤 Request Payload
+                <Upload size={12} style={{ verticalAlign: "middle" }} /> Request Payload
               </div>
               {br.request ? (
                 <JsonBlock data={br.request} maxHeight={300} />
@@ -1409,7 +1408,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 display: "flex",
                 justifyContent: "space-between",
               }}>
-                <span>📥 Response Body</span>
+                <span><Download size={12} style={{ verticalAlign: "middle" }} /> Response Body</span>
                 {br.http_status && (
                   <span style={{
                     color: br.http_status >= 200 && br.http_status < 300 ? "#059669" : "#dc2626"
@@ -1477,7 +1476,7 @@ function HistoryRow({ h, brokers, tdStyle, formatDate }) {
         <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
           {h.batch_id}
           <span style={{ marginLeft: 6, fontSize: "0.65rem", color: "#94a3b8" }}>
-            {expanded ? "▲" : "▼"}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </td>
         <td style={tdStyle}>{formatDate(h.started_at)}</td>
@@ -1492,9 +1491,9 @@ function HistoryRow({ h, brokers, tdStyle, formatDate }) {
         </td>
         <td style={tdStyle}>
           {hasErrors ? (
-            <span style={{ color: "#dc2626" }}>⚠️ Errors</span>
+            <span style={{ color: "#dc2626" }}><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Errors</span>
           ) : (
-            <span style={{ color: "#059669" }}>✅ OK</span>
+            <span style={{ color: "#059669" }}><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> OK</span>
           )}
         </td>
       </tr>
@@ -1512,7 +1511,7 @@ function HistoryRow({ h, brokers, tdStyle, formatDate }) {
                   textTransform: "uppercase",
                   color: hasErrors ? "#991b1b" : "#166534",
                 }}>
-                  {hasErrors ? `❌ Errors (${h.errors?.length || 0})` : "✅ No Errors"}
+                  {hasErrors ? <><XCircle size={12} style={{ verticalAlign: "middle" }} /> Errors ({h.errors?.length || 0})</> : <><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> No Errors</>}
                 </div>
                 <pre style={{
                   margin: 0,
@@ -1541,7 +1540,7 @@ function HistoryRow({ h, brokers, tdStyle, formatDate }) {
                   textTransform: "uppercase",
                   color: "#475569",
                 }}>
-                  📋 Log ({h.log_data?.length || 0} entries)
+                  <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Log ({h.log_data?.length || 0} entries)
                 </div>
                 <pre style={{
                   margin: 0,

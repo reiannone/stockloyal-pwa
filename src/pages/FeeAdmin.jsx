@@ -1,13 +1,14 @@
 // src/pages/FeeAdmin.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 
 /* ── Shared FormRow (matches OrdersAdmin / LedgerAdmin) ── */
 function FormRow({ label, children, hint }) {
   return (
-    <div className="form-row">
+    <div className="form-row" style={{ maxWidth: "100%", boxSizing: "border-box", overflow: "hidden" }}>
       {label && <label className="form-label">{label}:</label>}
-      <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
         {children}
         {hint && (
           <span style={{ fontSize: "0.72rem", color: "#94a3b8", marginTop: 2 }}>{hint}</span>
@@ -48,6 +49,13 @@ export default function FeeAdmin() {
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // ── Load merchants for dropdown ──
   const loadMerchants = useCallback(async () => {
@@ -169,19 +177,34 @@ export default function FeeAdmin() {
   };
 
   // ── Deactivate ──
-  const handleDeactivate = async (id) => {
-    if (!window.confirm("Deactivate this fee schedule? It will remain in history but not be used for billing.")) return;
+  const handleDeactivate = (id) => {
+    setModal({
+      show: true,
+      title: "Deactivate Fee Schedule",
+      message: "Deactivate this fee schedule? It will remain in history but not be used for billing.",
+      confirmText: "Deactivate",
+      confirmColor: "#dc2626",
+      data: { id },
+    });
+  };
+
+  const executeDeactivate = async (id) => {
+    closeModal();
     try {
       const res = await apiPost("fee_admin.php", { action: "delete", id });
       if (res?.success) {
         await loadFees();
         if (selected?.id === id) setSelected(null);
       } else {
-        alert("❌ " + (res?.error || "Deactivate failed."));
+        alert("Deactivate failed: " + (res?.error || "Unknown error"));
       }
     } catch (err) {
-      alert("❌ " + err.message);
+      alert("Deactivate failed: " + err.message);
     }
+  };
+
+  const handleModalConfirm = () => {
+    executeDeactivate(modal.data?.id);
   };
 
   // ── Group fees by merchant for the table ──
@@ -314,12 +337,19 @@ export default function FeeAdmin() {
       {/* EDIT PANEL                                                     */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       {selected && (
-        <div className="card" style={{ marginBottom: "1rem" }} ref={editPanelRef}>
+        <div id="feeadmin-edit" className="card" style={{ marginBottom: "1rem", overflowX: "hidden", maxWidth: "100%" }} ref={editPanelRef}>
           <h2 className="subheading" style={{ marginTop: 0 }}>
             {selected.id ? `Edit Fee #${selected.id}` : "New Fee Schedule"}
           </h2>
 
-          <form onSubmit={handleSave} className="form-grid">
+          <form onSubmit={handleSave} className="form-grid" style={{ maxWidth: "100%", boxSizing: "border-box" }}>
+            <style>{`
+              #feeadmin-edit .form-input {
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+              }
+            `}</style>
             {/* Row 1: Merchant + Label */}
             <FormRow label="Merchant">
               <select
@@ -468,11 +498,43 @@ export default function FeeAdmin() {
               />
             </FormRow>
 
+            {selected.id && (
+              <>
+                <FormRow label="Created">
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={selected.created_at || "—"}
+                    readOnly
+                  />
+                </FormRow>
+
+                <FormRow label="Updated">
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={selected.updated_at || "—"}
+                    readOnly
+                  />
+                </FormRow>
+              </>
+            )}
+
             {/* Buttons */}
             <div style={{ display: "flex", gap: "1rem", marginTop: "1.25rem", gridColumn: "1 / -1" }}>
               <button type="submit" className="btn-primary" disabled={saving}>
                 {saving ? "Saving..." : selected.id ? "Save Changes" : "Create Fee Schedule"}
               </button>
+              {selected.id && (selected.is_active === "1" || selected.is_active === 1) && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{ background: "#dc2626" }}
+                  onClick={() => handleDeactivate(selected.id)}
+                >
+                  Deactivate
+                </button>
+              )}
               <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
                 Cancel
               </button>
@@ -542,7 +604,6 @@ export default function FeeAdmin() {
                           <th>Cycle</th>
                           <th>Effective</th>
                           <th style={{ textAlign: "center" }}>Status</th>
-                          <th style={{ textAlign: "center", width: 100 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -590,29 +651,6 @@ export default function FeeAdmin() {
                               }}>
                                 {(f.is_active === "1" || f.is_active === 1) ? "Active" : "Inactive"}
                               </span>
-                            </td>
-                            <td style={{ textAlign: "center" }}>
-                              {(f.is_active === "1" || f.is_active === 1) && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeactivate(f.id);
-                                  }}
-                                  style={{
-                                    padding: "3px 8px",
-                                    fontSize: "0.72rem",
-                                    fontWeight: 600,
-                                    background: "#fee2e2",
-                                    color: "#991b1b",
-                                    border: "none",
-                                    borderRadius: 4,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  Deactivate
-                                </button>
-                              )}
                             </td>
                           </tr>
                         ))}
@@ -806,6 +844,17 @@ export default function FeeAdmin() {
           )}
         </>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

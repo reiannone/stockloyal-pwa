@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
+import { Package, RefreshCw, CheckCircle2, XCircle, TrendingUp, ShoppingBasket, Clock, Landmark, ChevronUp, ChevronDown, Zap, Hourglass, Info } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -28,7 +29,7 @@ export default function BrokerExecAdmin() {
     show: false,
     title: "",
     message: "",
-    icon: "⚡",
+    icon: <Zap size={20} color="#f59e0b" />,
     confirmText: "Execute",
     confirmColor: "#059669",
     data: null,
@@ -63,7 +64,7 @@ export default function BrokerExecAdmin() {
       show: true,
       title: "Execute All Orders",
       message: `Execute all ${summary?.total_orders || 0} placed orders? This simulates broker market execution at current prices.`,
-      icon: "⚡",
+      icon: <Zap size={20} color="#f59e0b" />,
       confirmText: "Execute All",
       confirmColor: "#059669",
       data: { type: "all" },
@@ -92,7 +93,7 @@ export default function BrokerExecAdmin() {
       show: true,
       title: "Execute Basket",
       message: `Execute basket ${basketId} with ${orderCount || "?"} order(s)? This simulates broker market execution.`,
-      icon: "📦",
+      icon: <Package size={20} color="#6366f1" />,
       confirmText: "Execute Basket",
       confirmColor: "#059669",
       data: { type: "basket", basketId },
@@ -164,7 +165,7 @@ export default function BrokerExecAdmin() {
             cursor: "pointer",
           }}
         >
-          🔄 Refresh
+          <RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh
         </button>
         <button
           onClick={confirmExecuteAll}
@@ -181,7 +182,7 @@ export default function BrokerExecAdmin() {
             opacity: executing ? 0.7 : 1,
           }}
         >
-          {executing ? "⏳ Executing..." : "⚡ Execute All Trades"}
+          {executing ? <><Hourglass size={14} style={{ verticalAlign: "middle" }} /> Executing...</> : <><Zap size={14} style={{ verticalAlign: "middle" }} /> Execute All Trades</>}
         </button>
       </div>
 
@@ -231,7 +232,7 @@ export default function BrokerExecAdmin() {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <strong>
-              {lastResult.success ? "✅ Trades Executed" : "❌ Execution Failed"}
+              {lastResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Trades Executed</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Execution Failed</>}
             </strong>
             {lastResult.exec_id && (
               <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
@@ -243,10 +244,10 @@ export default function BrokerExecAdmin() {
           {lastResult.success && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
-                <span>📈 Executed: <strong>{lastResult.orders_executed || 0}</strong></span>
-                <span>❌ Failed: <strong>{lastResult.orders_failed || 0}</strong></span>
-                <span>🧺 Baskets: <strong>{lastResult.baskets_processed || 0}</strong></span>
-                <span>⏱ Duration: <strong>{lastResult.duration_seconds || 0}s</strong></span>
+                <span><TrendingUp size={12} style={{ verticalAlign: "middle" }} /> Executed: <strong>{lastResult.orders_executed || 0}</strong></span>
+                <span><XCircle size={12} style={{ verticalAlign: "middle" }} /> Failed: <strong>{lastResult.orders_failed || 0}</strong></span>
+                <span><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Baskets: <strong>{lastResult.baskets_processed || 0}</strong></span>
+                <span><Clock size={12} style={{ verticalAlign: "middle" }} /> Duration: <strong>{lastResult.duration_seconds || 0}s</strong></span>
               </div>
 
               {/* Per-Basket Fill Results */}
@@ -279,7 +280,7 @@ export default function BrokerExecAdmin() {
           border: "1px solid #e2e8f0",
           color: "#94a3b8",
         }}>
-          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>✅</div>
+          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}><CheckCircle2 size={32} color="#10b981" /></div>
           <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#475569" }}>
             No Placed Orders
           </div>
@@ -311,7 +312,7 @@ export default function BrokerExecAdmin() {
             borderBottom: "1px solid #e2e8f0",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <span style={{ fontSize: "1.25rem" }}>🏦</span>
+              <span style={{ fontSize: "1.25rem" }}><Landmark size={20} /></span>
               <div>
                 <div style={{ fontWeight: 700, color: "#1e293b", fontSize: "1rem" }}>
                   {brokerGroup.broker}
@@ -367,7 +368,7 @@ export default function BrokerExecAdmin() {
         fontSize: "0.8rem",
         color: "#92400e",
       }}>
-        <strong>ℹ️ Simulation Mode:</strong> Executed prices are simulated with ±2% market variance
+        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> Simulation Mode:</strong> Executed prices are simulated with ±2% market variance
         from the target buy price. In production, the broker returns actual fill prices from the
         exchange at market open (9:30 AM ET). Orders move from <code>placed → confirmed</code> with
         executed_price, executed_shares, and executed_amount populated.
@@ -433,7 +434,7 @@ function BasketRow({ basket, symbols, executing, onExecute, formatCurrency, form
         <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem", color: "#6366f1" }}>
           {basket.basket_id}
           <span style={{ marginLeft: 4, fontSize: "0.65rem", color: "#94a3b8" }}>
-            {expanded ? "▲" : "▼"}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </span>
         </td>
         <td style={tdStyle}>{basket.member_id}</td>
@@ -459,7 +460,7 @@ function BasketRow({ basket, symbols, executing, onExecute, formatCurrency, form
               cursor: "pointer",
             }}
           >
-            {executing ? "⏳" : "⚡ Execute"}
+            {executing ? <Hourglass size={12} style={{ verticalAlign: "middle" }} /> : <><Zap size={12} style={{ verticalAlign: "middle" }} /> Execute</>}
           </button>
         </td>
       </tr>
@@ -542,7 +543,7 @@ function BasketFillRow({ br, formatCurrency }) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-          <span>✅</span>
+          <span><CheckCircle2 size={14} color="#10b981" /></span>
           <strong>{br.broker}</strong>
           <span style={{ color: "#64748b" }}>→</span>
           <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "#6366f1" }}>
@@ -558,7 +559,7 @@ function BasketFillRow({ br, formatCurrency }) {
           )}
         </div>
         <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-          {expanded ? "▲" : "▼"}
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </span>
       </div>
 

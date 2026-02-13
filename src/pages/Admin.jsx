@@ -1,9 +1,25 @@
 // src/pages/Admin.jsx
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
-import { Upload, X, Image } from "lucide-react";
+import {
+  CreditCard,
+  BarChart2,
+  RefreshCw,
+  XCircle,
+  AlertTriangle,
+  ShoppingBasket,
+  ClipboardCheck,
+  Cog,
+  Upload, 
+  X, 
+  Image,
+  CalendarDays,
+  Briefcase,
+  CircleCheckBig,
+} from "lucide-react";
 
 // ✅ Custom upload adapter for CKEditor images
 class MyUploadAdapter {
@@ -64,6 +80,13 @@ export default function Admin() {
   const [logoPreview, setLogoPreview] = useState(null);
   const [logoUrlInput, setLogoUrlInput] = useState('');
   const fileInputRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // Load all merchants
   const fetchMerchants = async () => {
@@ -213,41 +236,35 @@ export default function Admin() {
 
     // If conversion rate changed, ask to bulk update wallets
     if (rateChanged) {
-      const ok = window.confirm(
-        `Conversion rate changed from ${prevRate} to ${newRate}.\n\n` +
-          `Update ALL wallets for merchant "${selected.merchant_id}" to use the new conversion rate ` +
-          `and recalculate cash balances?`
-      );
-      if (ok) {
-        try {
-          const j = await apiPost("bulk-refresh-points.php", {
-            merchant_id: selected.merchant_id,
-            // We're NOT overlaying points here; we're changing the rate & cash only
-            conversion_rate: newRate,
-            recalc_cash: true,
-            requested_by: "AdminRateChange",
-          });
-          if (!j?.success) throw new Error(j?.error || "Bulk wallet rate/cash update failed");
-          alert(
-            `Wallets updated for merchant ${selected.merchant_id}.\n` +
-              `Updated: ${j.updated}\n` +
-              (j.points_overlay_applied
-                ? `Points overlay applied to ${j.points_overlay_applied} wallet(s)\n`
-                : "") +
-              `New rate: ${newRate}`
-          );
-        } catch (err) {
-          alert(`Bulk wallet update error: ${err.message || err}`);
-        }
-      }
+      setModal({
+        show: true,
+        title: "Update Wallet Rates",
+        icon: <RefreshCw size={20} color="#f59e0b" />,
+        message: `Conversion rate changed from ${prevRate} to ${newRate}. Update ALL wallets for merchant "${selected.merchant_id}" to use the new rate and recalculate cash balances?`,
+        confirmText: "Update Wallets",
+        confirmColor: "#f59e0b",
+        data: { type: "rate-change", merchant_id: selected.merchant_id, newRate },
+      });
     }
 
     alert("Merchant saved!");
   };
 
   // Delete merchant
-  const deleteMerchant = async (merchant_id) => {
-    if (!window.confirm("Delete this merchant?")) return;
+  const deleteMerchant = (merchant_id) => {
+    setModal({
+      show: true,
+      title: "Delete Merchant",
+      icon: <XCircle size={20} color="#ef4444" />,
+      message: `Delete merchant "${merchant_id}"? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { type: "delete", merchant_id },
+    });
+  };
+
+  const executeDelete = async (merchant_id) => {
+    closeModal();
     try {
       const res = await apiPost("delete-merchant.php", { merchant_id });
       if (res?.success) {
@@ -263,6 +280,39 @@ export default function Admin() {
     } catch (e) {
       console.error("[Admin] delete-merchant failed:", e);
       alert("Delete failed: network/server error");
+    }
+  };
+
+  // Execute bulk wallet rate change (after confirmation)
+  const executeRateChange = async (merchant_id, newRate) => {
+    closeModal();
+    try {
+      const j = await apiPost("bulk-refresh-points.php", {
+        merchant_id,
+        conversion_rate: newRate,
+        recalc_cash: true,
+        requested_by: "AdminRateChange",
+      });
+      if (!j?.success) throw new Error(j?.error || "Bulk wallet rate/cash update failed");
+      alert(
+        `Wallets updated for merchant ${merchant_id}.\n` +
+          `Updated: ${j.updated}\n` +
+          (j.points_overlay_applied
+            ? `Points overlay applied to ${j.points_overlay_applied} wallet(s)\n`
+            : "") +
+          `New rate: ${newRate}`
+      );
+    } catch (err) {
+      alert(`Bulk wallet update error: ${err.message || err}`);
+    }
+  };
+
+  // Handle modal confirm
+  const handleModalConfirm = () => {
+    if (modal.data?.type === "rate-change") {
+      executeRateChange(modal.data.merchant_id, modal.data.newRate);
+    } else if (modal.data?.type === "delete") {
+      executeDelete(modal.data.merchant_id);
     }
   };
 
@@ -707,7 +757,7 @@ export default function Admin() {
                 alignItems: 'center',
                 gap: '0.5rem'
               }}>
-                🔔 Webhook Configuration
+                <Cog /> Webhook Configuration
               </h4>
               <p style={{ 
                 margin: 0, 
@@ -762,7 +812,7 @@ export default function Admin() {
                 alignItems: 'center',
                 gap: '0.5rem'
               }}>
-                📅 Monthly Sweep Schedule
+                <CalendarDays /> Sweep Schedule
               </h3>
               <p style={{ 
                 fontSize: '0.875rem', 
@@ -866,7 +916,7 @@ export default function Admin() {
                   alignItems: 'center',
                   gap: '0.5rem'
                 }}>
-                  🏦 Broker Relationships
+                  <Briefcase /> Broker Relationships
                 </h3>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button
@@ -1301,6 +1351,17 @@ export default function Admin() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

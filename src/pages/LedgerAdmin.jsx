@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function TransactionsLedgerAdmin() {
   const location = useLocation();
@@ -18,6 +19,13 @@ export default function TransactionsLedgerAdmin() {
   const [dataQualityState, setDataQualityState] = useState(null);
 
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // ---- timezone helpers ----
   const detectedTz = useMemo(() => {
@@ -235,14 +243,25 @@ export default function TransactionsLedgerAdmin() {
   };
 
   // --- delete row ---
-  const deleteRow = async (row) => {
+  const deleteRow = (row) => {
     const pk = primaryKey(row);
     if (!pk) {
       alert("Cannot determine primary key for this row.");
       return;
     }
-    if (!window.confirm("Delete this ledger row?")) return;
+    setModal({
+      show: true,
+      title: "Delete Ledger Row",
+      message: `Delete this ledger row (#${pk})? This action cannot be undone.`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { row },
+    });
+  };
 
+  const executeDelete = async (row) => {
+    closeModal();
+    const pk = primaryKey(row);
     try {
       const res = await apiPost("delete-transactions-ledger.php", {
         id: row.id,
@@ -262,6 +281,10 @@ export default function TransactionsLedgerAdmin() {
       console.error("[TransactionsLedgerAdmin] delete failed", e);
       alert("Delete failed: network/server error");
     }
+  };
+
+  const handleModalConfirm = () => {
+    executeDelete(modal.data?.row);
   };
 
   // --- handle field changes ---
@@ -689,6 +712,17 @@ export default function TransactionsLedgerAdmin() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

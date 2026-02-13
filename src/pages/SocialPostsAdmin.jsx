@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
+import ConfirmModal from "../components/ConfirmModal";
 
 function FormRow({ label, children }) {
   return (
@@ -33,6 +34,13 @@ export default function SocialPostsAdmin() {
   const [filterDeleted, setFilterDeleted] = useState("0"); // Default: show non-deleted
 
   const editPanelRef = useRef(null);
+
+  // Confirm modal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", icon: null,
+    confirmText: "Confirm", confirmColor: "#007bff", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   // ── Strategy tag options ──────────────────────────────────────────────────
   const strategyTags = useMemo(
@@ -159,10 +167,20 @@ export default function SocialPostsAdmin() {
     }
   };
 
-  const handleSoftDelete = async () => {
+  const handleSoftDelete = () => {
     if (!selected) return;
-    if (!window.confirm("Soft delete this post?")) return;
+    setModal({
+      show: true,
+      title: "Soft Delete Post",
+      message: `Soft delete post #${selected.id}? It can be restored later.`,
+      confirmText: "Delete",
+      confirmColor: "#dc2626",
+      data: { type: "delete" },
+    });
+  };
 
+  const executeSoftDelete = async () => {
+    closeModal();
     setSaving(true);
     try {
       const resp = await apiPost("soft-delete-social-post.php", { id: selected.id });
@@ -179,10 +197,20 @@ export default function SocialPostsAdmin() {
     }
   };
 
-  const handleRestore = async () => {
+  const handleRestore = () => {
     if (!selected) return;
-    if (!window.confirm("Restore this post?")) return;
+    setModal({
+      show: true,
+      title: "Restore Post",
+      message: `Restore post #${selected.id}?`,
+      confirmText: "Restore",
+      confirmColor: "#059669",
+      data: { type: "restore" },
+    });
+  };
 
+  const executeRestore = async () => {
+    closeModal();
     setSaving(true);
     try {
       const resp = await apiPost("restore-social-post.php", { id: selected.id });
@@ -196,6 +224,14 @@ export default function SocialPostsAdmin() {
       alert("Failed to restore post");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleModalConfirm = () => {
+    if (modal.data?.type === "delete") {
+      executeSoftDelete();
+    } else if (modal.data?.type === "restore") {
+      executeRestore();
     }
   };
 
@@ -645,6 +681,17 @@ export default function SocialPostsAdmin() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        icon={modal.icon}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
     </div>
   );
 }

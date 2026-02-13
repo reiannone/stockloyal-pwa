@@ -159,7 +159,7 @@ export default function AdminLanding() {
     },
     {
       to: "/webhook-admin",
-      label: "Webhook API Admin",
+      label: "StockLoyal Webhook API Admin",
       icon: <Webhook size={32} />,
       color: "#14b8a6",
       bgColor: "#f0fdfa",

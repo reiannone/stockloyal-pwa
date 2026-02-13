@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
+import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, ClipboardList, HelpCircle, User, ChevronUp, ChevronDown } from "lucide-react";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -58,7 +59,7 @@ export default function PrepareOrders() {
     confirmText: "Confirm",
     cancelText: "Cancel",
     confirmColor: "#007bff",
-    icon: "❓",
+    icon: <HelpCircle size={20} />,
     data: null,        // Additional data (e.g., batchId)
   });
 
@@ -123,7 +124,7 @@ export default function PrepareOrders() {
         show: true,
         type: "monthly-warning",
         title: "Prep Already Run This Month",
-        icon: "⚠️",
+        icon: <AlertTriangle size={20} color="#f59e0b" />,
         message: (
           <>
             A preparation batch has already been <strong>approved</strong> for <strong>{currentMonth}</strong>.
@@ -161,7 +162,7 @@ export default function PrepareOrders() {
       show: true,
       type: "prepare",
       title: "Stage Orders",
-      icon: "📋",
+      icon: <ClipboardList size={20} color="#6366f1" />,
       message: "Stage orders for all eligible members?",
       details: warnings.length > 0 ? (
         <ul style={{ margin: 0, paddingLeft: "20px" }}>
@@ -239,7 +240,7 @@ export default function PrepareOrders() {
       show: true,
       type: "approve",
       title: "Approve Batch",
-      icon: "✅",
+      icon: <CheckCircle2 size={20} color="#10b981" />,
       message: `Approve batch "${batchId}"?`,
       details: batch ? (
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
@@ -261,12 +262,12 @@ export default function PrepareOrders() {
     try {
       const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batchId });
       if (res.success) {
-        const mp = res.missing_prices ? ` (⚠️ ${res.missing_prices} orders had no price)` : "";
+        const mp = res.missing_prices ? ` (Warning: ${res.missing_prices} orders had no price)` : "";
         setModal({
           show: true,
           type: "result",
           title: "Batch Approved",
-          icon: "✅",
+          icon: <CheckCircle2 size={20} color="#10b981" />,
           message: `${fmtN(res.orders_created)} orders created in ${res.duration_seconds}s.${mp}`,
           confirmText: "OK",
           confirmColor: "#10b981",
@@ -280,7 +281,7 @@ export default function PrepareOrders() {
           show: true,
           type: "result",
           title: "Approve Failed",
-          icon: "❌",
+          icon: <XCircle size={20} color="#ef4444" />,
           message: res.error || "Unknown error occurred.",
           confirmText: "OK",
           confirmColor: "#ef4444",
@@ -292,7 +293,7 @@ export default function PrepareOrders() {
         show: true,
         type: "result",
         title: "Error",
-        icon: "❌",
+        icon: <XCircle size={20} color="#ef4444" />,
         message: err.message,
         confirmText: "OK",
         confirmColor: "#ef4444",
@@ -309,7 +310,7 @@ export default function PrepareOrders() {
       show: true,
       type: "discard",
       title: "Discard Batch",
-      icon: "🗑️",
+      icon: <Trash2 size={20} color="#ef4444" />,
       message: `Discard batch "${batchId}"?`,
       details: batch ? (
         <div>
@@ -341,7 +342,7 @@ export default function PrepareOrders() {
           show: true,
           type: "result",
           title: "Discard Failed",
-          icon: "❌",
+          icon: <XCircle size={20} color="#ef4444" />,
           message: res.error || "Unknown error occurred.",
           confirmText: "OK",
           confirmColor: "#ef4444",
@@ -353,7 +354,7 @@ export default function PrepareOrders() {
         show: true,
         type: "result",
         title: "Error",
-        icon: "❌",
+        icon: <XCircle size={20} color="#ef4444" />,
         message: err.message,
         confirmText: "OK",
         confirmColor: "#ef4444",
@@ -492,7 +493,7 @@ export default function PrepareOrders() {
           background: prepareResult.success ? "#d1fae5" : "#fee2e2",
           border: `1px solid ${prepareResult.success ? "#10b981" : "#ef4444"}`,
         }}>
-          <strong>{prepareResult.success ? "✅ Batch Staged Successfully" : "❌ Staging Failed"}</strong>
+          <strong>{prepareResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Batch Staged Successfully</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}</strong>
           {prepareResult.success && prepareResult.results && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               <span>Batch: <strong style={{ fontFamily: "monospace" }}>{prepareResult.batch_id}</strong></span>
@@ -507,7 +508,7 @@ export default function PrepareOrders() {
                 Baskets Reduced: <strong>{fmtN(prepareResult.results.capped_at_max)}</strong>
               </span>
               {(prepareResult.results.missing_prices || 0) > 0 && (
-                <span style={{ color: "#dc2626" }}>⚠️ {prepareResult.results.missing_prices} orders missing price</span>
+                <span style={{ color: "#dc2626" }}><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> {prepareResult.results.missing_prices} orders missing price</span>
               )}
             </div>
           )}
@@ -562,7 +563,7 @@ export default function PrepareOrders() {
                 opacity: previewLoading ? 0.6 : 1,
               }}
             >
-              {previewLoading ? "Loading..." : "🔄 Refresh"}
+              {previewLoading ? "Loading..." : <><RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh</>}
             </button>
             <button
               onClick={showPrepareModal}
@@ -578,7 +579,7 @@ export default function PrepareOrders() {
                 cursor: preparing || !preview?.eligible_members ? "not-allowed" : "pointer",
               }}
             >
-              {preparing ? "Staging..." : "▶️ Prepare (Stage)"}
+              {preparing ? "Staging..." : <><CirclePlay size={14} style={{ verticalAlign: "middle" }} /> Prepare (Stage)</>}
             </button>
           </div>
 
@@ -595,7 +596,7 @@ export default function PrepareOrders() {
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
             }}>
-              <strong>❌ Preview Error</strong>
+              <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Preview Error</strong>
               <div style={{ marginTop: "0.5rem" }}>{previewError}</div>
               <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#6b7280" }}>
                 Check: 1) prepare_staging_tables.sql was run, 2) prepare_orders.php is deployed, 3) Browser console / Network tab for details.
@@ -603,7 +604,7 @@ export default function PrepareOrders() {
             </div>
           ) : !preview ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>
-              Click Refresh to load preview counts.
+               <RefreshCw size={16} style={{ verticalAlign: "middle" }} /> Click Refresh to load preview counts.
             </div>
           ) : (
             <>
@@ -706,7 +707,7 @@ export default function PrepareOrders() {
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
             }}>
-              <strong>❌ Batches Error</strong>
+              <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Batches Error</strong>
               <div style={{ marginTop: "0.5rem" }}>{batchesError}</div>
             </div>
           )}
@@ -782,19 +783,19 @@ export default function PrepareOrders() {
                               disabled={actionLoading}
                               style={actionBtn("#10b981")}
                             >
-                              ✅ Approve
+                              <CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Approve
                             </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); showDiscardModal(b.batch_id); }}
                               disabled={actionLoading}
                               style={actionBtn("#ef4444")}
                             >
-                              🗑 Discard
+                              <Trash2 size={12} style={{ verticalAlign: "middle" }} /> Discard
                             </button>
                           </>
                         )}
                         <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-                          {isActive ? "▲" : "▼"}
+                          {isActive ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </span>
                       </div>
                     </div>
@@ -820,7 +821,7 @@ export default function PrepareOrders() {
                                 fontSize: "0.85rem",
                                 color: "#92400e",
                               }}>
-                                <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+                                <span style={{ fontSize: "1.1rem" }}><AlertTriangle size={18} /></span>
                                 <span>
                                   <strong>{batchStats.missing_prices}</strong> orders have no price data (shares = 0).
                                   Yahoo Finance may not have returned prices for those symbols.
@@ -903,7 +904,7 @@ export default function PrepareOrders() {
                                     cursor: "pointer",
                                   }}
                                 >
-                                  {showDrilldown ? "Hide Member Detail" : "👤 Show Member Detail"}
+                                  {showDrilldown ? "Hide Member Detail" : <><User size={14} style={{ verticalAlign: "middle" }} /> Show Member Detail</>}
                                 </button>
                               </div>
 
