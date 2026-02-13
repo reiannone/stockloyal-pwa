@@ -1,0 +1,4 @@
+mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com \
+      -u admin \
+      -p'StockLoyal2025!' \
+      stockloyal

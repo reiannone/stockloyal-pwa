@@ -5,13 +5,13 @@ BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
 # 2. Local file to upload
-$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\my-picks.php"
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\voice-assistant-ai.php"
 
 # 3. EC2 Host (rename variable so we avoid conflict with $Host)
 $EC2 = "ec2-user@3.150.49.91"
 
 # 4. Destination on remote server
-$DEST = "/home/ec2-user/my-picks.php"
+$DEST = "/home/ec2-user/voice-assistant-ai.php"
 
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
@@ -20,6 +20,27 @@ scp -i $KEY "$SRC" "${EC2}:${DEST}"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/my-picks.php /var/www/html/api/my-picks.php
-sudo chown apache:apache /var/www/html/api/my-picks.php
-sudo chmod 644 /var/www/html/api/my-picks.php
+sudo mv /home/ec2-user/voice-assistant-ai.php /var/www/html/api/voice-assistant-ai.php
+sudo chown apache:apache /var/www/html/api/voice-assistant-ai.php
+sudo chmod 644 /var/www/html/api/voice-assistant-ai.php
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+MySQL Commands in AWS EC2
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com \
+      -u admin \
+      -p'StockLoyal2025!' \
+      stockloyal
+
+DELETE FROM broker_credentials WHERE member_id LIKE 'robot-%';
+DELETE FROM orders WHERE member_id LIKE 'robot-%';
+DELETE FROM wallet WHERE member_id LIKE 'robot-%';
+DELETE FROM pending_inbound WHERE member_id LIKE 'robot-%';
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Robot Execution NPX Commands
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+npx cross-env ROBOT_COUNT=1 ROBOT_API=https://api.stockloyal.com/api ROBOT_MERCHANT=merchant001 ROBOT_SLOW=3000 npx playwright test onboarding-robot.spec.js --headed --workers=1
+
