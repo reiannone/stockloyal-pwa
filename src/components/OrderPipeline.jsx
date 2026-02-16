@@ -6,7 +6,7 @@ import { ClipboardCheck, Paintbrush, Briefcase, CreditCard, CheckCircle2 } from 
 /**
  * OrderPipeline - Subway-style timeline showing order processing steps
  * 
- * @param {number} currentStep - The current active step (1-4)
+ * @param {number} currentStep - The current active step (1-4), or 0 for overview mode (all steps full color)
  * @param {object} counts - Optional queue counts { prepare, sweep, execute, payments_baskets, payments_orders }
  */
 export default function OrderPipeline({ currentStep = 1, counts = null }) {
@@ -76,6 +76,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
           }}
         />
         {/* Connecting Line - Progress */}
+        {currentStep > 0 && (
         <div
           style={{
             position: "absolute",
@@ -88,6 +89,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
             transition: "width 0.3s ease",
           }}
         />
+        )}
 
         {/* Timeline Steps */}
         <div
@@ -100,8 +102,9 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
           }}
         >
           {steps.map(({ to, label, subtitle, icon, key, color, step }) => {
-            const isActive = step === currentStep;
-            const isCompleted = step < currentStep;
+            const isOverview = currentStep === 0;
+            const isActive = !isOverview && step === currentStep;
+            const isCompleted = !isOverview && step < currentStep;
             const isPayments = key === "payments";
             const baskets = counts?.payments_baskets ?? null;
             const orders = counts?.payments_orders ?? null;
@@ -109,10 +112,10 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
             
             const paymentsIsZero = isPayments && baskets === 0 && orders === 0;
             const isZero = isPayments ? paymentsIsZero : count === 0;
-            const hasData = isPayments ? (baskets !== null && orders !== null) : count !== null;
+            const hasData = counts != null && (isPayments ? (baskets !== null && orders !== null) : count !== null);
 
             // Determine circle color
-            const circleColor = isActive ? color : isCompleted ? "#10b981" : "#cbd5e1";
+            const circleColor = isOverview ? color : isActive ? color : isCompleted ? "#10b981" : "#cbd5e1";
             const circleSize = isActive ? 40 : 36;
 
             return (
@@ -128,7 +131,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                   border: "none",
                   cursor: "pointer",
                   transition: "transform 0.2s",
-                  opacity: isActive ? 1 : 0.85,
+                  opacity: isOverview || isActive ? 1 : 0.85,
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = "translateY(-2px)";
@@ -136,7 +139,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.opacity = isActive ? "1" : "0.85";
+                  e.currentTarget.style.opacity = (isOverview || isActive) ? "1" : "0.85";
                 }}
               >
                 {/* Station Circle */}
@@ -180,6 +183,20 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                       {isPayments ? orders : count}
                     </span>
                   )}
+                  {/* Green checkmark when queue is empty */}
+                  {hasData && isZero && (
+                    <CheckCircle2
+                      size={14}
+                      color="#4ade80"
+                      style={{
+                        position: "absolute",
+                        top: "-3px",
+                        right: "-3px",
+                        backgroundColor: "white",
+                        borderRadius: "50%",
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* Step indicator */}
@@ -187,7 +204,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                   style={{
                     fontSize: "10px",
                     fontWeight: "700",
-                    color: isActive ? color : isCompleted ? "#10b981" : "#94a3b8",
+                    color: isOverview ? color : isActive ? color : isCompleted ? "#10b981" : "#94a3b8",
                     marginBottom: "2px",
                     textTransform: "uppercase",
                     letterSpacing: "0.5px",
@@ -201,7 +218,7 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                   style={{
                     fontSize: "12px",
                     fontWeight: isActive ? "700" : "500",
-                    color: isActive ? "#1f2937" : "#64748b",
+                    color: isOverview || isActive ? "#1f2937" : "#64748b",
                     textAlign: "center",
                     lineHeight: 1.2,
                   }}
@@ -209,8 +226,8 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                   {label}
                 </div>
 
-                {/* Subtitle - only show on active */}
-                {isActive && (
+                {/* Subtitle - show on active or overview */}
+                {(isActive || isOverview) && (
                   <div
                     style={{
                       fontSize: "10px",
@@ -220,6 +237,20 @@ export default function OrderPipeline({ currentStep = 1, counts = null }) {
                     }}
                   >
                     {subtitle}
+                  </div>
+                )}
+
+                {/* Payments extra info */}
+                {isPayments && hasData && !isZero && (
+                  <div
+                    style={{
+                      fontSize: "9px",
+                      color: "#ef4444",
+                      fontWeight: "600",
+                      marginTop: "2px",
+                    }}
+                  >
+                    {baskets} basket{baskets !== 1 ? "s" : ""}
                   </div>
                 )}
               </button>

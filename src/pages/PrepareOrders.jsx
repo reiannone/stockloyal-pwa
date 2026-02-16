@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
-import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, ClipboardList, HelpCircle, User, ChevronUp, ChevronDown } from "lucide-react";
+import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -10,10 +10,9 @@ import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, Cl
  * Staging workflow:
  *   1. Preview   → Aggregate counts (read-only, nothing written)
  *   2. Prepare   → INSERT...SELECT into prepared_orders (staged)
- *   3. Review    → Stats breakdown by merchant, broker, tier, symbol
- *   4. Drilldown → Paginated member detail within a batch
- *   5. Approve   → Move staged → orders table (pending)
- *   6. Discard   → Mark batch discarded
+ *   3. Review    → Hierarchy: Merchant → Broker → Basket → Orders
+ *   4. Approve   → Move staged → orders table (pending)
+ *   5. Discard   → Mark batch discarded
  *
  * Rules:
  *   - sweep_percentage = 0 → treated as 100%
@@ -40,11 +39,18 @@ export default function PrepareOrders() {
   const [batchStats, setBatchStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  // ── Drilldown state ──
-  const [drilldown, setDrilldown] = useState(null);
-  const [drillPage, setDrillPage] = useState(1);
-  const [drillLoading, setDrillLoading] = useState(false);
-  const [showDrilldown, setShowDrilldown] = useState(false);
+  // Pipeline queue counts
+  const [queueCounts, setQueueCounts] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiPost("admin-queue-counts.php");
+        if (data?.success) setQueueCounts(data.counts);
+      } catch (err) {
+        console.warn("[PrepareOrders] queue counts fetch failed:", err);
+      }
+    })();
+  }, []);
 
   // ── Actions in progress ──
   const [actionLoading, setActionLoading] = useState(false);
@@ -202,8 +208,6 @@ export default function PrepareOrders() {
   const loadStats = async (batchId) => {
     setStatsLoading(true);
     setBatchStats(null);
-    setShowDrilldown(false);
-    setDrilldown(null);
     try {
       const res = await apiPost("prepare_orders.php", { action: "stats", batch_id: batchId });
       if (res.success) setBatchStats(res);
@@ -211,26 +215,6 @@ export default function PrepareOrders() {
       console.error("Stats error:", err);
     }
     setStatsLoading(false);
-  };
-
-  // ── Load drilldown ──
-  const loadDrilldown = async (batchId, page = 1) => {
-    setDrillLoading(true);
-    try {
-      const res = await apiPost("prepare_orders.php", {
-        action: "drilldown",
-        batch_id: batchId,
-        page,
-        per_page: 50,
-      });
-      if (res.success) {
-        setDrilldown(res);
-        setDrillPage(page);
-      }
-    } catch (err) {
-      console.error("Drilldown error:", err);
-    }
-    setDrillLoading(false);
   };
 
   // ── Approve - show modal ──
@@ -454,7 +438,7 @@ export default function PrepareOrders() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={1} />
+      <OrderPipeline currentStep={1} counts={queueCounts} />
 
       {/* ── Tabs ── */}
       <div style={{
@@ -829,164 +813,11 @@ export default function PrepareOrders() {
                               </div>
                             )}
 
-                            {/* ── Stats grids ── */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-                              {/* By Merchant */}
-                              <BreakdownTable
-                                title="By Merchant"
-                                rows={batchStats.by_merchant}
-                                labelKey="merchant_id"
-                                labelName="Merchant"
-                              />
-
-                              {/* By Broker */}
-                              <BreakdownTable
-                                title="By Broker"
-                                rows={batchStats.by_broker}
-                                labelKey="broker"
-                                labelName="Broker"
-                              />
-
-                              {/* Top Symbols */}
-                              {batchStats.by_symbol?.length > 0 && (
-                                <div style={breakdownBox}>
-                                  <div style={breakdownHeader}>Top Symbols</div>
-                                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                    <thead>
-                                      <tr>
-                                        <th style={thStyleSm}>Symbol</th>
-                                        <th style={thStyleSm}>Price</th>
-                                        <th style={thStyleSm}>Orders</th>
-                                        <th style={thStyleSm}>Amount</th>
-                                        <th style={thStyleSm}>Shares</th>
-                                        <th style={thStyleSm}>Points</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {batchStats.by_symbol.map((s, i) => (
-                                        <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                          <td style={{ ...tdStyleSm, fontWeight: 600 }}>{s.symbol}</td>
-                                          <td style={tdStyleSm}>
-                                            {s.price ? fmt$(s.price) : <span style={{ color: "#ef4444", fontSize: "0.75rem" }}>No price</span>}
-                                          </td>
-                                          <td style={tdStyleSm}>{fmtN(s.order_count)}</td>
-                                          <td style={tdStyleSm}>{fmt$(s.total_amount)}</td>
-                                          <td style={tdStyleSm}>{Number(s.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
-                                          <td style={tdStyleSm}>{fmtN(s.total_points)}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* ── Drilldown toggle ── */}
-                            <div>
-                                <button
-                                  onClick={() => {
-                                    if (showDrilldown) {
-                                      setShowDrilldown(false);
-                                    } else {
-                                      setShowDrilldown(true);
-                                      loadDrilldown(b.batch_id, 1);
-                                    }
-                                  }}
-                                  style={{
-                                    padding: "0.5rem 1rem",
-                                    background: showDrilldown ? "#64748b" : "#6366f1",
-                                    color: "#fff",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.8rem",
-                                    fontWeight: 600,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  {showDrilldown ? "Hide Member Detail" : <><User size={14} style={{ verticalAlign: "middle" }} /> Show Member Detail</>}
-                                </button>
-                              </div>
-
-                            {/* ── Drilldown table ── */}
-                            {showDrilldown && (
-                              <div style={breakdownBox}>
-                                <div style={breakdownHeader}>
-                                  Member Detail
-                                  {drilldown && (
-                                    <span style={{ fontWeight: 400, fontSize: "0.75rem", marginLeft: 8, color: "#94a3b8" }}>
-                                      Page {drilldown.page} of {drilldown.total_pages} · {fmtN(drilldown.total_members)} members
-                                    </span>
-                                  )}
-                                </div>
-                                {drillLoading ? (
-                                  <div style={{ padding: "1.5rem", textAlign: "center", color: "#64748b" }}>Loading...</div>
-                                ) : !drilldown?.members?.length ? (
-                                  <div style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8" }}>No members.</div>
-                                ) : (
-                                  <>
-                                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                      <thead>
-                                        <tr>
-                                          <th style={thStyleSm}>Member</th>
-                                          <th style={thStyleSm}>Merchant</th>
-                                          <th style={thStyleSm}>Broker</th>
-                                          <th style={thStyleSm}>Tier</th>
-                                          <th style={thStyleSm}>Rate</th>
-                                          <th style={thStyleSm}>Sweep %</th>
-                                          <th style={thStyleSm}>Orders</th>
-                                          <th style={thStyleSm}>Amount</th>
-                                          <th style={thStyleSm}>Shares</th>
-                                          <th style={thStyleSm}>Points</th>
-                                          <th style={thStyleSm}>Symbols</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {drilldown.members.map((m, i) => (
-                                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                            <td style={{ ...tdStyleSm, fontWeight: 600 }}>{m.member_id}</td>
-                                            <td style={tdStyleSm}>{m.merchant_id || "—"}</td>
-                                            <td style={tdStyleSm}>{m.broker || "—"}</td>
-                                            <td style={tdStyleSm}>{m.member_tier || "—"}</td>
-                                            <td style={tdStyleSm}>{m.conversion_rate}</td>
-                                            <td style={tdStyleSm}>{m.sweep_percentage}%</td>
-                                            <td style={tdStyleSm}>{fmtN(m.order_count)}</td>
-                                            <td style={tdStyleSm}>{fmt$(m.total_amount)}</td>
-                                            <td style={tdStyleSm}>{Number(m.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
-                                            <td style={tdStyleSm}>{fmtN(m.total_points)}</td>
-                                            <td style={{ ...tdStyleSm, fontSize: "0.72rem", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                              {m.symbols}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                    {/* Pagination */}
-                                    {drilldown.total_pages > 1 && (
-                                      <div style={{ display: "flex", justifyContent: "center", gap: 8, padding: "0.75rem" }}>
-                                        <button
-                                          disabled={drilldown.page <= 1}
-                                          onClick={() => loadDrilldown(b.batch_id, drilldown.page - 1)}
-                                          style={pagBtn}
-                                        >
-                                          ← Prev
-                                        </button>
-                                        <span style={{ fontSize: "0.8rem", color: "#475569", alignSelf: "center" }}>
-                                          {drilldown.page} / {drilldown.total_pages}
-                                        </span>
-                                        <button
-                                          disabled={drilldown.page >= drilldown.total_pages}
-                                          onClick={() => loadDrilldown(b.batch_id, drilldown.page + 1)}
-                                          style={pagBtn}
-                                        >
-                                          Next →
-                                        </button>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            )}
+                            {/* ── Merchant → Broker → Basket → Orders hierarchy ── */}
+                            <BatchHierarchy
+                              batchId={b.batch_id}
+                              merchants={batchStats.by_merchant}
+                            />
                           </div>
                         )}
                       </div>
@@ -1026,39 +857,314 @@ function StatCard({ label, value, color }) {
   );
 }
 
-function BreakdownTable({ title, rows, labelKey, labelName }) {
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BatchHierarchy — Merchant → Broker → Basket → Orders tree
+// ═══════════════════════════════════════════════════════════════════════════
+
+function BatchHierarchy({ batchId, merchants }) {
   const fmt$ = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v || 0);
   const fmtN = (v) => Number(v || 0).toLocaleString();
+  const fmtShares = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
-  if (!rows?.length) return null;
+  // Expand/collapse state per level
+  const [expandedMerchants, setExpandedMerchants] = useState(new Set());
+  const [expandedBrokers, setExpandedBrokers] = useState(new Set());
+  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+
+  // Loaded children caches
+  const [brokerData, setBrokerData] = useState({});    // { merchantId: [rows] }
+  const [basketData, setBasketData] = useState({});    // { "merchantId|broker": [rows] }
+  const [orderData, setOrderData] = useState({});      // { basketId: [rows] }
+
+  // Loading flags
+  const [loadingBrokers, setLoadingBrokers] = useState({});
+  const [loadingBaskets, setLoadingBaskets] = useState({});
+  const [loadingOrders, setLoadingOrders] = useState({});
+
+  // ── Toggle helpers ──
+  const toggleSet = (setter, key) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  // ── Load brokers for a merchant ──
+  const loadBrokers = async (merchantId) => {
+    if (brokerData[merchantId]) return;
+    setLoadingBrokers((p) => ({ ...p, [merchantId]: true }));
+    try {
+      const res = await apiPost("prepare_orders.php", {
+        action: "batch_brokers",
+        batch_id: batchId,
+        merchant_id: merchantId,
+      });
+      if (res.success) {
+        setBrokerData((p) => ({ ...p, [merchantId]: res.brokers || [] }));
+      } else {
+        console.error("batch_brokers failed:", res.error || res);
+        setBrokerData((p) => ({ ...p, [merchantId]: [] }));
+      }
+    } catch (err) {
+      console.error("batch_brokers error:", err);
+    }
+    setLoadingBrokers((p) => ({ ...p, [merchantId]: false }));
+  };
+
+  // ── Load baskets for a merchant + broker ──
+  const loadBaskets = async (merchantId, broker) => {
+    const key = `${merchantId}|${broker}`;
+    if (basketData[key]) return;
+    setLoadingBaskets((p) => ({ ...p, [key]: true }));
+    try {
+      const res = await apiPost("prepare_orders.php", {
+        action: "batch_baskets",
+        batch_id: batchId,
+        merchant_id: merchantId,
+        broker,
+      });
+      if (res.success) {
+        setBasketData((p) => ({ ...p, [key]: res.baskets || [] }));
+      } else {
+        console.error("batch_baskets failed:", res.error || res);
+        setBasketData((p) => ({ ...p, [key]: [] }));
+      }
+    } catch (err) {
+      console.error("batch_baskets error:", err);
+    }
+    setLoadingBaskets((p) => ({ ...p, [key]: false }));
+  };
+
+  // ── Load orders for a basket ──
+  const loadOrders = async (basketId) => {
+    if (orderData[basketId]) return;
+    setLoadingOrders((p) => ({ ...p, [basketId]: true }));
+    try {
+      const res = await apiPost("prepare_orders.php", {
+        action: "batch_orders",
+        batch_id: batchId,
+        basket_id: basketId,
+      });
+      if (res.success) {
+        setOrderData((p) => ({ ...p, [basketId]: res.orders || [] }));
+      } else {
+        console.error("batch_orders failed:", res.error || res);
+        setOrderData((p) => ({ ...p, [basketId]: [] }));
+      }
+    } catch (err) {
+      console.error("batch_orders error:", err);
+    }
+    setLoadingOrders((p) => ({ ...p, [basketId]: false }));
+  };
+
+  // ── Shared row styles ──
+  const rowBase = (depth) => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 12px",
+    paddingLeft: `${12 + depth * 24}px`,
+    cursor: "pointer",
+    fontSize: "0.82rem",
+    borderBottom: "1px solid #f1f5f9",
+    transition: "background 0.1s",
+  });
+
+  const badge = (text, bg, color) => (
+    <span style={{
+      fontSize: "0.7rem",
+      fontWeight: 600,
+      padding: "1px 8px",
+      borderRadius: 4,
+      background: bg,
+      color,
+      whiteSpace: "nowrap",
+    }}>
+      {text}
+    </span>
+  );
+
+  const summaryPills = (row) => (
+    <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {row.members != null && badge(`${fmtN(row.members)} mbrs`, "#f0f9ff", "#0369a1")}
+      {row.orders != null && badge(`${fmtN(row.orders)} orders`, "#faf5ff", "#7c3aed")}
+      {row.total_amount != null && badge(fmt$(row.total_amount), "#f0fdf4", "#15803d")}
+    </div>
+  );
+
+  const loadingRow = (depth) => (
+    <div style={{ ...rowBase(depth), cursor: "default", color: "#94a3b8", fontStyle: "italic" }}>
+      Loading...
+    </div>
+  );
+
+  const emptyRow = (depth, text) => (
+    <div style={{ ...rowBase(depth), cursor: "default", color: "#94a3b8" }}>
+      {text}
+    </div>
+  );
+
+  if (!merchants?.length) return <div style={{ padding: "1rem", color: "#94a3b8", textAlign: "center" }}>No data.</div>;
 
   return (
     <div style={breakdownBox}>
-      <div style={breakdownHeader}>{title}</div>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={thStyleSm}>{labelName}</th>
-            <th style={thStyleSm}>Members</th>
-            <th style={thStyleSm}>Orders</th>
-            <th style={thStyleSm}>Amount</th>
-            <th style={thStyleSm}>Shares</th>
-            <th style={thStyleSm}>Points</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
-              <td style={{ ...tdStyleSm, fontWeight: 600 }}>{r[labelKey] || "—"}</td>
-              <td style={tdStyleSm}>{fmtN(r.members)}</td>
-              <td style={tdStyleSm}>{fmtN(r.orders)}</td>
-              <td style={tdStyleSm}>{fmt$(r.total_amount)}</td>
-              <td style={tdStyleSm}>{Number(r.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</td>
-              <td style={tdStyleSm}>{fmtN(r.total_points)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={breakdownHeader}>Batch Breakdown</div>
+
+      {/* ── Level 1: Merchants ── */}
+      {merchants.map((m) => {
+        const mId = m.merchant_id;
+        const mOpen = expandedMerchants.has(mId);
+
+        return (
+          <div key={mId}>
+            <div
+              onClick={() => {
+                toggleSet(setExpandedMerchants, mId);
+                if (!mOpen) loadBrokers(mId);
+              }}
+              style={{
+                ...rowBase(0),
+                fontWeight: 600,
+                background: mOpen ? "#f8fafc" : "#fff",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f9ff")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = mOpen ? "#f8fafc" : "#fff")}
+            >
+              <Store size={14} color="#8b5cf6" />
+              <span style={{ color: "#1e293b" }}>{mId}</span>
+              {summaryPills(m)}
+              {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+            </div>
+
+            {/* ── Level 2: Brokers ── */}
+            {mOpen && (
+              loadingBrokers[mId]
+                ? loadingRow(1)
+                : !brokerData[mId]?.length
+                  ? emptyRow(1, "No brokers found.")
+                  : brokerData[mId].map((br) => {
+                      const bKey = `${mId}|${br.broker}`;
+                      const brOpen = expandedBrokers.has(bKey);
+
+                      return (
+                        <div key={bKey}>
+                          <div
+                            onClick={() => {
+                              toggleSet(setExpandedBrokers, bKey);
+                              if (!brOpen) loadBaskets(mId, br.broker);
+                            }}
+                            style={{
+                              ...rowBase(1),
+                              fontWeight: 500,
+                              background: brOpen ? "#faf5ff" : "#fff",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "#faf5ff")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = brOpen ? "#faf5ff" : "#fff")}
+                          >
+                            <Building2 size={14} color="#6366f1" />
+                            <span style={{ color: "#1e293b" }}>{br.broker}</span>
+                            {summaryPills(br)}
+                            {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                          </div>
+
+                          {/* ── Level 3: Baskets ── */}
+                          {brOpen && (
+                            loadingBaskets[bKey]
+                              ? loadingRow(2)
+                              : !basketData[bKey]?.length
+                                ? emptyRow(2, "No baskets found.")
+                                : basketData[bKey].map((bk) => {
+                                    const bkOpen = expandedBaskets.has(bk.basket_id);
+
+                                    return (
+                                      <div key={bk.basket_id}>
+                                        <div
+                                          onClick={() => {
+                                            toggleSet(setExpandedBaskets, bk.basket_id);
+                                            if (!bkOpen) loadOrders(bk.basket_id);
+                                          }}
+                                          style={{
+                                            ...rowBase(2),
+                                            background: bkOpen ? "#fffbeb" : "#fff",
+                                          }}
+                                          onMouseEnter={(e) => (e.currentTarget.style.background = "#fffbeb")}
+                                          onMouseLeave={(e) => (e.currentTarget.style.background = bkOpen ? "#fffbeb" : "#fff")}
+                                        >
+                                          <ShoppingBasket size={14} color="#d97706" />
+                                          <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
+                                            {bk.basket_id}
+                                          </span>
+                                          {bk.member_id && badge(`member: ${bk.member_id}`, "#fef3c7", "#92400e")}
+                                          {summaryPills(bk)}
+                                          {bkOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                                        </div>
+
+                                        {/* ── Level 4: Orders ── */}
+                                        {bkOpen && (
+                                          loadingOrders[bk.basket_id]
+                                            ? loadingRow(3)
+                                            : !orderData[bk.basket_id]?.length
+                                              ? emptyRow(3, "No orders found.")
+                                              : (
+                                                <div style={{ paddingLeft: `${12 + 3 * 24}px`, paddingRight: 12, paddingBottom: 4 }}>
+                                                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                                    <thead>
+                                                      <tr style={{ background: "#f8fafc" }}>
+                                                        <th style={thStyleSm}>Order</th>
+                                                        <th style={thStyleSm}>Symbol</th>
+                                                        <th style={thStyleSm}>Amount</th>
+                                                        <th style={thStyleSm}>Price</th>
+                                                        <th style={thStyleSm}>Shares</th>
+                                                        <th style={thStyleSm}>Points</th>
+                                                        <th style={thStyleSm}>Status</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {orderData[bk.basket_id].map((o, i) => (
+                                                        <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                                          <td style={{ ...tdStyleSm, fontFamily: "monospace", fontSize: "0.75rem" }}>
+                                                            {o.order_id || i + 1}
+                                                          </td>
+                                                          <td style={{ ...tdStyleSm, fontWeight: 600 }}>{o.symbol}</td>
+                                                          <td style={tdStyleSm}>{fmt$(o.amount)}</td>
+                                                          <td style={tdStyleSm}>
+                                                            {o.price ? fmt$(o.price) : <span style={{ color: "#ef4444", fontSize: "0.72rem" }}>—</span>}
+                                                          </td>
+                                                          <td style={tdStyleSm}>{fmtShares(o.shares)}</td>
+                                                          <td style={tdStyleSm}>{fmtN(o.points)}</td>
+                                                          <td style={tdStyleSm}>
+                                                            <span style={{
+                                                              fontSize: "0.7rem",
+                                                              padding: "1px 8px",
+                                                              borderRadius: 4,
+                                                              background: o.status === "staged" ? "#fef3c7" : o.status === "pending" ? "#dbeafe" : "#f3f4f6",
+                                                              color: o.status === "staged" ? "#92400e" : o.status === "pending" ? "#1e40af" : "#374151",
+                                                              fontWeight: 600,
+                                                            }}>
+                                                              {o.status || "—"}
+                                                            </span>
+                                                          </td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              )
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                          )}
+                        </div>
+                      );
+                    })
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1123,12 +1229,3 @@ const actionBtn = (bg) => ({
   fontWeight: 600,
   cursor: "pointer",
 });
-
-const pagBtn = {
-  padding: "4px 12px",
-  background: "#e2e8f0",
-  border: "none",
-  borderRadius: "4px",
-  fontSize: "0.8rem",
-  cursor: "pointer",
-};

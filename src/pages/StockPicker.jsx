@@ -502,7 +502,7 @@ export default function StockPicker() {
     hasLimits && isCashOutsideLimits
       ? `Cash-Value for this order must be between $${minOrderAmount.toFixed(
           2
-        )} and $${maxOrderAmount.toFixed(2)} for your broker.`
+        )} and $${maxOrderAmount.toFixed(2)} for broker.`
       : "";
 
   // ✅ NEW: Save a stock to My Basket
@@ -626,7 +626,7 @@ export default function StockPicker() {
   const handleProceedToOrder = () => {
     const basketArray = Array.isArray(basket) ? basket : [];
     if (basketArray.length === 0) {
-      alert("Your basket is empty. Please select stocks first.");
+      alert("Basket is empty. Please select stocks first.");
       return;
     }
 
@@ -834,7 +834,7 @@ export default function StockPicker() {
       });
       
       if (!data?.success) {
-        throw new Error(data?.error || "Failed to load your picks");
+        throw new Error(data?.error || "Failed to load stock picks");
       }
 
       const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -848,7 +848,7 @@ export default function StockPicker() {
 
       if (cleaned.length === 0) {
         setResults([]);
-        setStockError("You haven't saved any picks yet. Browse categories and tap the ❤️ to save stocks for your monthly sweep!");
+        setStockError("You haven't saved any picks yet. Browse categories and tap the ❤️ to save stocks for monthly sweep!");
         setLoadingCategory(false);
         return;
       }
@@ -942,7 +942,7 @@ export default function StockPicker() {
       }
     } catch (err) {
       console.error("[StockPicker] My Basket error:", err);
-      setStockError("Failed to load your picks.");
+      setStockError("Failed to load stock picks.");
     } finally {
       setLoadingCategory(false);
     }
@@ -1671,11 +1671,11 @@ export default function StockPicker() {
 
         {loadingMyActiveList ? (
           <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
-            Loading your picks...
+            Loading latest picks...
           </p>
         ) : myActiveListData.length === 0 ? (
           <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
-            You haven't saved any picks yet. Browse categories above and tap the ❤️ to save stocks for your sweep!
+            You haven't saved any picks yet. Browse categories above and tap the ❤️ to save stocks for sweep process!
           </p>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -2025,9 +2025,9 @@ export default function StockPicker() {
           color: "#92400e"
         }}>
           {sweepDay === "T+1" ? (
-            <><strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day through your broker, <strong>{brokerName}</strong>.</>
+            <><strong>{merchantName}</strong> processes points conversion and trade orders same day with settlement next business day through <strong>{brokerName}</strong>.</>
           ) : (
-            <><strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month through your broker, <strong>{brokerName}</strong>.</>
+            <><strong>{merchantName}</strong> processes points conversion and trade orders on <strong>{formatSweepDay(sweepDay)}</strong> of each month through <strong>{brokerName}</strong>.</>
           )}
         </div>
       )}
@@ -2035,8 +2035,8 @@ export default function StockPicker() {
       {/* ==== Dynamic Disclosure (Correct Broker Displayed) ==== */}
       <p className="form-disclosure">
         <strong>My Basket:</strong> Securities saved under <em>My Basket</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
-        established between {merchantName} and {brokerName}. You can add securities to your <em>My Basket</em> by selecting 
-        them from any category and clicking the heart <Heart size={18} color="#9ca3af" /> icon.
+        established between {merchantName} and {brokerName}. You can add securities to <em>My Basket</em> by selecting 
+        them from any category and clicking the checkbox, or by sumbol using search bar <Search size={18} color="#9ca3af" />.
         To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
       </p>
     </div>

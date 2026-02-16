@@ -3,6 +3,30 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
+// ── Month helpers ──
+const getMonthKey = (dateStr, tz) => {
+  if (!dateStr) return "Unknown";
+  let iso = String(dateStr).trim();
+  if (!/Z$|[+-]\d{2}/.test(iso)) iso = iso.replace(" ", "T") + "Z";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "Unknown";
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: tz }).formatToParts(d);
+    const y = parts.find(p => p.type === "year")?.value;
+    const m = parts.find(p => p.type === "month")?.value;
+    return `${y}-${m}`;
+  } catch {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+};
+
+const getMonthLabel = (key) => {
+  if (key === "Unknown") return "Unknown Date";
+  const [y, m] = key.split("-");
+  const d = new Date(Number(y), Number(m) - 1, 1);
+  return d.toLocaleString(undefined, { month: "long", year: "numeric" });
+};
+
 export default function Ledger() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
@@ -21,6 +45,7 @@ export default function Ledger() {
   // Slider state for selected ledger entry
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [expandedMonths, setExpandedMonths] = useState(new Set());
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -30,6 +55,20 @@ export default function Ledger() {
       return "America/New_York";
     }
   }, []);
+
+  const effectiveTz = memberTimezone || detectedTz;
+
+  const currentMonthKey = useMemo(() => {
+    const now = new Date();
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: effectiveTz }).formatToParts(now);
+      const y = parts.find(p => p.type === "year")?.value;
+      const m = parts.find(p => p.type === "month")?.value;
+      return `${y}-${m}`;
+    } catch {
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    }
+  }, [effectiveTz]);
 
   useEffect(() => {
     if (!memberId) {
@@ -131,6 +170,33 @@ export default function Ledger() {
     }
   }, [entries, filterField, filterValue]);
 
+  // ── Group entries by month ──
+  const monthlyEntries = useMemo(() => {
+    const groups = new Map();
+    for (const e of filteredEntries) {
+      const key = getMonthKey(e.created_at, effectiveTz);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    }
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [filteredEntries, effectiveTz]);
+
+  // Initialize expanded months — current month open by default
+  useEffect(() => {
+    if (monthlyEntries.length > 0 && expandedMonths.size === 0) {
+      setExpandedMonths(new Set([currentMonthKey]));
+    }
+  }, [monthlyEntries]);
+
+  const toggleMonth = (key) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // Convert UTC/MySQL-ish timestamps to member's local time string
   const toLocalZonedString = (ts) => {
     if (!ts) return "-";
@@ -177,8 +243,8 @@ export default function Ledger() {
 
       {/* --- Page Notice --- */}
       <p className="form-disclosure mt-4">
-        <strong>Note:</strong> This page displays points and cash related transactions with {merchantName} and  {broker}. Times are shown in <strong>{memberTimezone || detectedTz}</strong>.
-      </p>
+        <strong>Note:</strong> This page displays points and cash related transactions with {merchantName} and  {broker}. To view track trade orders "View Order History"
+.      </p>
 
       {/* Filter bar */}
       {!loading && !error && entries.length > 0 && (
@@ -315,64 +381,100 @@ export default function Ledger() {
           {entries.length === 0 ? "No ledger entries found." : "No entries match the current filter."}
         </p>
       ) : (
-        <div className="basket-table-wrapper" style={{ overflowX: "auto" }}>
-          <table
-            className="basket-table"
-            style={{
-              width: "100%",
-              minWidth: "860px",
-              borderCollapse: "collapse",
-            }}
-          >
-            <thead>
-              <tr>
-                <th>Created</th>
-                <th>Type</th>
-                <th>Direction</th>
-                <th>Channel</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right" }}>Points</th>
-                <th style={{ textAlign: "right" }}>Cash</th>
-                <th>Broker</th>
-                <th>Order ID</th>
-              </tr>
-            </thead>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {monthlyEntries.map(([monthKey, monthEntries]) => {
+            const isMonthOpen = expandedMonths.has(monthKey);
+            const isCurrent = monthKey === currentMonthKey;
 
-            <tbody>
-              {filteredEntries.map((entry, idx) => (
-                <tr
-                  key={idx}
-                  onClick={() => openEntry(entry)}
-                  style={{ cursor: "pointer" }}
-                  title="Click to view details"
+            return (
+              <div key={monthKey}>
+                {/* Month banner */}
+                <div
+                  onClick={() => toggleMonth(monthKey)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 14px",
+                    background: isCurrent ? "#eff6ff" : "#f8fafc",
+                    border: `1px solid ${isCurrent ? "#bfdbfe" : "#e2e8f0"}`,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
                 >
-                  <td style={{ fontSize: "0.9rem" }}>
-                    {entry.created_at ? toLocalZonedString(entry.created_at) : "-"}
-                  </td>
-                  <td style={{ textTransform: "capitalize" }}>
-                    {formatTxType(entry.tx_type)}
-                  </td>
-                  <td style={{ textTransform: "capitalize" }}>
-                    {entry.direction || "-"}
-                  </td>
-                  <td>{entry.channel || "-"}</td>
-                  <td>
-                    <span style={getLedgerStatusPillStyle(entry.status)}>
-                      {entry.status || "-"}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    {entry.amount_points != null ? formatPoints(entry.amount_points) : "-"}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    {entry.amount_cash != null ? formatDollars(entry.amount_cash) : "-"}
-                  </td>
-                  <td>{entry.broker || "-"}</td>
-                  <td>{entry.order_id ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  <span style={{ fontWeight: 600, fontSize: "0.95rem", color: "#1e293b" }}>
+                    {getMonthLabel(monthKey)}{isCurrent ? " (Current)" : ""}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", color: "#64748b" }}>
+                    {monthEntries.length} entr{monthEntries.length !== 1 ? "ies" : "y"}
+                    <span style={{ fontSize: "1.1rem" }}>{isMonthOpen ? "▲" : "▼"}</span>
+                  </span>
+                </div>
+
+                {isMonthOpen && (
+                  <div className="basket-table-wrapper" style={{ overflowX: "auto", marginTop: 10 }}>
+                    <table
+                      className="basket-table"
+                      style={{
+                        width: "100%",
+                        minWidth: "860px",
+                        borderCollapse: "collapse",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th>Created</th>
+                          <th>Type</th>
+                          <th>Direction</th>
+                          <th>Channel</th>
+                          <th>Status</th>
+                          <th style={{ textAlign: "right" }}>Points</th>
+                          <th style={{ textAlign: "right" }}>Cash</th>
+                          <th>Broker</th>
+                          <th>Order ID</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthEntries.map((entry, idx) => (
+                          <tr
+                            key={idx}
+                            onClick={() => openEntry(entry)}
+                            style={{ cursor: "pointer" }}
+                            title="Click to view details"
+                          >
+                            <td style={{ fontSize: "0.9rem" }}>
+                              {entry.created_at ? toLocalZonedString(entry.created_at) : "-"}
+                            </td>
+                            <td style={{ textTransform: "capitalize" }}>
+                              {formatTxType(entry.tx_type)}
+                            </td>
+                            <td style={{ textTransform: "capitalize" }}>
+                              {entry.direction || "-"}
+                            </td>
+                            <td>{entry.channel || "-"}</td>
+                            <td>
+                              <span style={getLedgerStatusPillStyle(entry.status)}>
+                                {entry.status || "-"}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              {entry.amount_points != null ? formatPoints(entry.amount_points) : "-"}
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              {entry.amount_cash != null ? formatDollars(entry.amount_cash) : "-"}
+                            </td>
+                            <td>{entry.broker || "-"}</td>
+                            <td>{entry.order_id ?? "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -508,15 +610,20 @@ export default function Ledger() {
         </div>
       )}
 
-      {/* --- Centered Action Buttons --- */}
+      {/* --- Centered Action Buttons (Sticky) --- */}
       <div
         className="transactions-actions"
         style={{
+          position: "sticky",
+          bottom: 0,
+          zIndex: 10,
+          background: "linear-gradient(transparent, #f8fafc 12px)",
+          paddingTop: 16,
+          paddingBottom: 12,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: "10px",
-          marginTop: "20px",
         }}
       >
         <div

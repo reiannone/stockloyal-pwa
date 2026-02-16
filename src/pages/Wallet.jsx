@@ -803,7 +803,7 @@ export default function Wallet() {
             <div className="wallet-cash" style={{ margin: 0 }}>
               {formatDollars(effectiveCashBalance)}
             </div>
-            <div className="caption" style={{ marginTop: 6 }}>
+            <div style={{ fontSize: "0.95rem", marginTop: 6 }}>
               Points from {" "}
               <strong style={{ color: "#2563eb" }}>{merchantName}</strong> {" "}
               <strong>{formatPoints(points)}</strong>

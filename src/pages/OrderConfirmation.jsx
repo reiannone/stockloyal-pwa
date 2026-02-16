@@ -248,8 +248,8 @@ export default function OrderConfirmation() {
             <CheckCircle size={28} color={isImmediateProcessing ? "#10b981" : "#f59e0b"} />
             <span>
               {isImmediateProcessing 
-                ? `Buy Orders Successfully Placed — your buy order submitted to ${brokerName}!`
-                : `Buy Orders Pending — your order is submitted to ${merchantName} and queued for processing on the ${getSweepDayDisplay(sweepDay)} of the month.`
+                ? `Buy Orders Successfully Placed — buy order submitted to ${brokerName}!`
+                : `Buy Orders Pending — buy order will be submitted by ${merchantName} to ${brokerName} and queued for processing on the ${getSweepDayDisplay(sweepDay)} of the month.`
               }
             </span>
           </div>
@@ -338,21 +338,21 @@ export default function OrderConfirmation() {
       )}
 
       <div className="basket-actions">
+        <button type="button" className="btn-primary" onClick={() => navigate("/wallet")}>
+          <ShoppingBasket size={18} /> Back to Wallet
+        </button>
         {/* ✅ Share Your Investment */}
         {showSuccess && orders.length > 0 && (
           <button
             type="button"
-            className="btn-primary"
+            className="btn-secondary"
             onClick={() => setIsShareOpen(true)}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
           >
-            <Share2 size={18} /> Share Your Investment
+            <Share2 size={18} /> Share Your Investment Idea
           </button>
         )}
 
-        <button type="button" className="btn-secondary" onClick={() => navigate("/wallet")}>
-          <ShoppingBasket size={18} /> Back to Wallet
-        </button>
       </div>
 
       {/* ✅ Disclosure with broker name from storage */}

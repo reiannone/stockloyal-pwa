@@ -71,6 +71,116 @@ function logCsvFile($conn, $merchantId, $broker, $filename, $relativePath, $file
     }
 }
 
+/**
+ * Generate a minimal XLSX (Office Open XML) with multiple named sheets.
+ *
+ * @param string $path   Output file path
+ * @param array  $sheets ['Sheet Name' => [['H1','H2'], ['v1','v2'], ...], ...]
+ */
+function writeXlsx(string $path, array $sheets): void
+{
+    $zip = new ZipArchive();
+    if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException("Cannot create XLSX at {$path}");
+    }
+
+    $sheetNames = array_keys($sheets);
+    $sheetCount = count($sheetNames);
+
+    // [Content_Types].xml
+    $ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        . '<Default Extension="xml" ContentType="application/xml"/>'
+        . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        . '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+    for ($i = 1; $i <= $sheetCount; $i++) {
+        $ct .= '<Override PartName="/xl/worksheets/sheet' . $i . '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    }
+    $ct .= '</Types>';
+    $zip->addFromString('[Content_Types].xml', $ct);
+
+    // _rels/.rels
+    $zip->addFromString('_rels/.rels',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        . '</Relationships>'
+    );
+
+    // xl/_rels/workbook.xml.rels
+    $wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    for ($i = 1; $i <= $sheetCount; $i++) {
+        $wbRels .= '<Relationship Id="rId' . $i . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' . $i . '.xml"/>';
+    }
+    $wbRels .= '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+    $wbRels .= '</Relationships>';
+    $zip->addFromString('xl/_rels/workbook.xml.rels', $wbRels);
+
+    // xl/styles.xml — bold header row style
+    $zip->addFromString('xl/styles.xml',
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
+        . '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+        . '<fills count="2"><fill><patternFill patternType="none"/></fill>'
+        . '<fill><patternFill patternType="gray125"/></fill></fills>'
+        . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+        . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+        . '<cellXfs count="2">'
+        . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+        . '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        . '</cellXfs>'
+        . '</styleSheet>'
+    );
+
+    // xl/workbook.xml
+    $wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . '<sheets>';
+    for ($i = 0; $i < $sheetCount; $i++) {
+        $wb .= '<sheet name="' . htmlspecialchars($sheetNames[$i], ENT_XML1) . '" sheetId="' . ($i + 1) . '" r:id="rId' . ($i + 1) . '"/>';
+    }
+    $wb .= '</sheets></workbook>';
+    $zip->addFromString('xl/workbook.xml', $wb);
+
+    // xl/worksheets/sheetN.xml
+    $sheetIdx = 0;
+    foreach ($sheets as $name => $rows) {
+        $sheetIdx++;
+        $xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<sheetData>';
+
+        foreach ($rows as $rIdx => $cells) {
+            $rowNum = $rIdx + 1;
+            $xml .= '<row r="' . $rowNum . '">';
+            foreach ($cells as $cIdx => $val) {
+                // Column letter(s): A-Z, then AA-AZ etc.
+                $col = chr(65 + ($cIdx % 26));
+                if ($cIdx >= 26) $col = chr(64 + intdiv($cIdx, 26)) . $col;
+                $ref = $col . $rowNum;
+                $style = ($rIdx === 0) ? ' s="1"' : ''; // bold header
+
+                $val = (string)$val;
+                if ($val !== '' && is_numeric($val) && strlen($val) < 15) {
+                    $xml .= '<c r="' . $ref . '"' . $style . '><v>' . $val . '</v></c>';
+                } else {
+                    $escaped = htmlspecialchars($val, ENT_XML1, 'UTF-8');
+                    $xml .= '<c r="' . $ref . '"' . $style . ' t="inlineStr"><is><t>' . $escaped . '</t></is></c>';
+                }
+            }
+            $xml .= '</row>';
+        }
+
+        $xml .= '</sheetData></worksheet>';
+        $zip->addFromString('xl/worksheets/sheet' . $sheetIdx . '.xml', $xml);
+    }
+
+    $zip->close();
+}
+
 try {
     // 1) Parse input
     $raw    = file_get_contents('php://input');
@@ -258,6 +368,70 @@ try {
 
     fclose($fpAch);
 
+    // ========== COMBINED XLSX (two sheets: ACH Summary + Order Detail) ==========
+    $xlsxPath = null;
+    $xlsxFileId = null;
+    $xlsxUrl = null;
+
+    if (class_exists('ZipArchive')) {
+        try {
+            $xlsxPath = $exportDir . '/payments_' . $batchId . '.xlsx';
+
+            $achSummaryRows = [
+                ['batch_id', 'merchant_id', 'broker_id', 'broker_name', 'payment_amount',
+                 'bank_name', 'routing_number', 'account_number', 'account_type', 'order_count'],
+                [
+                    $batchId,
+                    $merchantId,
+                    $brokerInfo ? $brokerInfo['broker_id'] : '',
+                    $broker,
+                    number_format($totalPaymentAmount, 2, '.', ''),
+                    $brokerInfo ? $brokerInfo['ach_bank_name'] : '',
+                    $brokerInfo ? $brokerInfo['ach_routing_num'] : '',
+                    $brokerInfo ? $brokerInfo['ach_account_num'] : '',
+                    $brokerInfo ? $brokerInfo['ach_account_type'] : '',
+                    (string)count($orders),
+                ],
+            ];
+
+            $detailRows = [
+                ['batch_id', 'merchant_id', 'broker', 'member_id', 'order_id',
+                 'basket_id', 'symbol', 'shares', 'amount_cash', 'points_used', 'executed_at'],
+            ];
+            foreach ($orders as $row) {
+                $amountCash2 = $row['executed_amount'] !== null
+                    ? (float)$row['executed_amount']
+                    : (float)$row['amount'];
+
+                $detailRows[] = [
+                    $batchId,
+                    $row['merchant_id'],
+                    $row['broker'],
+                    $row['member_id'],
+                    $row['order_id'],
+                    $row['basket_id'],
+                    $row['symbol'],
+                    $row['shares'],
+                    number_format($amountCash2, 2, '.', ''),
+                    $row['points_used'],
+                    $row['executed_at'],
+                ];
+            }
+
+            writeXlsx($xlsxPath, [
+                'ACH Summary'  => $achSummaryRows,
+                'Order Detail'  => $detailRows,
+            ]);
+
+            error_log("[export-payments-file] XLSX generated: " . basename($xlsxPath));
+        } catch (Throwable $xlsxErr) {
+            error_log("[export-payments-file] XLSX generation failed (non-fatal): " . $xlsxErr->getMessage());
+            $xlsxPath = null; // continue without XLSX
+        }
+    } else {
+        error_log("[export-payments-file] ZipArchive not available, skipping XLSX. Install php-zip: sudo apt install php-zip");
+    }
+
     // ✅ Log CSV files to database for CSV Files Browser
     $detailFileId = logCsvFile(
         $conn, 
@@ -277,10 +451,25 @@ try {
         'ach'
     );
 
+    $xlsxFileId = null;
+    if ($xlsxPath && file_exists($xlsxPath)) {
+        $xlsxFileId = logCsvFile(
+            $conn,
+            $merchantId,
+            $broker,
+            basename($xlsxPath),
+            'exports/' . basename($xlsxPath),
+            'xlsx'
+        );
+    }
+
     // Generate download URLs
     $apiBase = rtrim($_ENV['API_BASE'] ?? 'https://api.stockloyal.com/api', '/');
     $detailUrl = $apiBase . '/exports/' . basename($detailCsvPath);
     $achUrl = $apiBase . '/exports/' . basename($achCsvPath);
+    $xlsxUrl = ($xlsxPath && file_exists($xlsxPath))
+        ? $apiBase . '/exports/' . basename($xlsxPath)
+        : null;
 
     // 4) Mark orders as paid + insert ledger entries in a transaction
     try {
@@ -431,7 +620,7 @@ try {
     }
 
     // 5) Success response with new format
-    json_exit([
+    $response = [
         'success' => true,
         'detail_csv' => [
             'filename' => basename($detailCsvPath),
@@ -450,7 +639,18 @@ try {
         'broker' => $broker,
         'order_count' => count($orders),
         'total_amount' => $totalPaymentAmount,
-    ]);
+    ];
+
+    if ($xlsxUrl) {
+        $response['xlsx'] = [
+            'filename' => basename($xlsxPath),
+            'relative_path' => 'exports/' . basename($xlsxPath),
+            'url' => $xlsxUrl,
+            'file_id' => $xlsxFileId,
+        ];
+    }
+
+    json_exit($response);
 } catch (Throwable $e) {
     error_log('export-payment-file fatal: ' . $e->getMessage());
     json_exit([

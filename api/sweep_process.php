@@ -55,6 +55,7 @@ class SweepProcess
     {
         $this->batchId = 'SWP-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
         $startTime     = microtime(true);
+        $startedAt     = date('Y-m-d H:i:s');  // actual wall-clock start for sweep_log
 
         $this->log(str_repeat('=', 80));
         $this->log("SWEEP BATCH START: {$this->batchId}");
@@ -130,7 +131,7 @@ class SweepProcess
 
         // 5. Log batch to sweep_log
         $this->logSweepBatch($totalPlaced, $totalFailed,
-                             count($merchantSet), $brokersNotified, $duration);
+                             count($merchantSet), $brokersNotified, $duration, $startedAt);
 
         $this->log("SWEEP DONE: placed={$totalPlaced}  failed={$totalFailed}  "
                     . "groups=" . count($groups) . "  duration=" . round($duration, 2) . "s");
@@ -518,7 +519,7 @@ class SweepProcess
 
     private function logSweepBatch(
         int $placed, int $failed, int $merchants,
-        array $brokers, float $duration
+        array $brokers, float $duration, string $startedAt
     ): void {
         try {
             $stmt = $this->conn->prepare("
@@ -527,10 +528,11 @@ class SweepProcess
                      merchants_processed, orders_processed,
                      orders_confirmed, orders_failed,
                      brokers_notified, errors, log_data)
-                VALUES (?, NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
                 $this->batchId,
+                $startedAt,
                 $merchants,
                 $placed + $failed,
                 $placed,

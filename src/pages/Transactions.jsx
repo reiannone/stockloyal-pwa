@@ -29,6 +29,7 @@ export default function Transactions() {
   // ── View mode: "orders" (individual) or "baskets" (rollup) ──
   const [viewMode, setViewMode] = useState("baskets");
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+  const [expandedMonths, setExpandedMonths] = useState(new Set());
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -181,6 +182,71 @@ export default function Transactions() {
     });
   }, [filteredOrders]);
 
+  // ── Group baskets by month ──
+  const getMonthKey = (dateStr) => {
+    if (!dateStr) return "Unknown";
+    let iso = String(dateStr).trim();
+    if (!/Z$|[+-]\d{2}/.test(iso)) iso = iso.replace(" ", "T") + "Z";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "Unknown";
+    try {
+      const tz = memberTimezone || detectedTz;
+      const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: tz }).formatToParts(d);
+      const y = parts.find(p => p.type === "year")?.value;
+      const m = parts.find(p => p.type === "month")?.value;
+      return `${y}-${m}`;
+    } catch {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    }
+  };
+
+  const getMonthLabel = (key) => {
+    if (key === "Unknown") return "Unknown Date";
+    const [y, m] = key.split("-");
+    const d = new Date(Number(y), Number(m) - 1, 1);
+    return d.toLocaleString(undefined, { month: "long", year: "numeric" });
+  };
+
+  const currentMonthKey = useMemo(() => {
+    const now = new Date();
+    try {
+      const tz = memberTimezone || detectedTz;
+      const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: tz }).formatToParts(now);
+      const y = parts.find(p => p.type === "year")?.value;
+      const m = parts.find(p => p.type === "month")?.value;
+      return `${y}-${m}`;
+    } catch {
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    }
+  }, [memberTimezone, detectedTz]);
+
+  const monthlyBaskets = useMemo(() => {
+    const groups = new Map();
+    for (const b of basketRollup) {
+      const key = getMonthKey(b.placed_at);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(b);
+    }
+    // Sort month keys descending (newest first)
+    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [basketRollup, memberTimezone, detectedTz]);
+
+  // Initialize expanded months — current month open by default
+  useEffect(() => {
+    if (monthlyBaskets.length > 0 && expandedMonths.size === 0) {
+      setExpandedMonths(new Set([currentMonthKey]));
+    }
+  }, [monthlyBaskets]);
+
+  const toggleMonth = (key) => {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const toggleBasketExpand = (basketId) => {
     setExpandedBaskets((prev) => {
       const next = new Set(prev);
@@ -246,7 +312,7 @@ export default function Transactions() {
 
       {/* --- Page Notice --- */}
       <p className="form-disclosure mt-4">
-        <strong>Note:</strong> This page displays trade orders submitted to and executed by your broker {broker}. Times are shown in <strong>{memberTimezone || detectedTz}</strong>.
+        <strong>Note:</strong> This page displays trade orders submitted to and executed by your broker {broker}. To view points and cash trasnactiosn click "View Trasnactions Ledger".
       </p>
 
       {/* Filter bar */}
@@ -399,14 +465,47 @@ export default function Transactions() {
           {orders.length === 0 ? "No Order transactions found." : "No orders match the current filter."}
         </p>
       ) : viewMode === "baskets" ? (
-        /* ── BASKET ROLLUP VIEW ── */
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {basketRollup.map((b) => {
-            const isExpanded = expandedBaskets.has(b.basket_id);
-            const status = getBasketStatus(b.statuses);
+        /* ── BASKET ROLLUP VIEW — grouped by month ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {monthlyBaskets.map(([monthKey, baskets]) => {
+            const isMonthOpen = expandedMonths.has(monthKey);
+            const isCurrent = monthKey === currentMonthKey;
 
             return (
-              <div key={b.basket_id} className="card" style={{ padding: 0, overflow: "hidden" }}>
+              <div key={monthKey}>
+                {/* Month banner */}
+                <div
+                  onClick={() => toggleMonth(monthKey)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 14px",
+                    background: isCurrent ? "#eff6ff" : "#f8fafc",
+                    border: `1px solid ${isCurrent ? "#bfdbfe" : "#e2e8f0"}`,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: "0.95rem", color: "#1e293b" }}>
+                    {getMonthLabel(monthKey)}{isCurrent ? " (Current)" : ""}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", color: "#64748b" }}>
+                    {baskets.length} basket{baskets.length !== 1 ? "s" : ""}
+                    <span style={{ fontSize: "1.1rem" }}>{isMonthOpen ? "▲" : "▼"}</span>
+                  </span>
+                </div>
+
+                {/* Baskets in this month */}
+                {isMonthOpen && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
+                    {baskets.map((b) => {
+                      const isExpanded = expandedBaskets.has(b.basket_id);
+                      const status = getBasketStatus(b.statuses);
+
+                      return (
+                        <div key={b.basket_id} className="card" style={{ padding: 0, overflow: "hidden" }}>
                 {/* Basket header — clickable to expand */}
                 <div
                   onClick={() => toggleBasketExpand(b.basket_id)}
@@ -520,6 +619,11 @@ export default function Transactions() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
                   </div>
                 )}
               </div>
@@ -734,15 +838,20 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* --- Centered Action Buttons --- */}
+      {/* --- Centered Action Buttons (Sticky) --- */}
       <div
         className="transactions-actions"
         style={{
+          position: "sticky",
+          bottom: 0,
+          zIndex: 10,
+          background: "linear-gradient(transparent, #f8fafc 12px)",
+          paddingTop: 16,
+          paddingBottom: 12,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: "10px",
-          marginTop: "20px",
         }}
       >
         {/* Row with the two secondary buttons: Portfolio (left) + Ledger (right) */}

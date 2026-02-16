@@ -10,7 +10,8 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [mode, setMode] = useState("checking"); // checking | login | create | forgot | reset
+  const [mode, setMode] = useState("checking"); // checking | welcome-back | login | create | forgot | reset
+  const [welcomeName, setWelcomeName] = useState("");
 
   // Login identifier (username OR email)
   const [identifier, setIdentifier] = useState("");
@@ -112,9 +113,10 @@ export default function Login() {
                 return;
               }
 
-              // Existing user with wallet — points already applied server-side
-              console.log("[Login] User has wallet, redirecting to wallet");
-              navigate("/wallet");
+              // Existing user with wallet — show welcome back briefly
+              console.log("[Login] User has wallet, showing welcome-back");
+              setWelcomeName(lsMemberId);
+              setMode("welcome-back");
               return;
             }
           } catch (walletErr) {
@@ -137,6 +139,13 @@ export default function Login() {
       }
     })();
   }, [detectedConv, navigate]);
+
+  // ── Welcome-back: pause briefly then redirect ──
+  useEffect(() => {
+    if (mode !== "welcome-back") return;
+    const timer = setTimeout(() => navigate("/wallet"), 2500);
+    return () => clearTimeout(timer);
+  }, [mode, navigate]);
 
   // ───────────────────────────────────────────────────
   // Apply any pending inbound points after account creation.
@@ -454,6 +463,8 @@ export default function Login() {
       <h2 className="page-title">
         {isChecking
           ? "Checking your account..."
+          : mode === "welcome-back"
+          ? `Welcome back, ${welcomeName}!`
           : mode === "login"
           ? "Login to StockLoyal"
           : mode === "forgot"
@@ -474,6 +485,17 @@ export default function Login() {
 
       {isChecking ? (
         <p>One moment while we check your account status…</p>
+      ) : mode === "welcome-back" ? (
+        <div style={{ textAlign: "center", padding: "2rem 0" }}>
+          <p style={{ fontSize: "1.05rem", color: "#64748b" }}>Taking you to your wallet…</p>
+          <div style={{
+            width: 40, height: 40, margin: "1.5rem auto 0",
+            border: "3px solid #e2e8f0", borderTopColor: "#3b82f6",
+            borderRadius: "50%",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
       ) : mode === "login" ? (
         <form className="form member-form-grid" onSubmit={handleLogin}>
           <div className="member-form-row">

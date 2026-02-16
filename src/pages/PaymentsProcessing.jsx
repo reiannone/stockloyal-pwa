@@ -2,8 +2,13 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiGet, apiPost } from "../api.js";
-import { CheckCircle, AlertCircle, Loader2, CreditCard, Building2, Store, XCircle, History, RotateCcw } from "lucide-react";
+import {
+  CheckCircle, AlertCircle, Loader2, CreditCard, Building2, Store,
+  XCircle, History, RotateCcw, RefreshCw, ChevronUp, ChevronDown,
+  ShoppingBasket, FileSpreadsheet, Download, Clock, Info,
+} from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
+import ConfirmModal from "../components/ConfirmModal";
 
 function safeNum(v) {
   const n = Number(v);
@@ -22,37 +27,50 @@ export default function PaymentsProcessing() {
   const query = useQuery();
   const merchantId = (query.get("merchant_id") || "").trim();
 
-  // Merchant directory
+  // ── Core state ──
   const [merchants, setMerchants] = useState([]);
   const [merchantsLoading, setMerchantsLoading] = useState(true);
-
-  // MODE A: All Merchants View
   const [allLoading, setAllLoading] = useState(false);
   const [allError, setAllError] = useState("");
-  const [merchantRows, setMerchantRows] = useState([]);
-
-  // MODE B: Single Merchant View
+  const [allOrders, setAllOrders] = useState([]); // flat order array for hierarchy
   const [mLoading, setMLoading] = useState(false);
   const [mError, setMError] = useState("");
   const [mOrders, setMOrders] = useState([]);
   const [mSummary, setMSummary] = useState([]);
+  const [activeTab, setActiveTab] = useState("unpaid");
 
-  // ✅ NEW: Batch processing state
+  // ── Batch processing ──
   const [processing, setProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState(null);
   const [processResults, setProcessResults] = useState([]);
-  const [showConfirmModal, setShowConfirmModal] = useState(null); // 'all' | 'merchant' | 'broker' | 'cancel-batch' | 'cancel-order' | null
-  const [selectedBroker, setSelectedBroker] = useState(null);
 
-  // ✅ NEW: Cancel/History state
-  const [showHistory, setShowHistory] = useState(false);
-  const [settledBatches, setSettledBatches] = useState([]);
+  // ── Modal ──
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", details: null,
+    icon: <CreditCard size={20} color="#3b82f6" />,
+    confirmText: "Confirm", confirmColor: "#3b82f6", data: null,
+  });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  // ── History ──
+  const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyTotal, setHistoryTotal] = useState(0);
-  const [selectedCancelBatch, setSelectedCancelBatch] = useState(null);
   const [cancelResults, setCancelResults] = useState(null);
+
+  // Pipeline queue counts
+  const [queueCounts, setQueueCounts] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiPost("admin-queue-counts.php");
+        if (data?.success) setQueueCounts(data.counts);
+      } catch (err) {
+        console.warn("[PaymentsProcessing] queue counts fetch failed:", err);
+      }
+    })();
+  }, []);
 
   // Load merchant list once
   useEffect(() => {
@@ -65,91 +83,54 @@ export default function PaymentsProcessing() {
         if (res?.success && Array.isArray(res.merchants)) setMerchants(res.merchants);
         else setMerchants([]);
       } catch (e) {
-        console.error("[PaymentsProcessing] get-merchants error:", e);
         if (mounted) setMerchants([]);
       } finally {
         if (mounted) setMerchantsLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const merchantName = useMemo(() => {
     if (!merchantId) return "";
-    const m = merchants.find((x) => x.merchant_id === merchantId);
-    return m?.merchant_name || "";
+    return merchants.find((x) => x.merchant_id === merchantId)?.merchant_name || "";
   }, [merchants, merchantId]);
 
-  // Amount helper
-  const getOrderPaymentAmount = (o) => safeNum(o?.payment_amount ?? o?.executed_amount ?? o?.amount ?? 0);
+  const getOrderPaymentAmount = (o) =>
+    safeNum(o?.payment_amount ?? o?.executed_amount ?? o?.amount ?? 0);
 
-  // Build one row per merchant (All Merchants view)
-  const buildMerchantRow = (merchant, orders = []) => {
-    const basketSet = new Set();
-    const brokerSet = new Set();
-    const symbolSet = new Set();
-    const memberSet = new Set();
-    let totalAmount = 0;
-
-    for (const o of orders || []) {
-      if (o?.basket_id) basketSet.add(o.basket_id);
-      if (o?.broker) brokerSet.add(o.broker);
-      if (o?.symbol) symbolSet.add(o.symbol);
-      if (o?.member_id) memberSet.add(o.member_id);
-      totalAmount += getOrderPaymentAmount(o);
-    }
-
-    return {
-      merchant_id: merchant?.merchant_id || "",
-      merchant_name: merchant?.merchant_name || "",
-      unpaid_orders: (orders || []).length,
-      unpaid_baskets: basketSet.size,
-      brokers: brokerSet.size,
-      brokerList: Array.from(brokerSet),
-      members: memberSet.size,
-      securities: symbolSet.size,
-      total_payment_due: totalAmount,
-      _orders: orders,
-    };
-  };
-
-  // Load ALL merchants unpaid
+  // ── Load ALL merchants unpaid (flat orders array) ──
   const loadAllMerchants = useCallback(async () => {
     if (!merchants?.length) return;
-
     setAllLoading(true);
     setAllError("");
     try {
-      const results = await Promise.all(
+      const flat = [];
+      await Promise.all(
         merchants.map(async (m) => {
           try {
             const res = await apiPost("get-payments.php", { merchant_id: m.merchant_id });
             const orders = Array.isArray(res?.orders) ? res.orders : [];
-            return buildMerchantRow(m, orders);
+            for (const o of orders) {
+              flat.push({ ...o, merchant_name: m.merchant_name || m.merchant_id });
+            }
           } catch (e) {
             console.error("[PaymentsProcessing] get-payments failed for", m.merchant_id, e);
-            return buildMerchantRow(m, []);
           }
         })
       );
-
-      results.sort((a, b) => safeNum(b.total_payment_due) - safeNum(a.total_payment_due));
-      setMerchantRows(results);
+      setAllOrders(flat);
     } catch (e) {
-      console.error("[PaymentsProcessing] loadAllMerchants error:", e);
       setAllError("Failed to load merchant payment summary.");
-      setMerchantRows([]);
+      setAllOrders([]);
     } finally {
       setAllLoading(false);
     }
   }, [merchants]);
 
-  // Load SINGLE merchant unpaid
+  // ── Load SINGLE merchant unpaid ──
   const loadSingleMerchant = useCallback(async (mid) => {
     if (!mid) return;
-
     setMLoading(true);
     setMError("");
     try {
@@ -157,22 +138,23 @@ export default function PaymentsProcessing() {
       if (!res?.success) {
         setMOrders([]);
         setMSummary([]);
-        setMError(res?.error || "Failed to load merchant payments.");
+        setMError(res?.error || "Failed to load.");
         return;
       }
-      setMOrders(Array.isArray(res.orders) ? res.orders : []);
+      // Tag orders with merchant_name
+      const mName = merchants.find((x) => x.merchant_id === mid)?.merchant_name || mid;
+      const orders = (res.orders || []).map((o) => ({ ...o, merchant_name: mName }));
+      setMOrders(orders);
       setMSummary(Array.isArray(res.summary) ? res.summary : []);
     } catch (e) {
-      console.error("[PaymentsProcessing] loadSingleMerchant error:", e);
       setMOrders([]);
       setMSummary([]);
       setMError("Failed to load merchant payments.");
     } finally {
       setMLoading(false);
     }
-  }, []);
+  }, [merchants]);
 
-  // Auto-load depending on mode
   useEffect(() => {
     if (merchantId) {
       loadSingleMerchant(merchantId);
@@ -181,214 +163,97 @@ export default function PaymentsProcessing() {
     }
   }, [merchantId, merchantsLoading, merchants.length, loadAllMerchants, loadSingleMerchant]);
 
-  // Top totals (All Merchants)
-  const topTotals = useMemo(() => {
-    const active = merchantRows.filter((r) => (r.unpaid_orders || 0) > 0);
-
-    let unpaid_orders = 0;
-    let unpaid_baskets = 0;
-    let total_payment_due = 0;
-
-    const brokerSet = new Set();
-    const memberSet = new Set();
-    const symbolSet = new Set();
-
-    for (const r of active) {
-      unpaid_orders += safeNum(r.unpaid_orders);
-      unpaid_baskets += safeNum(r.unpaid_baskets);
-      total_payment_due += safeNum(r.total_payment_due);
-
-      for (const o of r._orders || []) {
-        if (o?.broker) brokerSet.add(o.broker);
-        if (o?.member_id) memberSet.add(o.member_id);
-        if (o?.symbol) symbolSet.add(o.symbol);
+  // ── Load payment history ──
+  const loadHistory = useCallback(async (loadMore = false) => {
+    setHistoryLoading(true);
+    try {
+      const offset = loadMore ? history.length : 0;
+      const res = await apiPost("get-settled-batches.php", {
+        merchant_id: merchantId || null, limit: 25, offset,
+      });
+      if (res?.success && Array.isArray(res.batches)) {
+        if (loadMore) setHistory((prev) => [...prev, ...res.batches]);
+        else setHistory(res.batches);
+        setHistoryHasMore(res.has_more || false);
+        setHistoryTotal(res.total || 0);
+      } else {
+        if (!loadMore) setHistory([]);
+        setHistoryHasMore(false);
       }
+    } catch (err) {
+      if (!loadMore) setHistory([]);
+      setHistoryHasMore(false);
+    } finally {
+      setHistoryLoading(false);
     }
+  }, [merchantId, history.length]);
 
-    return {
-      merchants_total: merchantRows.length,
-      merchants_with_unpaid: active.length,
-      unpaid_orders,
-      unpaid_baskets,
-      brokers: brokerSet.size,
-      members: memberSet.size,
-      securities: symbolSet.size,
-      total_payment_due,
-    };
-  }, [merchantRows]);
+  useEffect(() => {
+    if (activeTab === "history") loadHistory();
+  }, [activeTab]);
 
-  // Check if all caught up
-  const isAllCaughtUp = useMemo(() => {
-    return (
-      !allLoading &&
-      merchantRows.length > 0 &&
-      topTotals.merchants_with_unpaid === 0 &&
-      topTotals.unpaid_orders === 0
-    );
-  }, [allLoading, merchantRows.length, topTotals]);
-
-  // Build per-broker basket counts
-  const basketCountByBroker = useMemo(() => {
-    const map = new Map();
-    for (const o of mOrders || []) {
-      const b = (o?.broker || "Unknown").toString().trim() || "Unknown";
-      if (!map.has(b)) map.set(b, new Set());
-      if (o?.basket_id) map.get(b).add(o.basket_id);
-    }
-    const out = new Map();
-    for (const [b, set] of map.entries()) out.set(b, set.size);
-    return out;
-  }, [mOrders]);
-
-  // Broker Summary rows
-  const brokerRows = useMemo(() => {
-    if (!merchantId) return [];
-
-    const map = new Map();
-
+  // ── Broker summary map (for ACH details) ──
+  const brokerDetailsMap = useMemo(() => {
+    const map = {};
     for (const s of mSummary || []) {
-      const b = (s?.broker || s?.broker_name || s?.broker_id || "Unknown").toString().trim() || "Unknown";
-      if (!map.has(b)) {
-        map.set(b, {
-          broker: b,
-          broker_username: s?.broker_username || "",
-          broker_id: s?.broker_id || "",
-          ach_bank_name: s?.ach_bank_name || "",
-          ach_routing_num: s?.ach_routing_num || "",
-          ach_account_num: s?.ach_account_num || "",
-          ach_account_type: s?.ach_account_type || "",
-          unpaidOrders: 0,
-          unpaidBaskets: 0,
-          totalAch: 0,
-        });
-      }
-
-      const row = map.get(b);
-      row.unpaidOrders += safeNum(s?.order_count ?? s?.orders ?? s?.unpaid_orders ?? 0);
-      row.totalAch += safeNum(
-        s?.total_payment_due ?? s?.total_payment_amount ?? s?.total_amount ?? s?.amount_total ?? s?.ach_total ?? 0
-      );
-    }
-
-    if (map.size === 0 && (mOrders || []).length > 0) {
-      for (const o of mOrders) {
-        const b = (o?.broker || "Unknown").toString().trim() || "Unknown";
-        if (!map.has(b)) {
-          map.set(b, {
-            broker: b,
-            broker_username: o?.broker_username || "",
-            broker_id: "",
-            ach_bank_name: "",
-            ach_routing_num: "",
-            ach_account_num: "",
-            ach_account_type: "",
-            unpaidOrders: 0,
-            unpaidBaskets: 0,
-            totalAch: 0,
-          });
-        }
-        const row = map.get(b);
-        row.unpaidOrders += 1;
-        row.totalAch += getOrderPaymentAmount(o);
+      const b = (s?.broker || "Unknown").toString().trim();
+      if (!map[b]) {
+        map[b] = {
+          broker_id: s.broker_id || "",
+          ach_bank_name: s.ach_bank_name || "",
+          ach_routing_num: s.ach_routing_num || "",
+          ach_account_num: s.ach_account_num || "",
+          ach_account_type: s.ach_account_type || "",
+        };
       }
     }
+    return map;
+  }, [mSummary]);
 
-    for (const [b, row] of map.entries()) {
-      row.unpaidBaskets = safeNum(basketCountByBroker.get(b) ?? 0);
+  // ── Summary stats ──
+  const orders = merchantId ? mOrders : allOrders;
+  const topTotals = useMemo(() => {
+    const merchantSet = new Set();
+    const brokerSet = new Set();
+    const basketSet = new Set();
+    const memberSet = new Set();
+    let totalDue = 0;
+    for (const o of orders) {
+      if (o.merchant_id) merchantSet.add(o.merchant_id);
+      if (o.broker) brokerSet.add(o.broker);
+      if (o.basket_id) basketSet.add(o.basket_id);
+      if (o.member_id) memberSet.add(o.member_id);
+      totalDue += getOrderPaymentAmount(o);
     }
+    return {
+      merchants: merchantSet.size, brokers: brokerSet.size,
+      baskets: basketSet.size, members: memberSet.size,
+      orders: orders.length, totalDue,
+    };
+  }, [orders]);
 
-    const rows = Array.from(map.values());
-    rows.sort((a, b) => safeNum(b.totalAch) - safeNum(a.totalAch));
-    return rows;
-  }, [merchantId, mSummary, mOrders, basketCountByBroker]);
-
-  const merchantAchTotals = useMemo(() => {
-    if (!merchantId) return { brokers: 0, unpaidOrders: 0, unpaidBaskets: 0, totalAch: 0 };
-
-    const totalAch = brokerRows.reduce((sum, r) => sum + safeNum(r.totalAch), 0);
-    const unpaidOrders = brokerRows.reduce((sum, r) => sum + safeNum(r.unpaidOrders), 0);
-    const unpaidBaskets = brokerRows.reduce((sum, r) => sum + safeNum(r.unpaidBaskets), 0);
-
-    return { brokers: brokerRows.length, unpaidOrders, unpaidBaskets, totalAch };
-  }, [merchantId, brokerRows]);
-
-  // ✅ NEW: Process single broker
+  // ── Process functions ──
   const processBroker = async (mid, broker) => {
     try {
-      const res = await apiPost("export-payments-file.php", {
-        merchant_id: mid,
-        broker: broker,
-      });
+      const res = await apiPost("export-payments-file.php", { merchant_id: mid, broker });
       return {
-        merchant_id: mid,
-        broker,
+        merchant_id: mid, broker,
         success: res?.success || false,
         batch_id: res?.batch_id || null,
         order_count: res?.order_count || 0,
         total_amount: res?.total_amount || 0,
         error: res?.error || null,
+        xlsx: res?.xlsx || null,
         detail_csv: res?.detail_csv || null,
         ach_csv: res?.ach_csv || null,
       };
     } catch (err) {
-      return {
-        merchant_id: mid,
-        broker,
-        success: false,
-        error: err.message || "Network error",
-      };
+      return { merchant_id: mid, broker, success: false, error: err.message };
     }
   };
 
-  // ✅ NEW: Process all brokers for a merchant
-  const processMerchant = async (mid, brokers) => {
-    const results = [];
-    for (let i = 0; i < brokers.length; i++) {
-      const broker = brokers[i];
-      setProcessProgress({
-        type: "merchant",
-        merchant_id: mid,
-        current: i + 1,
-        total: brokers.length,
-        currentBroker: broker,
-      });
-      const result = await processBroker(mid, broker);
-      results.push(result);
-    }
-    return results;
-  };
-
-  // ✅ NEW: Process ALL merchants and brokers
-  const processAll = async () => {
-    const allResults = [];
-    const merchantsWithUnpaid = merchantRows.filter((r) => r.unpaid_orders > 0 && r.brokerList?.length > 0);
-    
-    let totalBrokers = 0;
-    for (const m of merchantsWithUnpaid) {
-      totalBrokers += m.brokerList.length;
-    }
-
-    let processed = 0;
-    for (const m of merchantsWithUnpaid) {
-      for (const broker of m.brokerList) {
-        processed++;
-        setProcessProgress({
-          type: "all",
-          current: processed,
-          total: totalBrokers,
-          currentMerchant: m.merchant_id,
-          currentBroker: broker,
-        });
-        const result = await processBroker(m.merchant_id, broker);
-        allResults.push(result);
-      }
-    }
-    return allResults;
-  };
-
-  // ✅ NEW: Handle batch processing
-  const handleBatchProcess = async (type, broker = null) => {
-    setShowConfirmModal(null);
+  const handleBatchProcess = async (type, data = {}) => {
+    closeModal();
     setProcessing(true);
     setProcessResults([]);
     setProcessProgress(null);
@@ -397,23 +262,43 @@ export default function PaymentsProcessing() {
       let results = [];
 
       if (type === "all") {
-        results = await processAll();
-      } else if (type === "merchant" && merchantId) {
-        const brokers = brokerRows.map((r) => r.broker);
-        results = await processMerchant(merchantId, brokers);
-      } else if (type === "broker" && merchantId && broker) {
-        const result = await processBroker(merchantId, broker);
-        results = [result];
+        // Build merchant→broker map from orders
+        const map = {};
+        for (const o of orders) {
+          const mid = o.merchant_id || "unknown";
+          const br = o.broker || "Unknown";
+          if (!map[mid]) map[mid] = new Set();
+          map[mid].add(br);
+        }
+        const pairs = [];
+        for (const [mid, brokers] of Object.entries(map)) {
+          for (const br of brokers) pairs.push({ mid, broker: br });
+        }
+        for (let i = 0; i < pairs.length; i++) {
+          setProcessProgress({ current: i + 1, total: pairs.length, currentBroker: pairs[i].broker, currentMerchant: pairs[i].mid });
+          results.push(await processBroker(pairs[i].mid, pairs[i].broker));
+        }
+      } else if (type === "merchant") {
+        const mid = data.merchantId;
+        const brokerSet = new Set();
+        for (const o of orders) {
+          if (o.merchant_id === mid && o.broker) brokerSet.add(o.broker);
+        }
+        const brokers = Array.from(brokerSet);
+        for (let i = 0; i < brokers.length; i++) {
+          setProcessProgress({ current: i + 1, total: brokers.length, currentBroker: brokers[i], currentMerchant: mid });
+          results.push(await processBroker(mid, brokers[i]));
+        }
+      } else if (type === "broker") {
+        setProcessProgress({ current: 1, total: 1, currentBroker: data.broker, currentMerchant: data.merchantId });
+        results.push(await processBroker(data.merchantId, data.broker));
       }
 
       setProcessResults(results);
 
-      // Refresh data after processing
-      if (merchantId) {
-        await loadSingleMerchant(merchantId);
-      } else {
-        await loadAllMerchants();
-      }
+      // Refresh
+      if (merchantId) await loadSingleMerchant(merchantId);
+      else await loadAllMerchants();
     } catch (err) {
       console.error("[PaymentsProcessing] Batch processing error:", err);
     } finally {
@@ -422,1021 +307,822 @@ export default function PaymentsProcessing() {
     }
   };
 
-  // ✅ NEW: Load settled payment history with pagination
-  const loadSettledHistory = async (loadMore = false) => {
-    if (loadMore) {
-      setHistoryLoadingMore(true);
-    } else {
-      setHistoryLoading(true);
-      setSettledBatches([]);
-    }
-    
-    try {
-      const offset = loadMore ? settledBatches.length : 0;
-      const res = await apiPost("get-settled-batches.php", {
-        merchant_id: merchantId || null,
-        limit: 25,
-        offset: offset
-      });
-      
-      if (res?.success && Array.isArray(res.batches)) {
-        if (loadMore) {
-          setSettledBatches(prev => [...prev, ...res.batches]);
-        } else {
-          setSettledBatches(res.batches);
-        }
-        setHistoryHasMore(res.has_more || false);
-        setHistoryTotal(res.total || 0);
-      } else {
-        if (!loadMore) setSettledBatches([]);
-        setHistoryHasMore(false);
-      }
-    } catch (err) {
-      console.error("[PaymentsProcessing] Failed to load settled history:", err);
-      if (!loadMore) setSettledBatches([]);
-      setHistoryHasMore(false);
-    } finally {
-      setHistoryLoading(false);
-      setHistoryLoadingMore(false);
-    }
-  };
-
-  // ✅ NEW: Cancel a payment batch
+  // ── Cancel payment ──
   const handleCancelPayment = async (batchId) => {
-    setShowConfirmModal(null);
+    closeModal();
     setProcessing(true);
     setCancelResults(null);
-
     try {
-      const res = await apiPost("cancel-payment.php", {
-        batch_id: batchId,
-        remove_ledger: true
-      });
-
+      const res = await apiPost("cancel-payment.php", { batch_id: batchId, remove_ledger: true });
       setCancelResults({
-        success: res?.success || false,
-        batch_id: batchId,
+        success: res?.success || false, batch_id: batchId,
         orders_cancelled: res?.orders_cancelled || 0,
         ledger_entries_removed: res?.ledger_entries_removed || 0,
-        error: res?.error || null
+        error: res?.error || null,
       });
-
-      // Refresh data
-      if (showHistory) {
-        await loadSettledHistory();
-      }
-      if (merchantId) {
-        await loadSingleMerchant(merchantId);
-      } else {
-        await loadAllMerchants();
-      }
+      if (activeTab === "history") await loadHistory();
+      if (merchantId) await loadSingleMerchant(merchantId);
+      else await loadAllMerchants();
     } catch (err) {
-      console.error("[PaymentsProcessing] Cancel payment error:", err);
-      setCancelResults({
-        success: false,
-        batch_id: batchId,
-        error: err.message || "Network error"
-      });
+      setCancelResults({ success: false, batch_id: batchId, error: err.message });
     } finally {
       setProcessing(false);
-      setSelectedCancelBatch(null);
     }
   };
 
-  // Navigation helpers
-  const goToMerchant = (mid) => mid && navigate(`/payments-processing?merchant_id=${encodeURIComponent(mid)}`);
-  const backToAll = () => navigate(`/payments-processing`);
-
-  // ✅ Confirmation Modal
-  const ConfirmModal = () => {
-    if (!showConfirmModal) return null;
-
-    const getModalContent = () => {
-      if (showConfirmModal === "all") {
-        return {
-          title: "Process All Payments",
-          icon: <CreditCard size={32} color="#3b82f6" />,
-          message: `This will process payments for ${topTotals.merchants_with_unpaid} merchant(s), ${topTotals.brokers} broker(s), settling ${topTotals.unpaid_orders} orders totaling ${fmtMoney(topTotals.total_payment_due)}.`,
-          confirmText: "Confirm & Process",
-          confirmColor: "#3b82f6",
-          onConfirm: () => handleBatchProcess("all"),
-          warning: (
-            <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
-              <li>Generate CSV export files</li>
-              <li>Mark orders as "settled"</li>
-              <li>Set paid_flag = 1</li>
-              <li>Record paid_at timestamp</li>
-            </ul>
-          ),
-        };
-      } else if (showConfirmModal === "merchant") {
-        return {
-          title: "Process Merchant Payments",
-          icon: <Store size={32} color="#10b981" />,
-          message: `This will process payments for ${merchantAchTotals.brokers} broker(s), settling ${merchantAchTotals.unpaidOrders} orders totaling ${fmtMoney(merchantAchTotals.totalAch)}.`,
-          confirmText: "Confirm & Process",
-          confirmColor: "#10b981",
-          onConfirm: () => handleBatchProcess("merchant"),
-          warning: (
-            <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
-              <li>Generate CSV export files</li>
-              <li>Mark orders as "settled"</li>
-              <li>Set paid_flag = 1</li>
-              <li>Record paid_at timestamp</li>
-            </ul>
-          ),
-        };
-      } else if (showConfirmModal === "broker") {
-        const brokerData = brokerRows.find((r) => r.broker === selectedBroker);
-        return {
-          title: "Process Broker Payments",
-          icon: <Building2 size={32} color="#f59e0b" />,
-          message: `This will process payments for broker "${selectedBroker}", settling ${brokerData?.unpaidOrders || 0} orders totaling ${fmtMoney(brokerData?.totalAch || 0)}.`,
-          confirmText: "Confirm & Process",
-          confirmColor: "#f59e0b",
-          onConfirm: () => handleBatchProcess("broker", selectedBroker),
-          warning: (
-            <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
-              <li>Generate CSV export files</li>
-              <li>Mark orders as "settled"</li>
-              <li>Set paid_flag = 1</li>
-              <li>Record paid_at timestamp</li>
-            </ul>
-          ),
-        };
-      } else if (showConfirmModal === "cancel-batch") {
-        const batch = settledBatches.find((b) => b.batch_id === selectedCancelBatch);
-        return {
-          title: "Cancel Payment Batch",
-          icon: <XCircle size={32} color="#ef4444" />,
-          message: `This will reverse batch "${selectedCancelBatch}", restoring ${batch?.order_count || "?"} orders totaling ${fmtMoney(batch?.total_amount || 0)} back to "executed" status.`,
-          confirmText: "Confirm Cancel",
-          confirmColor: "#ef4444",
-          onConfirm: () => handleCancelPayment(selectedCancelBatch),
-          warning: (
-            <ul style={{ margin: "4px 0 0", paddingLeft: "16px" }}>
-              <li>Revert orders to "executed" status</li>
-              <li>Set paid_flag = 0</li>
-              <li>Clear paid_at and paid_batch_id</li>
-              <li>Remove ledger entries</li>
-            </ul>
-          ),
-          warningColor: "#fef2f2",
-          warningBorder: "#ef4444",
-        };
-      }
-      return { title: "", icon: null, message: "", onConfirm: () => {} };
-    };
-
-    const content = getModalContent();
-
-    return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-        }}
-        onClick={() => setShowConfirmModal(null)}
-      >
-        <div
-          style={{
-            backgroundColor: "white",
-            borderRadius: "12px",
-            padding: "24px",
-            maxWidth: "450px",
-            width: "90%",
-            boxShadow: "0 20px 50px rgba(0,0,0,0.2)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div style={{ textAlign: "center", marginBottom: "16px" }}>
-            <div
-              style={{
-                width: "64px",
-                height: "64px",
-                borderRadius: "50%",
-                backgroundColor: content.warningColor || "#eff6ff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 16px",
-              }}
-            >
-              {content.icon}
-            </div>
-            <h2 style={{ margin: "0 0 8px", fontSize: "20px", fontWeight: "700" }}>{content.title}</h2>
-            <p style={{ margin: 0, color: "#6b7280", fontSize: "14px", lineHeight: 1.5 }}>{content.message}</p>
-          </div>
-
-          <div
-            style={{
-              backgroundColor: content.warningColor || "#fef3c7",
-              border: `1px solid ${content.warningBorder || "#f59e0b"}`,
-              borderRadius: "8px",
-              padding: "12px",
-              marginBottom: "20px",
-            }}
-          >
-            <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
-              <AlertCircle size={18} color={content.warningBorder || "#d97706"} style={{ flexShrink: 0, marginTop: "2px" }} />
-              <div style={{ fontSize: "13px", color: content.warningBorder === "#ef4444" ? "#991b1b" : "#92400e" }}>
-                <strong>This action will:</strong>
-                {content.warning}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "12px" }}>
-            <button
-              onClick={() => setShowConfirmModal(null)}
-              style={{
-                flex: 1,
-                padding: "12px",
-                border: "1px solid #d1d5db",
-                borderRadius: "8px",
-                backgroundColor: "white",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={content.onConfirm}
-              style={{
-                flex: 1,
-                padding: "12px",
-                border: "none",
-                borderRadius: "8px",
-                backgroundColor: content.confirmColor || "#3b82f6",
-                color: "white",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: "600",
-              }}
-            >
-              {content.confirmText || "Confirm"}
-            </button>
-          </div>
+  // ── Confirm handlers ──
+  const confirmProcessAll = () => {
+    setModal({
+      show: true, title: "Process All Payments",
+      message: `Process payments for ${topTotals.merchants} merchant(s), ${topTotals.brokers} broker(s), settling ${topTotals.orders} orders totaling ${fmtMoney(topTotals.totalDue)}.`,
+      details: (
+        <div style={{ fontSize: "0.82rem", color: "#92400e", background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>
+          <strong>This will:</strong> Generate XLSX + CSV files, mark orders settled, set paid_flag = 1, record ledger entries.
         </div>
-      </div>
-    );
+      ),
+      icon: <CreditCard size={20} color="#3b82f6" />,
+      confirmText: "Confirm & Process", confirmColor: "#3b82f6",
+      data: { type: "all" },
+    });
   };
 
-  // ✅ Progress Indicator
-  const ProgressIndicator = () => {
-    if (!processing || !processProgress) return null;
-
-    return (
-      <div
-        style={{
-          backgroundColor: "#eff6ff",
-          border: "2px solid #3b82f6",
-          borderRadius: "8px",
-          padding: "16px",
-          marginBottom: "16px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          <Loader2 size={20} color="#3b82f6" style={{ animation: "spin 1s linear infinite" }} />
-          <span style={{ fontWeight: "600", color: "#1e40af" }}>
-            Processing... {processProgress.current} of {processProgress.total}
-          </span>
-        </div>
-        <div style={{ fontSize: "13px", color: "#3730a3" }}>
-          {processProgress.currentMerchant && <span>Merchant: {processProgress.currentMerchant} • </span>}
-          Broker: {processProgress.currentBroker}
-        </div>
-        <div
-          style={{
-            marginTop: "8px",
-            height: "8px",
-            backgroundColor: "#dbeafe",
-            borderRadius: "4px",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              backgroundColor: "#3b82f6",
-              width: `${(processProgress.current / processProgress.total) * 100}%`,
-              transition: "width 0.3s ease",
-            }}
-          />
-        </div>
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
+  const confirmProcessMerchant = (mid, mName, count, amount) => {
+    setModal({
+      show: true, title: "Process Merchant Payments",
+      message: `Process all payments for ${mName || mid}: ${count} orders totaling ${fmtMoney(amount)}.`,
+      icon: <Store size={20} color="#8b5cf6" />,
+      confirmText: "Confirm & Process", confirmColor: "#10b981",
+      data: { type: "merchant", merchantId: mid },
+    });
   };
 
-  // ✅ Results Summary
-  const ResultsSummary = () => {
-    if (processResults.length === 0) return null;
-
-    const successful = processResults.filter((r) => r.success);
-    const failed = processResults.filter((r) => !r.success);
-    const totalAmount = successful.reduce((sum, r) => sum + safeNum(r.total_amount), 0);
-    const totalOrders = successful.reduce((sum, r) => sum + safeNum(r.order_count), 0);
-
-    return (
-      <div
-        style={{
-          backgroundColor: successful.length > 0 ? "#ecfdf5" : "#fef2f2",
-          border: `2px solid ${successful.length > 0 ? "#10b981" : "#ef4444"}`,
-          borderRadius: "8px",
-          padding: "16px",
-          marginBottom: "16px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-          {successful.length > 0 ? (
-            <CheckCircle size={24} color="#10b981" />
-          ) : (
-            <AlertCircle size={24} color="#ef4444" />
-          )}
-          <span style={{ fontWeight: "700", fontSize: "16px", color: successful.length > 0 ? "#065f46" : "#991b1b" }}>
-            Processing Complete
-          </span>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
-          <div style={{ backgroundColor: "white", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
-            <div style={{ fontSize: "24px", fontWeight: "700", color: "#10b981" }}>{successful.length}</div>
-            <div style={{ fontSize: "12px", color: "#6b7280" }}>Successful</div>
-          </div>
-          {failed.length > 0 && (
-            <div style={{ backgroundColor: "white", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#ef4444" }}>{failed.length}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Failed</div>
-            </div>
-          )}
-          <div style={{ backgroundColor: "white", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
-            <div style={{ fontSize: "24px", fontWeight: "700", color: "#3b82f6" }}>{totalOrders}</div>
-            <div style={{ fontSize: "12px", color: "#6b7280" }}>Orders Settled</div>
-          </div>
-          <div style={{ backgroundColor: "white", borderRadius: "6px", padding: "12px", textAlign: "center" }}>
-            <div style={{ fontSize: "24px", fontWeight: "700", color: "#8b5cf6" }}>{fmtMoney(totalAmount)}</div>
-            <div style={{ fontSize: "12px", color: "#6b7280" }}>Total Amount</div>
-          </div>
-        </div>
-
-        {/* Batch details */}
-        <div style={{ marginTop: "12px" }}>
-          <details>
-            <summary style={{ cursor: "pointer", fontWeight: "500", color: "#374151" }}>
-              View Details ({processResults.length} batches)
-            </summary>
-            <div style={{ marginTop: "8px", maxHeight: "200px", overflow: "auto" }}>
-              <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f3f4f6" }}>
-                    <th style={{ padding: "6px", textAlign: "left" }}>Merchant</th>
-                    <th style={{ padding: "6px", textAlign: "left" }}>Broker</th>
-                    <th style={{ padding: "6px", textAlign: "right" }}>Orders</th>
-                    <th style={{ padding: "6px", textAlign: "right" }}>Amount</th>
-                    <th style={{ padding: "6px", textAlign: "center" }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {processResults.map((r, idx) => (
-                    <tr key={idx} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                      <td style={{ padding: "6px" }}>{r.merchant_id}</td>
-                      <td style={{ padding: "6px" }}>{r.broker}</td>
-                      <td style={{ padding: "6px", textAlign: "right" }}>{r.order_count || 0}</td>
-                      <td style={{ padding: "6px", textAlign: "right" }}>{fmtMoney(r.total_amount || 0)}</td>
-                      <td style={{ padding: "6px", textAlign: "center" }}>
-                        {r.success ? (
-                          <span style={{ color: "#10b981" }}>✓</span>
-                        ) : (
-                          <span style={{ color: "#ef4444" }} title={r.error}>✗</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </div>
-
-        <button
-          onClick={() => setProcessResults([])}
-          style={{
-            marginTop: "12px",
-            padding: "8px 16px",
-            border: "1px solid #d1d5db",
-            borderRadius: "6px",
-            backgroundColor: "white",
-            cursor: "pointer",
-            fontSize: "13px",
-          }}
-        >
-          Dismiss
-        </button>
-      </div>
-    );
+  const confirmProcessBroker = (mid, broker, count, amount) => {
+    setModal({
+      show: true, title: "Process Broker Payments",
+      message: `Process payments for broker "${broker}": ${count} orders totaling ${fmtMoney(amount)}.`,
+      icon: <Building2 size={20} color="#f59e0b" />,
+      confirmText: "Confirm & Process", confirmColor: "#f59e0b",
+      data: { type: "broker", merchantId: mid, broker },
+    });
   };
 
-  // ✅ Cancel Results Display
-  const CancelResultsDisplay = () => {
-    if (!cancelResults) return null;
-
-    return (
-      <div
-        style={{
-          backgroundColor: cancelResults.success ? "#fef3c7" : "#fef2f2",
-          border: `2px solid ${cancelResults.success ? "#f59e0b" : "#ef4444"}`,
-          borderRadius: "8px",
-          padding: "16px",
-          marginBottom: "16px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          {cancelResults.success ? (
-            <RotateCcw size={24} color="#f59e0b" />
-          ) : (
-            <AlertCircle size={24} color="#ef4444" />
-          )}
-          <span style={{ fontWeight: "700", fontSize: "16px", color: cancelResults.success ? "#92400e" : "#991b1b" }}>
-            {cancelResults.success ? "Payment Cancelled Successfully" : "Cancel Failed"}
-          </span>
+  const confirmCancelBatch = (batch) => {
+    setModal({
+      show: true, title: "Cancel Payment Batch",
+      message: `Reverse batch "${batch.batch_id}"? This will restore ${batch.order_count || "?"} orders back to "executed" status.`,
+      details: (
+        <div style={{ fontSize: "0.82rem", color: "#991b1b", background: "#fef2f2", border: "1px solid #ef4444", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>
+          <strong>This will:</strong> Revert orders to executed, set paid_flag = 0, remove ledger entries.
         </div>
-
-        {cancelResults.success ? (
-          <div style={{ fontSize: "14px", color: "#78350f" }}>
-            <p style={{ margin: "0 0 4px" }}>
-              Batch: <code style={{ backgroundColor: "#fef3c7", padding: "2px 6px", borderRadius: "4px" }}>{cancelResults.batch_id}</code>
-            </p>
-            <p style={{ margin: "0 0 4px" }}>Orders reverted: <strong>{cancelResults.orders_cancelled}</strong></p>
-            <p style={{ margin: 0 }}>Ledger entries removed: <strong>{cancelResults.ledger_entries_removed}</strong></p>
-          </div>
-        ) : (
-          <p style={{ margin: 0, fontSize: "14px", color: "#991b1b" }}>{cancelResults.error}</p>
-        )}
-
-        <button
-          onClick={() => setCancelResults(null)}
-          style={{
-            marginTop: "12px",
-            padding: "8px 16px",
-            border: "1px solid #d1d5db",
-            borderRadius: "6px",
-            backgroundColor: "white",
-            cursor: "pointer",
-            fontSize: "13px",
-          }}
-        >
-          Dismiss
-        </button>
-      </div>
-    );
+      ),
+      icon: <XCircle size={20} color="#ef4444" />,
+      confirmText: "Confirm Cancel", confirmColor: "#ef4444",
+      data: { type: "cancel", batchId: batch.batch_id },
+    });
   };
 
-  // ✅ Payment History Panel with Infinite Scroll
-  const PaymentHistoryPanel = () => {
-    if (!showHistory) return null;
-
-    // Handle scroll to load more
-    const handleScroll = (e) => {
-      const { scrollTop, scrollHeight, clientHeight } = e.target;
-      // Load more when within 50px of bottom
-      if (scrollHeight - scrollTop - clientHeight < 50 && historyHasMore && !historyLoadingMore) {
-        loadSettledHistory(true);
-      }
-    };
-
-    return (
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <h2 className="subheading" style={{ margin: 0 }}>
-            <History size={18} style={{ marginRight: "8px", verticalAlign: "middle" }} />
-            Recent Settled Payments
-            {historyTotal > 0 && (
-              <span style={{ fontSize: "12px", fontWeight: "400", color: "#6b7280", marginLeft: "8px" }}>
-                ({settledBatches.length} of {historyTotal})
-              </span>
-            )}
-          </h2>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={() => loadSettledHistory(false)}
-              disabled={historyLoading}
-              style={{
-                padding: "6px 12px",
-                backgroundColor: "#f3f4f6",
-                border: "1px solid #d1d5db",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              {historyLoading ? "Loading..." : "Refresh"}
-            </button>
-            <button
-              onClick={() => setShowHistory(false)}
-              style={{
-                padding: "6px 12px",
-                backgroundColor: "#f3f4f6",
-                border: "1px solid #d1d5db",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "12px",
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        {historyLoading ? (
-          <p className="body-text">Loading payment history...</p>
-        ) : settledBatches.length === 0 ? (
-          <p className="body-text">No settled payment batches found.</p>
-        ) : (
-          <div 
-            style={{ maxHeight: "400px", overflow: "auto" }}
-            onScroll={handleScroll}
-          >
-            <table style={{ width: "100%", fontSize: "13px", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#f3f4f6", position: "sticky", top: 0 }}>
-                  <th style={{ padding: "8px", textAlign: "left" }}>Batch ID</th>
-                  <th style={{ padding: "8px", textAlign: "left" }}>Merchant</th>
-                  <th style={{ padding: "8px", textAlign: "left" }}>Broker</th>
-                  <th style={{ padding: "8px", textAlign: "right" }}>Orders</th>
-                  <th style={{ padding: "8px", textAlign: "right" }}>Amount</th>
-                  <th style={{ padding: "8px", textAlign: "left" }}>Paid At</th>
-                  <th style={{ padding: "8px", textAlign: "center" }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {settledBatches.map((batch) => (
-                  <tr key={batch.batch_id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "8px", fontFamily: "monospace", fontSize: "11px" }}>
-                      {batch.batch_id?.substring(0, 25)}...
-                    </td>
-                    <td style={{ padding: "8px" }}>{batch.merchant_id}</td>
-                    <td style={{ padding: "8px" }}>{batch.broker}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{batch.order_count}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{fmtMoney(batch.total_amount)}</td>
-                    <td style={{ padding: "8px", fontSize: "11px" }}>{batch.paid_at}</td>
-                    <td style={{ padding: "8px", textAlign: "center" }}>
-                      <button
-                        onClick={() => {
-                          setSelectedCancelBatch(batch.batch_id);
-                          setShowConfirmModal("cancel-batch");
-                        }}
-                        disabled={processing}
-                        style={{
-                          padding: "4px 8px",
-                          backgroundColor: "#fef2f2",
-                          color: "#dc2626",
-                          border: "1px solid #fecaca",
-                          borderRadius: "4px",
-                          cursor: processing ? "not-allowed" : "pointer",
-                          fontSize: "11px",
-                          fontWeight: "500",
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            
-            {/* Loading more indicator */}
-            {historyLoadingMore && (
-              <div style={{ padding: "12px", textAlign: "center", color: "#6b7280", fontSize: "13px" }}>
-                Loading more...
-              </div>
-            )}
-            
-            {/* End of list indicator */}
-            {!historyHasMore && settledBatches.length > 0 && (
-              <div style={{ padding: "12px", textAlign: "center", color: "#9ca3af", fontSize: "12px" }}>
-                — End of history —
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
+  const handleModalConfirm = () => {
+    const d = modal.data;
+    if (!d) return;
+    if (d.type === "all") handleBatchProcess("all");
+    else if (d.type === "merchant") handleBatchProcess("merchant", d);
+    else if (d.type === "broker") handleBatchProcess("broker", d);
+    else if (d.type === "cancel") handleCancelPayment(d.batchId);
   };
 
-  // =========================================================
-  // MODE B RENDER: Merchant Drilldown
-  // =========================================================
-  if (merchantId) {
-    return (
-      <div className="app-container app-content">
-        <ConfirmModal />
+  const loading = merchantId ? mLoading : allLoading;
+  const error = merchantId ? mError : allError;
 
-        {/* ── Order Pipeline ── */}
-        <OrderPipeline currentStep={4} />
-
-        <div className="card" style={{ marginBottom: "1rem" }}>
-          <div className="card-actions" style={{ justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
-            <div>
-              <h1 className="page-title" style={{ marginBottom: 0 }}>
-                Payments Processing — Merchant
-              </h1>
-              <div className="body-text">
-                <strong>{merchantId}</strong>
-                {merchantName ? ` • ${merchantName}` : ""}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button type="button" className="btn-secondary" onClick={backToAll}>
-                ← Back to All Merchants
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => loadSingleMerchant(merchantId)}
-                disabled={mLoading || processing}
-              >
-                {mLoading ? "Loading…" : "Refresh"}
-              </button>
-            </div>
-          </div>
-
-          {mError && (
-            <p className="body-text" style={{ color: "#dc2626", marginTop: "0.5rem" }}>
-              {mError}
-            </p>
-          )}
-        </div>
-
-        <ProgressIndicator />
-        <ResultsSummary />
-        <CancelResultsDisplay />
-        <PaymentHistoryPanel />
-
-        {/* ACH Totals for Merchant */}
-        <div className="card" style={{ marginBottom: "1rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-            <h2 className="subheading" style={{ margin: 0 }}>ACH Totals for Merchant</h2>
-            
-            {/* ✅ Process All Brokers Button */}
-            {merchantAchTotals.unpaidOrders > 0 && (
-              <button
-                onClick={() => setShowConfirmModal("merchant")}
-                disabled={processing || mLoading}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "10px 20px",
-                  backgroundColor: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: processing ? "not-allowed" : "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px",
-                }}
-              >
-                <CreditCard size={18} />
-                Process All Brokers ({merchantAchTotals.brokers})
-              </button>
-            )}
-            
-            {/* ✅ View History Button */}
-            <button
-              onClick={() => {
-                setShowHistory(!showHistory);
-                if (!showHistory) loadSettledHistory();
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 16px",
-                backgroundColor: showHistory ? "#fef3c7" : "#f3f4f6",
-                color: "#374151",
-                border: "1px solid #d1d5db",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontWeight: "500",
-                fontSize: "14px",
-              }}
-            >
-              <History size={18} />
-              {showHistory ? "Hide History" : "Payment History"}
-            </button>
-          </div>
-
-          {mLoading ? (
-            <p className="body-text">Loading…</p>
-          ) : (
-            <div className="form-grid" style={{ marginTop: "12px" }}>
-              <div className="form-row">
-                <label className="form-label">Total ACH Due ($)</label>
-                <div className="form-input">{fmtMoney(merchantAchTotals.totalAch)}</div>
-              </div>
-              <div className="form-row">
-                <label className="form-label">Brokers</label>
-                <div className="form-input">{merchantAchTotals.brokers}</div>
-              </div>
-              <div className="form-row">
-                <label className="form-label">Unpaid Baskets</label>
-                <div className="form-input">{merchantAchTotals.unpaidBaskets}</div>
-              </div>
-              <div className="form-row">
-                <label className="form-label">Unpaid Orders</label>
-                <div className="form-input">{merchantAchTotals.unpaidOrders}</div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Broker Summary Table */}
-        <div className="card" style={{ marginBottom: "1rem" }}>
-          <h2 className="subheading">Broker Summary (Unpaid)</h2>
-
-          {mLoading ? (
-            <p className="body-text">Loading…</p>
-          ) : brokerRows.length === 0 ? (
-            <p className="body-text">No unpaid items for this merchant.</p>
-          ) : (
-            <table className="basket-table">
-              <thead>
-                <tr>
-                  <th>Broker</th>
-                  <th>Unpaid Orders</th>
-                  <th>Unpaid Baskets</th>
-                  <th>ACH Total ($)</th>
-                  <th style={{ textAlign: "center" }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {brokerRows.map((r) => (
-                  <tr key={r.broker}>
-                    <td style={{ fontWeight: "500" }}>{r.broker}</td>
-                    <td>{r.unpaidOrders}</td>
-                    <td>{r.unpaidBaskets}</td>
-                    <td>{fmtMoney(r.totalAch)}</td>
-                    <td style={{ textAlign: "center" }}>
-                      <button
-                        onClick={() => {
-                          setSelectedBroker(r.broker);
-                          setShowConfirmModal("broker");
-                        }}
-                        disabled={processing || r.unpaidOrders === 0}
-                        style={{
-                          padding: "6px 12px",
-                          backgroundColor: r.unpaidOrders > 0 ? "#3b82f6" : "#d1d5db",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "6px",
-                          cursor: r.unpaidOrders > 0 && !processing ? "pointer" : "not-allowed",
-                          fontSize: "12px",
-                          fontWeight: "500",
-                        }}
-                      >
-                        Process
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // =========================================================
-  // MODE A RENDER: All Merchants Landing View
-  // =========================================================
   return (
     <div className="app-container app-content">
-      <ConfirmModal />
+      <ConfirmModal
+        show={modal.show} title={modal.title} message={modal.message}
+        details={modal.details} icon={modal.icon}
+        confirmText={modal.confirmText} confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm} onCancel={closeModal}
+      />
 
-      <h1 className="page-title">Payments Processing</h1>
+      {/* Header */}
+      <h1 className="page-title">
+        Payments Processing
+        {merchantId && <> — <span style={{ fontWeight: 400 }}>{merchantName || merchantId}</span></>}
+      </h1>
       <p className="page-deck">
-        Summary of <strong>unpaid</strong> ACH obligations across all merchants.
+        {merchantId
+          ? <>ACH settlement for merchant <strong>{merchantName || merchantId}</strong>. Process broker payments, generate XLSX + CSV exports.</>
+          : <>Summary of <strong>unpaid</strong> ACH obligations across all merchants.</>
+        }
       </p>
 
-      {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={4} />
+      <OrderPipeline currentStep={4} counts={queueCounts} />
 
-      <ProgressIndicator />
-      <ResultsSummary />
-      <CancelResultsDisplay />
-      <PaymentHistoryPanel />
+      {/* Action bar */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap",
+      }}>
+        {/* Tabs */}
+        <div style={{ display: "inline-flex", borderRadius: 6, border: "1px solid #d1d5db", overflow: "hidden" }}>
+          {[
+            { key: "unpaid", label: <><CreditCard size={12} style={{ verticalAlign: "middle" }} /> Unpaid</> },
+            { key: "history", label: <><History size={12} style={{ verticalAlign: "middle" }} /> History</> },
+          ].map((t) => (
+            <button
+              key={t.key} onClick={() => setActiveTab(t.key)}
+              style={{
+                padding: "0.4rem 0.75rem", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer",
+                background: activeTab === t.key ? "#3b82f6" : "#fff",
+                color: activeTab === t.key ? "#fff" : "#374151",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-      {/* All Caught Up Message */}
-      {isAllCaughtUp && (
-        <div
-          style={{
-            backgroundColor: "#d1fae5",
-            border: "2px solid #10b981",
-            borderRadius: "8px",
-            padding: "1rem 1.5rem",
-            marginBottom: "1rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.75rem",
-          }}
-        >
-          <CheckCircle size={24} color="#10b981" />
-          <span style={{ fontSize: "1.125rem", fontWeight: "600", color: "#065f46" }}>
-            You're all caught up! No pending payments.
-          </span>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          {merchantId && (
+            <button onClick={() => navigate("/payments-processing")}
+              style={{ padding: "0.625rem 1.25rem", background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.875rem", cursor: "pointer" }}>
+              ← All Merchants
+            </button>
+          )}
+          <button onClick={() => merchantId ? loadSingleMerchant(merchantId) : loadAllMerchants()} disabled={loading}
+            style={{ padding: "0.625rem 1.25rem", background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.875rem", cursor: "pointer" }}>
+            <RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh
+          </button>
+          {activeTab === "unpaid" && topTotals.orders > 0 && (
+            <button onClick={confirmProcessAll} disabled={processing}
+              style={{
+                padding: "0.625rem 1.25rem", background: processing ? "#94a3b8" : "#10b981",
+                color: "#fff", border: "none", borderRadius: 6, fontSize: "0.875rem", fontWeight: 600,
+                cursor: processing ? "not-allowed" : "pointer",
+              }}>
+              <CreditCard size={14} style={{ verticalAlign: "middle" }} /> Process All
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Summary Stats */}
+      {activeTab === "unpaid" && topTotals.orders > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
+          <StatCard label="Unpaid Orders" value={topTotals.orders} subtext="Awaiting settlement" color="#f59e0b" />
+          <StatCard label="Total Due" value={fmtMoney(topTotals.totalDue)} subtext="ACH amount" color="#10b981" />
+          <StatCard label="Brokers" value={topTotals.brokers} subtext="Payees" color="#6366f1" />
+          <StatCard label="Members" value={topTotals.members} subtext="Investors" color="#06b6d4" />
         </div>
       )}
 
-      {/* Top summary card */}
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "16px" }}>
-          <div className="body-text">
-            {merchantsLoading ? (
-              <>Loading merchants…</>
-            ) : (
-              <>
-                Merchants: <strong>{merchants.length}</strong> • With unpaid:{" "}
-                <strong>{topTotals.merchants_with_unpaid}</strong>
-              </>
-            )}
+      {/* Progress Indicator */}
+      {processing && processProgress && (
+        <div style={{
+          background: "#eff6ff", border: "2px solid #3b82f6", borderRadius: 8,
+          padding: 16, marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <Loader2 size={20} color="#3b82f6" style={{ animation: "spin 1s linear infinite" }} />
+            <span style={{ fontWeight: 600, color: "#1e40af" }}>
+              Processing... {processProgress.current} of {processProgress.total}
+            </span>
           </div>
+          <div style={{ fontSize: "0.82rem", color: "#3730a3" }}>
+            {processProgress.currentMerchant && <span>Merchant: {processProgress.currentMerchant} · </span>}
+            Broker: {processProgress.currentBroker}
+          </div>
+          <div style={{ marginTop: 8, height: 8, background: "#dbeafe", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", background: "#3b82f6", borderRadius: 4,
+              width: `${(processProgress.current / processProgress.total) * 100}%`,
+              transition: "width 0.3s ease",
+            }} />
+          </div>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
         </div>
+      )}
 
-        {/* Summary Stats */}
-        {!allLoading && topTotals.unpaid_orders > 0 && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-              gap: "12px",
-              marginBottom: "16px",
-            }}
-          >
-            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#1f2937" }}>{topTotals.unpaid_orders}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Orders</div>
-            </div>
-            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#1f2937" }}>{topTotals.unpaid_baskets}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Baskets</div>
-            </div>
-            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#1f2937" }}>{topTotals.brokers}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Brokers</div>
-            </div>
-            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
-              <div style={{ fontSize: "24px", fontWeight: "700", color: "#10b981" }}>{fmtMoney(topTotals.total_payment_due)}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Total Due</div>
-            </div>
+      {/* Results Banner */}
+      <ResultsBanner results={processResults} onDismiss={() => setProcessResults([])} />
+
+      {/* Cancel Results */}
+      {cancelResults && (
+        <div style={{
+          background: cancelResults.success ? "#fef3c7" : "#fef2f2",
+          border: `2px solid ${cancelResults.success ? "#f59e0b" : "#ef4444"}`,
+          borderRadius: 8, padding: 16, marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            {cancelResults.success ? <RotateCcw size={20} color="#f59e0b" /> : <AlertCircle size={20} color="#ef4444" />}
+            <strong style={{ color: cancelResults.success ? "#92400e" : "#991b1b" }}>
+              {cancelResults.success ? "Payment Cancelled" : "Cancel Failed"}
+            </strong>
           </div>
-        )}
-
-        {/* Action Buttons */}
-        <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={loadAllMerchants}
-            disabled={allLoading || merchantsLoading || merchants.length === 0 || processing}
-          >
-            {allLoading ? "Loading…" : "Refresh"}
-          </button>
-
-          {/* ✅ Process All Button */}
-          {topTotals.unpaid_orders > 0 && (
-            <button
-              onClick={() => setShowConfirmModal("all")}
-              disabled={processing || allLoading}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 24px",
-                backgroundColor: "#10b981",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: processing ? "not-allowed" : "pointer",
-                fontWeight: "600",
-                fontSize: "14px",
-              }}
-            >
-              <CreditCard size={18} />
-              Process All Payments
-            </button>
+          {cancelResults.success ? (
+            <div style={{ fontSize: "0.85rem", color: "#78350f" }}>
+              Batch: <code>{cancelResults.batch_id}</code> · Orders reverted: <strong>{cancelResults.orders_cancelled}</strong> · Ledger removed: <strong>{cancelResults.ledger_entries_removed}</strong>
+            </div>
+          ) : (
+            <div style={{ color: "#991b1b" }}>{cancelResults.error}</div>
           )}
-
-          {/* ✅ View History Button */}
-          <button
-            onClick={() => {
-              setShowHistory(!showHistory);
-              if (!showHistory) loadSettledHistory();
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 16px",
-              backgroundColor: showHistory ? "#fef3c7" : "#f3f4f6",
-              color: "#374151",
-              border: "1px solid #d1d5db",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontWeight: "500",
-              fontSize: "14px",
-            }}
-          >
-            <History size={18} />
-            {showHistory ? "Hide History" : "Payment History"}
-          </button>
-
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => navigate("/csv-files")}
-          >
-            CSV File Browser
+          <button onClick={() => setCancelResults(null)}
+            style={{ marginTop: 8, padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: "0.8rem" }}>
+            Dismiss
           </button>
         </div>
+      )}
 
-        {allError && (
-          <p className="body-text" style={{ color: "#dc2626", marginTop: "0.5rem" }}>
-            {allError}
-          </p>
-        )}
-      </div>
+      {error && (
+        <div style={{ padding: "0.75rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, color: "#dc2626", marginBottom: "1rem", fontSize: "0.85rem" }}>
+          {error}
+        </div>
+      )}
 
-      {/* Merchant table */}
-      <div className="card">
-        <h2 className="subheading">Merchant Summary (Unpaid)</h2>
+      {/* ── UNPAID TAB ── */}
+      {activeTab === "unpaid" && (
+        <>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>Loading payments...</div>
+          ) : orders.length === 0 ? (
+            <div style={{
+              textAlign: "center", padding: "3rem", background: "#d1fae5",
+              borderRadius: 8, border: "2px solid #10b981",
+            }}>
+              <CheckCircle size={32} color="#10b981" style={{ marginBottom: 8 }} />
+              <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#065f46" }}>All caught up! No pending payments.</div>
+            </div>
+          ) : (
+            <PaymentsHierarchy
+              orders={orders}
+              brokerDetailsMap={merchantId ? brokerDetailsMap : {}}
+              processing={processing}
+              onProcessMerchant={confirmProcessMerchant}
+              onProcessBroker={confirmProcessBroker}
+              onNavigateMerchant={!merchantId ? (mid) => navigate(`/payments-processing?merchant_id=${encodeURIComponent(mid)}`) : null}
+            />
+          )}
+        </>
+      )}
 
-        {allLoading ? (
-          <p className="body-text">Loading…</p>
-        ) : merchantRows.length === 0 ? (
-          <p className="body-text">No merchants loaded.</p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="basket-table">
-              <thead>
-                <tr>
-                  <th>Merchant</th>
-                  <th>Unpaid Orders</th>
-                  <th>Baskets</th>
-                  <th>Brokers</th>
-                  <th>Total Due ($)</th>
-                  <th style={{ textAlign: "center" }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {merchantRows
-                  .filter((r) => r.unpaid_orders > 0)
-                  .map((r) => (
-                    <tr key={r.merchant_id}>
-                      <td
-                        style={{ cursor: "pointer", textDecoration: "underline", color: "#2563eb" }}
-                        onClick={() => goToMerchant(r.merchant_id)}
-                      >
-                        {r.merchant_name || r.merchant_id}
-                      </td>
-                      <td>{r.unpaid_orders}</td>
-                      <td>{r.unpaid_baskets}</td>
-                      <td>{r.brokers}</td>
-                      <td>{fmtMoney(r.total_payment_due)}</td>
-                      <td style={{ textAlign: "center" }}>
-                        <button
-                          onClick={() => goToMerchant(r.merchant_id)}
-                          style={{
-                            padding: "6px 12px",
-                            backgroundColor: "#3b82f6",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                            fontWeight: "500",
-                          }}
-                        >
-                          View / Process
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* ── HISTORY TAB ── */}
+      {activeTab === "history" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {historyLoading && history.length === 0 ? (
+            <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Loading payment history...</div>
+          ) : history.length === 0 ? (
+            <div style={{
+              padding: "2rem", textAlign: "center", color: "#94a3b8",
+              background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0",
+            }}>
+              No settled payment batches found.
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: 4 }}>
+                Showing {history.length} of {historyTotal} batch(es)
+              </div>
+              {history.map((batch) => (
+                <PaymentHistoryCard
+                  key={batch.batch_id}
+                  batch={batch}
+                  processing={processing}
+                  onCancel={() => confirmCancelBatch(batch)}
+                />
+              ))}
+              {historyHasMore && (
+                <button onClick={() => loadHistory(true)} disabled={historyLoading}
+                  style={{ padding: "0.75rem", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 6, cursor: "pointer", fontSize: "0.85rem" }}>
+                  {historyLoading ? "Loading..." : "Load More"}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Info Footer */}
+      <div style={{
+        marginTop: "1.5rem", padding: "1rem", background: "#eff6ff",
+        border: "1px solid #93c5fd", borderRadius: 8, fontSize: "0.8rem", color: "#1e40af",
+      }}>
+        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> Payment Processing:</strong> Each broker payment generates an XLSX workbook
+        with two sheets (ACH Summary + Order Detail) plus individual CSV files. Orders are marked as <code>settled</code> with
+        <code>paid_flag = 1</code> and ledger entries are recorded per member.
       </div>
     </div>
   );
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PaymentsHierarchy — Merchant → Broker → Basket → Orders tree
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProcessMerchant, onProcessBroker, onNavigateMerchant }) {
+  const [expandedMerchants, setExpandedMerchants] = useState(new Set());
+  const [expandedBrokers, setExpandedBrokers] = useState(new Set());
+  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+  const [showAch, setShowAch] = useState(new Set());
+
+  const toggle = (setter, key) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const getAmt = (o) => safeNum(o?.payment_amount ?? o?.executed_amount ?? o?.amount ?? 0);
+
+  // Build hierarchy
+  const hierarchy = {};
+  for (const o of orders) {
+    const mId = o.merchant_id || "unknown";
+    const mName = o.merchant_name || o.merchant_id || "Unknown";
+    const br = o.broker || "Unknown";
+    const bk = o.basket_id || "no-basket";
+
+    if (!hierarchy[mId]) {
+      hierarchy[mId] = { merchant_id: mId, merchant_name: mName, brokers: {}, orders: [], totalAmount: 0, memberSet: new Set() };
+    }
+    hierarchy[mId].orders.push(o);
+    hierarchy[mId].totalAmount += getAmt(o);
+    hierarchy[mId].memberSet.add(o.member_id);
+
+    if (!hierarchy[mId].brokers[br]) {
+      hierarchy[mId].brokers[br] = { broker: br, baskets: {}, orders: [], totalAmount: 0, memberSet: new Set() };
+    }
+    hierarchy[mId].brokers[br].orders.push(o);
+    hierarchy[mId].brokers[br].totalAmount += getAmt(o);
+    hierarchy[mId].brokers[br].memberSet.add(o.member_id);
+
+    if (!hierarchy[mId].brokers[br].baskets[bk]) {
+      hierarchy[mId].brokers[br].baskets[bk] = { basket_id: bk, member_id: o.member_id, orders: [], totalAmount: 0 };
+    }
+    hierarchy[mId].brokers[br].baskets[bk].orders.push(o);
+    hierarchy[mId].brokers[br].baskets[bk].totalAmount += getAmt(o);
+  }
+
+  const badge = (text, bg, color) => (
+    <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: bg, color, whiteSpace: "nowrap" }}>
+      {text}
+    </span>
+  );
+
+  const rowBase = (depth) => ({
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "8px 12px", paddingLeft: `${12 + depth * 24}px`,
+    cursor: "pointer", fontSize: "0.82rem",
+    borderBottom: "1px solid #f1f5f9", transition: "background 0.1s",
+  });
+
+  const pills = (row) => (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {row.memberSet && badge(`${row.memberSet.size} mbrs`, "#f0f9ff", "#0369a1")}
+      {badge(`${row.orders.length} orders`, "#faf5ff", "#7c3aed")}
+      {badge(fmtMoney(row.totalAmount), "#f0fdf4", "#15803d")}
+    </div>
+  );
+
+  const merchantKeys = Object.keys(hierarchy).sort();
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+      <div style={{
+        padding: "0.5rem 0.75rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.8rem",
+        borderBottom: "1px solid #e2e8f0", color: "#374151",
+      }}>
+        Unpaid Orders — {merchantKeys.length} merchant(s)
+      </div>
+
+      {merchantKeys.map((mId) => {
+        const m = hierarchy[mId];
+        const mOpen = expandedMerchants.has(mId);
+
+        return (
+          <div key={mId}>
+            {/* ── Level 1: Merchant ── */}
+            <div
+              onClick={() => toggle(setExpandedMerchants, mId)}
+              style={{ ...rowBase(0), fontWeight: 600, background: mOpen ? "#f8fafc" : "#fff" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f9ff")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = mOpen ? "#f8fafc" : "#fff")}
+            >
+              <Store size={14} color="#8b5cf6" />
+              <span style={{ color: "#1e293b" }}>{m.merchant_name}</span>
+              {badge(`${Object.keys(m.brokers).length} broker(s)`, "#e0e7ff", "#3730a3")}
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                {pills(m)}
+                {onNavigateMerchant && (
+                  <button onClick={(e) => { e.stopPropagation(); onNavigateMerchant(mId); }}
+                    style={{ ...smallBtnStyle, background: "#3b82f6" }}>
+                    View
+                  </button>
+                )}
+                <button onClick={(e) => { e.stopPropagation(); onProcessMerchant(mId, m.merchant_name, m.orders.length, m.totalAmount); }}
+                  disabled={processing} style={{ ...smallBtnStyle, background: "#10b981" }}>
+                  <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process
+                </button>
+                {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+              </div>
+            </div>
+
+            {/* ── Level 2: Brokers ── */}
+            {mOpen && Object.keys(m.brokers).sort().map((brKey) => {
+              const br = m.brokers[brKey];
+              const brId = `${mId}|${brKey}`;
+              const brOpen = expandedBrokers.has(brId);
+              const achOpen = showAch.has(brId);
+              const achDetails = brokerDetailsMap[brKey];
+
+              return (
+                <div key={brId}>
+                  <div
+                    onClick={() => toggle(setExpandedBrokers, brId)}
+                    style={{ ...rowBase(1), fontWeight: 500, background: brOpen ? "#faf5ff" : "#fff" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#faf5ff")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = brOpen ? "#faf5ff" : "#fff")}
+                  >
+                    <Building2 size={14} color="#6366f1" />
+                    <span style={{ color: "#1e293b" }}>{br.broker}</span>
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                      {pills(br)}
+                      {achDetails && (
+                        <button onClick={(e) => { e.stopPropagation(); toggle(setShowAch, brId); }}
+                          style={{ ...smallBtnStyle, background: achOpen ? "#dbeafe" : "#f1f5f9", color: achOpen ? "#1d4ed8" : "#475569", border: `1px solid ${achOpen ? "#93c5fd" : "#cbd5e1"}` }}>
+                          ACH
+                        </button>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); onProcessBroker(mId, brKey, br.orders.length, br.totalAmount); }}
+                        disabled={processing} style={{ ...smallBtnStyle, background: "#f59e0b", color: "#fff" }}>
+                        <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process
+                      </button>
+                      {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                    </div>
+                  </div>
+
+                  {/* ACH Details panel */}
+                  {achOpen && achDetails && (
+                    <div style={{
+                      paddingLeft: `${12 + 1 * 24}px`, paddingRight: 12, paddingTop: 6, paddingBottom: 6,
+                      background: "#eff6ff", borderBottom: "1px solid #dbeafe", fontSize: "0.78rem",
+                      display: "flex", gap: 24, flexWrap: "wrap",
+                    }}>
+                      <span>Bank: <strong>{achDetails.ach_bank_name || "-"}</strong></span>
+                      <span>Routing: <strong>{achDetails.ach_routing_num || "-"}</strong></span>
+                      <span>Account: <strong>{achDetails.ach_account_num || "-"}</strong></span>
+                      <span>Type: <strong>{achDetails.ach_account_type || "-"}</strong></span>
+                    </div>
+                  )}
+
+                  {/* ── Level 3: Baskets ── */}
+                  {brOpen && Object.keys(br.baskets).sort().map((bkId) => {
+                    const bk = br.baskets[bkId];
+                    const bkOpen = expandedBaskets.has(bkId);
+
+                    return (
+                      <div key={bkId}>
+                        <div
+                          onClick={() => toggle(setExpandedBaskets, bkId)}
+                          style={{ ...rowBase(2), background: bkOpen ? "#fffbeb" : "#fff" }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "#fffbeb")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = bkOpen ? "#fffbeb" : "#fff")}
+                        >
+                          <ShoppingBasket size={14} color="#d97706" />
+                          <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>{bkId}</span>
+                          {bk.member_id && badge(`member: ${bk.member_id}`, "#fef3c7", "#92400e")}
+                          <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                            {badge(`${bk.orders.length} orders`, "#faf5ff", "#7c3aed")}
+                            {badge(fmtMoney(bk.totalAmount), "#f0fdf4", "#15803d")}
+                            {bkOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                          </div>
+                        </div>
+
+                        {/* ── Level 4: Orders table ── */}
+                        {bkOpen && (
+                          <div style={{ paddingLeft: `${12 + 3 * 24}px`, paddingRight: 12, paddingBottom: 4 }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                              <thead>
+                                <tr style={{ background: "#f8fafc" }}>
+                                  <th style={thStyle}>Order</th>
+                                  <th style={thStyle}>Symbol</th>
+                                  <th style={thStyle}>Amount</th>
+                                  <th style={thStyle}>Exec Amount</th>
+                                  <th style={thStyle}>Shares</th>
+                                  <th style={thStyle}>Points</th>
+                                  <th style={thStyle}>Status</th>
+                                  <th style={thStyle}>Executed At</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {bk.orders.map((o, i) => (
+                                  <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                    <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>#{o.order_id}</td>
+                                    <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
+                                    <td style={tdStyle}>{fmtMoney(o.amount)}</td>
+                                    <td style={{ ...tdStyle, fontWeight: 600 }}>{o.executed_amount != null ? fmtMoney(o.executed_amount) : "-"}</td>
+                                    <td style={tdStyle}>{safeNum(o.shares).toFixed(4)}</td>
+                                    <td style={tdStyle}>{parseInt(o.points_used || 0, 10).toLocaleString()}</td>
+                                    <td style={tdStyle}>
+                                      <span style={{
+                                        fontSize: "0.7rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4,
+                                        background: o.status === "confirmed" ? "#d1fae5" : o.status === "executed" ? "#dbeafe" : "#fef3c7",
+                                        color: o.status === "confirmed" ? "#059669" : o.status === "executed" ? "#2563eb" : "#92400e",
+                                      }}>
+                                        {o.status}
+                                      </span>
+                                    </td>
+                                    <td style={{ ...tdStyle, fontSize: "0.75rem", color: "#64748b" }}>{o.executed_at || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PaymentHistoryCard — Expandable card per settled batch
+// ═══════════════════════════════════════════════════════════════════════════
+
+function PaymentHistoryCard({ batch, processing, onCancel }) {
+  const [expanded, setExpanded] = useState(false);
+  const b = batch;
+
+  return (
+    <div style={{
+      background: "#fff", borderRadius: 8,
+      border: `1px solid ${expanded ? "#3b82f6" : "#e2e8f0"}`,
+      overflow: "hidden",
+    }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          padding: "0.75rem 1rem", cursor: "pointer",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: expanded ? "#eff6ff" : "#fff", transition: "background 0.15s",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
+              {b.batch_id}
+            </span>
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#d1fae5", color: "#059669" }}>
+              <CheckCircle size={12} style={{ verticalAlign: "middle" }} /> {b.order_count || 0} orders
+            </span>
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#f0fdf4", color: "#15803d" }}>
+              {fmtMoney(b.total_amount)}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 16, fontSize: "0.78rem", color: "#64748b" }}>
+            <span>{b.merchant_id}</span>
+            <span>Broker: <strong>{b.broker}</strong></span>
+            <span>{b.paid_at}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+            disabled={processing}
+            style={{
+              padding: "4px 10px", background: "#fef2f2", color: "#dc2626",
+              border: "1px solid #fecaca", borderRadius: 4, cursor: processing ? "not-allowed" : "pointer",
+              fontSize: "0.7rem", fontWeight: 600,
+            }}
+          >
+            <RotateCcw size={11} style={{ verticalAlign: "middle" }} /> Cancel
+          </button>
+          {expanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ borderTop: "1px solid #e2e8f0", padding: "0.75rem 1rem", fontSize: "0.82rem" }}>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", color: "#475569" }}>
+            <span>Batch ID: <code style={{ fontSize: "0.75rem" }}>{b.batch_id}</code></span>
+            <span>Merchant: <strong>{b.merchant_id}</strong></span>
+            <span>Broker: <strong>{b.broker}</strong></span>
+            <span>Orders: <strong>{b.order_count}</strong></span>
+            <span>Amount: <strong>{fmtMoney(b.total_amount)}</strong></span>
+            <span>Paid at: <strong>{b.paid_at}</strong></span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ResultsBanner — Post-processing results with download links
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ResultsBanner({ results, onDismiss }) {
+  if (!results || results.length === 0) return null;
+
+  const successful = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+  const totalAmount = successful.reduce((sum, r) => sum + safeNum(r.total_amount), 0);
+  const totalOrders = successful.reduce((sum, r) => sum + safeNum(r.order_count), 0);
+
+  // Group by merchant_id
+  const merchantGroups = {};
+  for (const r of results) {
+    const mid = r.merchant_id || "unknown";
+    if (!merchantGroups[mid]) merchantGroups[mid] = { successful: [], failed: [], totalAmount: 0, totalOrders: 0 };
+    if (r.success) {
+      merchantGroups[mid].successful.push(r);
+      merchantGroups[mid].totalAmount += safeNum(r.total_amount);
+      merchantGroups[mid].totalOrders += safeNum(r.order_count);
+    } else {
+      merchantGroups[mid].failed.push(r);
+    }
+  }
+
+  const handleDownload = (fileObj) => {
+    if (!fileObj?.url) return;
+    let url = fileObj.url;
+    if (!url.startsWith("http")) {
+      const apiBase = window.__VITE_API_BASE__ || "https://api.stockloyal.com/api";
+      url = `${apiBase.replace(/\/+$/, "")}/${url.replace(/^\/+/, "").replace(/^api\/+/, "")}`;
+    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileObj.filename || "download";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 100);
+  };
+
+  return (
+    <div style={{
+      background: successful.length > 0 ? "#ecfdf5" : "#fef2f2",
+      border: `2px solid ${successful.length > 0 ? "#10b981" : "#ef4444"}`,
+      borderRadius: 8, padding: 16, marginBottom: 16,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        {successful.length > 0 ? <CheckCircle size={24} color="#10b981" /> : <AlertCircle size={24} color="#ef4444" />}
+        <span style={{ fontWeight: 700, fontSize: "1rem", color: successful.length > 0 ? "#065f46" : "#991b1b" }}>
+          Processing Complete
+        </span>
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
+          <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#10b981" }}>{successful.length}</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Successful</div>
+        </div>
+        {failed.length > 0 && (
+          <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
+            <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ef4444" }}>{failed.length}</div>
+            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Failed</div>
+          </div>
+        )}
+        <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
+          <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#3b82f6" }}>{totalOrders}</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Orders Settled</div>
+        </div>
+        <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
+          <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#8b5cf6" }}>{fmtMoney(totalAmount)}</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Total Amount</div>
+        </div>
+      </div>
+
+      {/* Downloads grouped by merchant */}
+      {Object.keys(merchantGroups).sort().map((mid) => {
+        const mg = merchantGroups[mid];
+        if (mg.successful.length === 0 && mg.failed.length === 0) return null;
+
+        return (
+          <div key={mid} style={{
+            background: "white", borderRadius: 8, border: "1px solid #e2e8f0",
+            marginBottom: 10, overflow: "hidden",
+          }}>
+            {/* Merchant header */}
+            <div style={{
+              padding: "8px 12px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Store size={14} color="#8b5cf6" />
+                <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "#1e293b" }}>{mid}</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, fontSize: "0.75rem" }}>
+                <span style={{ padding: "1px 8px", borderRadius: 4, background: "#f0fdf4", color: "#15803d", fontWeight: 600 }}>
+                  {mg.totalOrders} orders
+                </span>
+                <span style={{ padding: "1px 8px", borderRadius: 4, background: "#eff6ff", color: "#1d4ed8", fontWeight: 600 }}>
+                  {fmtMoney(mg.totalAmount)}
+                </span>
+              </div>
+            </div>
+
+            {/* Broker rows */}
+            {mg.successful.map((r, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontSize: "0.8rem",
+              }}>
+                <Building2 size={13} color="#6366f1" />
+                <span style={{ fontWeight: 600, color: "#1e293b", minWidth: 100 }}>{r.broker}</span>
+                <span style={{ fontSize: "0.72rem", color: "#64748b" }}>
+                  {r.order_count} orders · {fmtMoney(r.total_amount)}
+                </span>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  {r.xlsx?.url && (
+                    <button onClick={() => handleDownload(r.xlsx)}
+                      style={{ ...dlBtnStyle, background: "#059669" }}>
+                      <FileSpreadsheet size={12} style={{ verticalAlign: "middle" }} /> XLSX
+                    </button>
+                  )}
+                  {r.detail_csv?.url && (
+                    <button onClick={() => handleDownload(r.detail_csv)}
+                      style={{ ...dlBtnStyle, background: "#64748b" }}>
+                      <Download size={12} style={{ verticalAlign: "middle" }} /> Detail
+                    </button>
+                  )}
+                  {r.ach_csv?.url && (
+                    <button onClick={() => handleDownload(r.ach_csv)}
+                      style={{ ...dlBtnStyle, background: "#64748b" }}>
+                      <Download size={12} style={{ verticalAlign: "middle" }} /> ACH
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Failed brokers for this merchant */}
+            {mg.failed.map((r, i) => (
+              <div key={`fail-${i}`} style={{
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                padding: "8px 12px", borderBottom: "1px solid #f1f5f9",
+                fontSize: "0.8rem", background: "#fef2f2",
+              }}>
+                <AlertCircle size={13} color="#ef4444" />
+                <span style={{ fontWeight: 600, color: "#991b1b" }}>{r.broker}</span>
+                <span style={{ fontSize: "0.72rem", color: "#991b1b" }}>{r.error}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      <button onClick={onDismiss}
+        style={{ marginTop: 4, padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: "0.8rem" }}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Sub-Components & Styles
+// ═══════════════════════════════════════════════════════════════════════════
+
+function StatCard({ label, value, subtext, color }) {
+  return (
+    <div style={{
+      padding: "1rem", background: "#fff", borderRadius: 8,
+      border: "1px solid #e2e8f0", borderLeft: `4px solid ${color}`,
+    }}>
+      <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem" }}>{label}</div>
+      <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1e293b" }}>{value}</div>
+      {subtext && <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{subtext}</div>}
+    </div>
+  );
+}
+
+const thStyle = {
+  padding: "0.5rem 0.75rem", textAlign: "left", fontSize: "0.7rem",
+  fontWeight: 600, color: "#64748b", textTransform: "uppercase",
+  letterSpacing: "0.03em", borderBottom: "1px solid #e2e8f0",
+};
+
+const tdStyle = {
+  padding: "0.5rem 0.75rem", fontSize: "0.82rem", color: "#334155",
+};
+
+const smallBtnStyle = {
+  padding: "2px 10px", color: "#fff", border: "none", borderRadius: 4,
+  fontSize: "0.68rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+};
+
+const dlBtnStyle = {
+  padding: "3px 10px", color: "#fff", border: "none", borderRadius: 4,
+  fontSize: "0.72rem", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+};

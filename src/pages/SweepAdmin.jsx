@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api"; // Use existing api helper
-import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Clock, ChevronUp, ChevronDown } from "lucide-react";
+import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -29,7 +29,6 @@ export default function SweepAdmin() {
   const [preview, setPreview] = useState(null);
   const [expandedBaskets, setExpandedBaskets] = useState({});
   const [pendingView, setPendingView] = useState("webhook"); // "basket" | "webhook"
-  const [expandedWebhooks, setExpandedWebhooks] = useState({});
   const [jsonViewMode, setJsonViewMode] = useState("formatted"); // "formatted" | "raw"
 
   // ── Modal State ──
@@ -44,6 +43,19 @@ export default function SweepAdmin() {
   });
 
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  // Pipeline queue counts
+  const [queueCounts, setQueueCounts] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiPost("admin-queue-counts.php");
+        if (data?.success) setQueueCounts(data.counts);
+      } catch (err) {
+        console.warn("[SweepAdmin] queue counts fetch failed:", err);
+      }
+    })();
+  }, []);
 
   // ── JSON Viewer (formatted / raw toggle) ─────────────────────────────────
   const JsonToggle = () => (
@@ -415,7 +427,7 @@ export default function SweepAdmin() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={2} />
+      <OrderPipeline currentStep={2} counts={queueCounts} />
 
       {/* All Caught Up Message */}
       {!loading && overview && (overview.total_pending_orders || 0) === 0 && (
@@ -782,7 +794,6 @@ export default function SweepAdmin() {
                     setSelectedMerchant(e.target.value);
                     loadPendingOrders(e.target.value || null);
                     setExpandedBaskets({});
-                    setExpandedWebhooks({});
                   }}
                   style={{
                     padding: "0.5rem",
@@ -801,7 +812,7 @@ export default function SweepAdmin() {
                   {pendingOrders.length} order(s)
                   {pendingView === "basket"
                     ? ` in ${Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)`
-                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} merchant-broker combo(s)`}
+                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} webhook feed(s)`}
                 </span>
               </div>
 
@@ -824,207 +835,17 @@ export default function SweepAdmin() {
                 </div>
               ) : pendingView === "webhook" ? (
                 /* ═══════════════════════════════════════════════════════ */
-                /* WEBHOOK VIEW — Grouped by Merchant + Broker            */
+                /* WEBHOOK VIEW — Merchant → Broker → Basket → Orders    */
                 /* ═══════════════════════════════════════════════════════ */
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                  {Object.entries(groupOrdersByMerchantBroker(pendingOrders)).map(([comboKey, group]) => {
-                    const isExpanded = expandedWebhooks[comboKey];
-                    const totalAmount = group.orders.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
-                    const totalShares = group.orders.reduce((s, o) => s + parseFloat(o.shares || 0), 0);
-                    const memberSet = new Set(group.orders.map((o) => o.member_id));
-                    const payload = isExpanded ? buildWebhookPayload(group) : null;
-
-                    return (
-                      <div
-                        key={comboKey}
-                        style={{
-                          background: "#fff",
-                          borderRadius: "8px",
-                          border: `1px solid ${isExpanded ? "#6366f1" : "#e2e8f0"}`,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {/* Combo Header */}
-                        <div
-                          onClick={() => setExpandedWebhooks((prev) => ({ ...prev, [comboKey]: !prev[comboKey] }))}
-                          style={{
-                            padding: "0.75rem 1rem",
-                            cursor: "pointer",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            background: isExpanded ? "#eef2ff" : "#fff",
-                            transition: "background 0.15s",
-                          }}
-                        >
-                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b" }}>
-                              <Radio size={14} style={{ verticalAlign: "middle" }} /> {group.merchant_name}
-                              </span>
-                              <span style={{
-                                padding: "2px 8px",
-                                background: "#e0e7ff",
-                                color: "#3730a3",
-                                borderRadius: "999px",
-                                fontSize: "0.7rem",
-                                fontWeight: 600,
-                              }}>
-                                Broker: {group.broker}
-                              </span>
-                              <span style={{
-                                padding: "2px 8px",
-                                background: "#fef3c7",
-                                color: "#92400e",
-                                borderRadius: "999px",
-                                fontSize: "0.7rem",
-                                fontWeight: 600,
-                              }}>
-                                {group.orders.length} orders
-                              </span>
-                              <span style={{
-                                padding: "2px 8px",
-                                background: "#dcfce7",
-                                color: "#166534",
-                                borderRadius: "999px",
-                                fontSize: "0.7rem",
-                                fontWeight: 600,
-                              }}>
-                                {memberSet.size} members
-                              </span>
-                            </div>
-                            <div style={{ display: "flex", gap: "16px", fontSize: "0.8rem", color: "#475569" }}>
-                              <span>Amount: <strong>{formatCurrency(totalAmount)}</strong></span>
-                              <span>Shares: <strong>{totalShares.toFixed(4)}</strong></span>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </span>
-                        </div>
-
-                        {/* Expanded Detail */}
-                        {isExpanded && payload && (
-                          <div style={{ borderTop: "1px solid #e2e8f0" }}>
-                            {/* Member Orders Table */}
-                            <div style={{ padding: "0.75rem 1rem" }}>
-                              <div style={{
-                                fontWeight: 600,
-                                fontSize: "0.8rem",
-                                textTransform: "uppercase",
-                                color: "#475569",
-                                marginBottom: "0.5rem",
-                                letterSpacing: "0.05em",
-                              }}>
-                                Member Orders ({payload.total_members} members, {payload.total_orders} orders)
-                              </div>
-                              <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "4px" }}>
-                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
-                                    <tr style={{ background: "#f8fafc" }}>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Member</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Brokerage ID</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Basket</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Symbol</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Shares</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Amount</th>
-                                      <th style={{ ...thStyle, background: "#f8fafc" }}>Points</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {payload.members.map((m) =>
-                                      m.orders.map((o, oi) => (
-                                        <tr
-                                          key={`${m.member_id}-${o.order_id}`}
-                                          style={{
-                                            borderBottom: "1px solid #f1f5f9",
-                                            background: oi === 0 ? "#fafbff" : undefined,
-                                          }}
-                                        >
-                                          {oi === 0 ? (
-                                            <td
-                                              style={{ ...tdStyle, fontWeight: 600, verticalAlign: "top" }}
-                                              rowSpan={m.orders.length}
-                                            >
-                                              {m.member_id}
-                                              <div style={{ fontSize: "0.7rem", color: "#94a3b8", fontWeight: 400 }}>
-                                                {m.orders.length} order{m.orders.length !== 1 ? "s" : ""} · {formatCurrency(m.total_amount)}
-                                              </div>
-                                            </td>
-                                          ) : null}
-                                          {oi === 0 ? (
-                                            <td
-                                              style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.8rem", verticalAlign: "top" }}
-                                              rowSpan={m.orders.length}
-                                            >
-                                              {m.brokerage_id || <span style={{ color: "#ef4444", fontSize: "0.7rem" }}>not linked</span>}
-                                            </td>
-                                          ) : null}
-                                          {oi === 0 ? (
-                                            <td
-                                              style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.7rem", verticalAlign: "top" }}
-                                              rowSpan={m.orders.length}
-                                            >
-                                              {m.basket_id || "—"}
-                                            </td>
-                                          ) : null}
-                                          <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
-                                          <td style={tdStyle}>{o.shares.toFixed(4)}</td>
-                                          <td style={tdStyle}>{formatCurrency(o.amount)}</td>
-                                          <td style={tdStyle}>{o.points_used?.toLocaleString() || 0}</td>
-                                        </tr>
-                                      ))
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-
-                            {/* Webhook Payload Preview */}
-                            <div style={{ padding: "0 1rem 1rem" }}>
-                              <div style={{
-                                fontWeight: 600,
-                                fontSize: "0.8rem",
-                                textTransform: "uppercase",
-                                color: "#475569",
-                                marginBottom: "0.5rem",
-                                letterSpacing: "0.05em",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                              }}>
-                                <span><Upload size={14} style={{ verticalAlign: "middle" }} /> Webhook Payload Preview</span>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                                  <JsonToggle />
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-                                    }}
-                                    style={{
-                                      padding: "4px 12px",
-                                      background: "#f3f4f6",
-                                      border: "1px solid #d1d5db",
-                                      borderRadius: "4px",
-                                      fontSize: "0.7rem",
-                                      cursor: "pointer",
-                                      textTransform: "none",
-                                      fontWeight: 500,
-                                      letterSpacing: 0,
-                                    }}
-                                  >
-                                    <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Copy JSON
-                                  </button>
-                                </div>
-                              </div>
-                              <JsonBlock data={payload} maxHeight={300} darkBg={jsonViewMode === "raw"} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <SweepHierarchy
+                  orders={pendingOrders}
+                  buildWebhookPayload={buildWebhookPayload}
+                  groupOrdersByMerchantBroker={groupOrdersByMerchantBroker}
+                  formatCurrency={formatCurrency}
+                  jsonViewMode={jsonViewMode}
+                  JsonToggle={JsonToggle}
+                  JsonBlock={JsonBlock}
+                />
               ) : (
                 /* ═══════════════════════════════════════════════════════ */
                 /* BASKET VIEW — Original grouping by basket_id           */
@@ -1217,53 +1038,34 @@ export default function SweepAdmin() {
 
           {/* History Tab */}
           {activeTab === "history" && (
-            <div>
-              <div style={{ 
-                background: "#fff", 
-                borderRadius: "8px", 
-                border: "1px solid #e2e8f0",
-                overflow: "hidden"
-              }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc" }}>
-                      <th style={thStyle}>Batch ID</th>
-                      <th style={thStyle}>Started</th>
-                      <th style={thStyle}>Duration</th>
-                      <th style={thStyle}>Merchants</th>
-                      <th style={thStyle}>Placed</th>
-                      <th style={thStyle}>Failed</th>
-                      <th style={thStyle}>Brokers Notified</th>
-                      <th style={thStyle}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((h) => {
-                      // brokers_notified may come as JSON string or array
-                      let brokers = h.brokers_notified;
-                      if (typeof brokers === "string") {
-                        try { brokers = JSON.parse(brokers); } catch { brokers = [brokers]; }
-                      }
-                      return (
-                        <HistoryRow
-                          key={h.batch_id}
-                          h={h}
-                          brokers={brokers}
-                          tdStyle={tdStyle}
-                          formatDate={formatDate}
-                        />
-                      );
-                    })}
-                    {history.length === 0 && (
-                      <tr>
-                        <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>
-                          No sweep history yet
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {history.length === 0 ? (
+                <div style={{
+                  padding: "2rem", textAlign: "center", color: "#94a3b8",
+                  background: "#fff", borderRadius: "8px", border: "1px solid #e2e8f0",
+                }}>
+                  No sweep history yet
+                </div>
+              ) : history.map((h) => {
+                let brokers = h.brokers_notified;
+                if (typeof brokers === "string") {
+                  try { brokers = JSON.parse(brokers); } catch { brokers = [brokers]; }
+                }
+                return (
+                  <HistoryCard
+                    key={h.batch_id}
+                    h={h}
+                    brokers={brokers}
+                    formatDate={formatDate}
+                    formatCurrency={formatCurrency}
+                    buildWebhookPayload={buildWebhookPayload}
+                    groupOrdersByMerchantBroker={groupOrdersByMerchantBroker}
+                    jsonViewMode={jsonViewMode}
+                    JsonToggle={JsonToggle}
+                    JsonBlock={JsonBlock}
+                  />
+                );
+              })}
             </div>
           )}
         </>
@@ -1293,6 +1095,273 @@ function StatCard({ label, value, subtext, color }) {
           {subtext}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SweepHierarchy — Merchant → Broker (webhook) → Basket → Orders tree
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBroker, formatCurrency, jsonViewMode, JsonToggle, JsonBlock }) {
+  const [expandedMerchants, setExpandedMerchants] = useState(new Set());
+  const [expandedBrokers, setExpandedBrokers] = useState(new Set());
+  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+  const [showPayload, setShowPayload] = useState(new Set());
+
+  const toggle = (setter, key) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  // ── Build merchant → broker → basket hierarchy from flat orders ──
+  const hierarchy = {};
+  for (const o of orders) {
+    const mId = o.merchant_id || "unknown";
+    const mName = o.merchant_name || o.merchant_id || "Unknown";
+    const br = o.broker || "Unknown";
+    const bk = o.basket_id || "no-basket";
+
+    if (!hierarchy[mId]) {
+      hierarchy[mId] = { merchant_id: mId, merchant_name: mName, brokers: {}, orders: [], totalAmount: 0, memberSet: new Set() };
+    }
+    hierarchy[mId].orders.push(o);
+    hierarchy[mId].totalAmount += parseFloat(o.amount || 0);
+    hierarchy[mId].memberSet.add(o.member_id);
+
+    if (!hierarchy[mId].brokers[br]) {
+      hierarchy[mId].brokers[br] = { broker: br, baskets: {}, orders: [], totalAmount: 0, memberSet: new Set() };
+    }
+    hierarchy[mId].brokers[br].orders.push(o);
+    hierarchy[mId].brokers[br].totalAmount += parseFloat(o.amount || 0);
+    hierarchy[mId].brokers[br].memberSet.add(o.member_id);
+
+    if (!hierarchy[mId].brokers[br].baskets[bk]) {
+      hierarchy[mId].brokers[br].baskets[bk] = { basket_id: bk, member_id: o.member_id, orders: [], totalAmount: 0 };
+    }
+    hierarchy[mId].brokers[br].baskets[bk].orders.push(o);
+    hierarchy[mId].brokers[br].baskets[bk].totalAmount += parseFloat(o.amount || 0);
+  }
+
+  const badge = (text, bg, color) => (
+    <span style={{
+      fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px",
+      borderRadius: 4, background: bg, color, whiteSpace: "nowrap",
+    }}>
+      {text}
+    </span>
+  );
+
+  const rowBase = (depth) => ({
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "8px 12px", paddingLeft: `${12 + depth * 24}px`,
+    cursor: "pointer", fontSize: "0.82rem",
+    borderBottom: "1px solid #f1f5f9", transition: "background 0.1s",
+  });
+
+  const pills = (row) => (
+    <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {row.memberSet && badge(`${row.memberSet.size} mbrs`, "#f0f9ff", "#0369a1")}
+      {badge(`${row.orders.length} orders`, "#faf5ff", "#7c3aed")}
+      {badge(formatCurrency(row.totalAmount), "#f0fdf4", "#15803d")}
+    </div>
+  );
+
+  const basketPills = (bk) => (
+    <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+      {badge(`${bk.orders.length} orders`, "#faf5ff", "#7c3aed")}
+      {badge(formatCurrency(bk.totalAmount), "#f0fdf4", "#15803d")}
+    </div>
+  );
+
+  const merchantKeys = Object.keys(hierarchy).sort();
+
+  return (
+    <div style={{
+      background: "#fff", borderRadius: "8px",
+      border: "1px solid #e2e8f0", overflow: "hidden",
+    }}>
+      <div style={{
+        padding: "0.5rem 0.75rem", background: "#f8fafc",
+        fontWeight: 600, fontSize: "0.8rem",
+        borderBottom: "1px solid #e2e8f0", color: "#374151",
+      }}>
+        Webhook Feeds — {merchantKeys.length} merchant(s)
+      </div>
+
+      {merchantKeys.map((mId) => {
+        const m = hierarchy[mId];
+        const mOpen = expandedMerchants.has(mId);
+
+        return (
+          <div key={mId}>
+            {/* ── Level 1: Merchant ── */}
+            <div
+              onClick={() => toggle(setExpandedMerchants, mId)}
+              style={{ ...rowBase(0), fontWeight: 600, background: mOpen ? "#f8fafc" : "#fff" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f9ff")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = mOpen ? "#f8fafc" : "#fff")}
+            >
+              <Store size={14} color="#8b5cf6" />
+              <span style={{ color: "#1e293b" }}>{m.merchant_name}</span>
+              {badge(`${Object.keys(m.brokers).length} webhook(s)`, "#e0e7ff", "#3730a3")}
+              {pills(m)}
+              {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+            </div>
+
+            {/* ── Level 2: Brokers (webhook feeds) ── */}
+            {mOpen && Object.keys(m.brokers).sort().map((brKey) => {
+              const br = m.brokers[brKey];
+              const brId = `${mId}|${brKey}`;
+              const brOpen = expandedBrokers.has(brId);
+              const payloadVisible = showPayload.has(brId);
+
+              // Build payload for this merchant-broker combo
+              const webhookGroup = {
+                merchant_id: m.merchant_id,
+                merchant_name: m.merchant_name,
+                broker: br.broker,
+                orders: br.orders,
+              };
+
+              return (
+                <div key={brId}>
+                  <div
+                    onClick={() => toggle(setExpandedBrokers, brId)}
+                    style={{ ...rowBase(1), fontWeight: 500, background: brOpen ? "#faf5ff" : "#fff" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#faf5ff")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = brOpen ? "#faf5ff" : "#fff")}
+                  >
+                    <Building2 size={14} color="#6366f1" />
+                    <span style={{ color: "#1e293b" }}>{br.broker}</span>
+                    <Radio size={12} color="#94a3b8" title="Webhook feed" />
+                    {pills(br)}
+                    {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                  </div>
+
+                  {brOpen && (
+                    <div>
+                      {/* Webhook payload toggle */}
+                      <div style={{
+                        paddingLeft: `${12 + 2 * 24}px`, paddingRight: 12,
+                        paddingTop: 6, paddingBottom: 6,
+                        display: "flex", alignItems: "center", gap: 8,
+                        borderBottom: "1px solid #f1f5f9",
+                        background: "#fafbff",
+                      }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggle(setShowPayload, brId); }}
+                          style={{
+                            padding: "4px 12px", background: payloadVisible ? "#64748b" : "#6366f1",
+                            color: "#fff", border: "none", borderRadius: "4px",
+                            fontSize: "0.72rem", fontWeight: 600, cursor: "pointer",
+                          }}
+                        >
+                          {payloadVisible
+                            ? "Hide Payload"
+                            : <><Upload size={12} style={{ verticalAlign: "middle" }} /> Webhook Payload</>
+                          }
+                        </button>
+                        {payloadVisible && (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <JsonToggle />
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(JSON.stringify(buildWebhookPayload(webhookGroup), null, 2));
+                              }}
+                              style={{
+                                padding: "4px 12px", background: "#f3f4f6",
+                                border: "1px solid #d1d5db", borderRadius: "4px",
+                                fontSize: "0.7rem", cursor: "pointer", fontWeight: 500,
+                              }}
+                            >
+                              <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Copy JSON
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Webhook payload JSON */}
+                      {payloadVisible && (
+                        <div style={{ paddingLeft: `${12 + 2 * 24}px`, paddingRight: 12, paddingBottom: 8 }}>
+                          <JsonBlock
+                            data={buildWebhookPayload(webhookGroup)}
+                            maxHeight={300}
+                            darkBg={jsonViewMode === "raw"}
+                          />
+                        </div>
+                      )}
+
+                      {/* ── Level 3: Baskets ── */}
+                      {Object.keys(br.baskets).sort().map((bkId) => {
+                        const bk = br.baskets[bkId];
+                        const bkOpen = expandedBaskets.has(bkId);
+
+                        return (
+                          <div key={bkId}>
+                            <div
+                              onClick={() => toggle(setExpandedBaskets, bkId)}
+                              style={{ ...rowBase(2), background: bkOpen ? "#fffbeb" : "#fff" }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "#fffbeb")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = bkOpen ? "#fffbeb" : "#fff")}
+                            >
+                              <ShoppingBasket size={14} color="#d97706" />
+                              <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
+                                {bkId}
+                              </span>
+                              {bk.member_id && badge(`member: ${bk.member_id}`, "#fef3c7", "#92400e")}
+                              {basketPills(bk)}
+                              {bkOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                            </div>
+
+                            {/* ── Level 4: Orders table ── */}
+                            {bkOpen && (
+                              <div style={{ paddingLeft: `${12 + 3 * 24}px`, paddingRight: 12, paddingBottom: 4 }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                  <thead>
+                                    <tr style={{ background: "#f8fafc" }}>
+                                      <th style={thStyle}>Order</th>
+                                      <th style={thStyle}>Symbol</th>
+                                      <th style={thStyle}>Amount</th>
+                                      <th style={thStyle}>Price</th>
+                                      <th style={thStyle}>Shares</th>
+                                      <th style={thStyle}>Points</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {bk.orders.map((o, i) => (
+                                      <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                        <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
+                                          {o.order_id || i + 1}
+                                        </td>
+                                        <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
+                                        <td style={tdStyle}>{formatCurrency(o.amount)}</td>
+                                        <td style={tdStyle}>
+                                          {o.price ? formatCurrency(o.price) : <span style={{ color: "#ef4444", fontSize: "0.72rem" }}>—</span>}
+                                        </td>
+                                        <td style={tdStyle}>{parseFloat(o.shares || 0).toFixed(4)}</td>
+                                        <td style={tdStyle}>{parseInt(o.points_used || 0, 10).toLocaleString()}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1458,110 +1527,185 @@ const smallBtnStyle = {
   cursor: "pointer"
 };
 
-// Expandable History Row — shows errors and log_data on click
-function HistoryRow({ h, brokers, tdStyle, formatDate }) {
+// Expandable History Card — loads sweep orders into hierarchy on expand
+function HistoryCard({ h, brokers, formatDate, formatCurrency, buildWebhookPayload, groupOrdersByMerchantBroker, jsonViewMode, JsonToggle, JsonBlock }) {
   const [expanded, setExpanded] = useState(false);
+  const [sweepOrders, setSweepOrders] = useState(null);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+
   const hasErrors = h.has_errors || (Array.isArray(h.errors) && h.errors.length > 0);
 
+  const loadSweepOrders = async () => {
+    if (sweepOrders) return;
+    setOrdersLoading(true);
+    try {
+      const res = await apiPost("get_sweep_status.php", { action: "sweep_orders", batch_id: h.batch_id });
+      if (res.success) {
+        setSweepOrders(res.orders || []);
+      } else {
+        console.error("sweep_orders failed:", res.error);
+        setSweepOrders([]);
+      }
+    } catch (err) {
+      console.error("sweep_orders error:", err);
+      setSweepOrders([]);
+    }
+    setOrdersLoading(false);
+  };
+
+  const handleExpand = () => {
+    if (!expanded) loadSweepOrders();
+    setExpanded(!expanded);
+  };
+
   return (
-    <>
-      <tr
-        onClick={() => setExpanded(!expanded)}
+    <div style={{
+      background: "#fff", borderRadius: "8px",
+      border: `1px solid ${expanded ? "#6366f1" : "#e2e8f0"}`,
+      overflow: "hidden",
+    }}>
+      {/* ── Header row ── */}
+      <div
+        onClick={handleExpand}
         style={{
-          borderBottom: expanded ? "none" : "1px solid #e2e8f0",
-          cursor: "pointer",
-          background: expanded ? "#f8fafc" : undefined,
+          padding: "0.75rem 1rem", cursor: "pointer",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: expanded ? "#eef2ff" : "#fff",
+          transition: "background 0.15s",
         }}
       >
-        <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
-          {h.batch_id}
-          <span style={{ marginLeft: 6, fontSize: "0.65rem", color: "#94a3b8" }}>
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </span>
-        </td>
-        <td style={tdStyle}>{formatDate(h.started_at)}</td>
-        <td style={tdStyle}>{h.duration_seconds || 0}s</td>
-        <td style={tdStyle}>{h.merchants_processed}</td>
-        <td style={{ ...tdStyle, color: "#059669" }}>{h.orders_confirmed}</td>
-        <td style={{ ...tdStyle, color: h.orders_failed > 0 ? "#dc2626" : "#94a3b8" }}>
-          {h.orders_failed}
-        </td>
-        <td style={tdStyle}>
-          {Array.isArray(brokers) && brokers.length > 0 ? brokers.join(", ") : "-"}
-        </td>
-        <td style={tdStyle}>
-          {hasErrors ? (
-            <span style={{ color: "#dc2626" }}><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Errors</span>
-          ) : (
-            <span style={{ color: "#059669" }}><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> OK</span>
-          )}
-        </td>
-      </tr>
-      {expanded && (
-        <tr style={{ borderBottom: "1px solid #e2e8f0" }}>
-          <td colSpan={8} style={{ padding: 0 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "80px" }}>
-              {/* Errors */}
-              <div style={{ borderRight: "1px solid #e2e8f0" }}>
-                <div style={{
-                  padding: "0.375rem 0.75rem",
-                  background: hasErrors ? "#fef2f2" : "#f0fdf4",
-                  fontWeight: 600,
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  color: hasErrors ? "#991b1b" : "#166534",
-                }}>
-                  {hasErrors ? <><XCircle size={12} style={{ verticalAlign: "middle" }} /> Errors ({h.errors?.length || 0})</> : <><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> No Errors</>}
-                </div>
-                <pre style={{
-                  margin: 0,
-                  padding: "0.5rem 0.75rem",
-                  fontSize: "0.7rem",
-                  fontFamily: "monospace",
-                  background: "#fafafa",
-                  maxHeight: "200px",
-                  overflowY: "auto",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                }}>
-                  {Array.isArray(h.errors) && h.errors.length > 0
-                    ? h.errors.join("\n")
-                    : "— none —"}
-                </pre>
-              </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.82rem", color: "#1e293b" }}>
+              {h.batch_id}
+            </span>
+            {hasErrors ? (
+              <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#fee2e2", color: "#dc2626" }}>
+                <AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Errors
+              </span>
+            ) : (
+              <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#d1fae5", color: "#059669" }}>
+                <CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> OK
+              </span>
+            )}
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#faf5ff", color: "#7c3aed" }}>
+              {h.merchants_processed} merchant(s)
+            </span>
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#f0fdf4", color: "#15803d" }}>
+              {h.orders_confirmed} placed
+            </span>
+            {h.orders_failed > 0 && (
+              <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#fee2e2", color: "#dc2626" }}>
+                {h.orders_failed} failed
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 16, fontSize: "0.78rem", color: "#64748b" }}>
+            <span>{formatDate(h.started_at)}</span>
+            <span>Duration: <strong>{h.duration_seconds || 0}s</strong></span>
+            {Array.isArray(brokers) && brokers.length > 0 && (
+              <span>Brokers: <strong>{brokers.join(", ")}</strong></span>
+            )}
+          </div>
+        </div>
+        <span style={{ color: "#94a3b8" }}>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </div>
 
-              {/* Log Data */}
-              <div>
-                <div style={{
-                  padding: "0.375rem 0.75rem",
-                  background: "#f1f5f9",
-                  fontWeight: 600,
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  color: "#475569",
-                }}>
-                  <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Log ({h.log_data?.length || 0} entries)
-                </div>
-                <pre style={{
-                  margin: 0,
-                  padding: "0.5rem 0.75rem",
-                  fontSize: "0.65rem",
-                  fontFamily: "monospace",
-                  background: "#fafafa",
-                  maxHeight: "200px",
-                  overflowY: "auto",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                }}>
-                  {Array.isArray(h.log_data) && h.log_data.length > 0
-                    ? h.log_data.join("\n")
-                    : "— no log data —"}
-                </pre>
+      {/* ── Expanded: hierarchy + errors/logs ── */}
+      {expanded && (
+        <div style={{ borderTop: "1px solid #e2e8f0" }}>
+          {/* Order hierarchy */}
+          <div style={{ padding: "0.75rem" }}>
+            {ordersLoading ? (
+              <div style={{ padding: "1.5rem", textAlign: "center", color: "#64748b" }}>Loading sweep orders...</div>
+            ) : sweepOrders && sweepOrders.length > 0 ? (
+              <SweepHierarchy
+                orders={sweepOrders}
+                buildWebhookPayload={buildWebhookPayload}
+                groupOrdersByMerchantBroker={groupOrdersByMerchantBroker}
+                formatCurrency={formatCurrency}
+                jsonViewMode={jsonViewMode}
+                JsonToggle={JsonToggle}
+                JsonBlock={JsonBlock}
+              />
+            ) : (
+              <div style={{ padding: "1rem", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>
+                No order detail available for this sweep.
               </div>
-            </div>
-          </td>
-        </tr>
+            )}
+          </div>
+
+          {/* Errors / Logs toggle */}
+          <div style={{ padding: "0 0.75rem 0.75rem" }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowLogs(!showLogs); }}
+              style={{
+                padding: "4px 12px",
+                background: showLogs ? "#64748b" : hasErrors ? "#ef4444" : "#e2e8f0",
+                color: showLogs ? "#fff" : hasErrors ? "#fff" : "#374151",
+                border: "none", borderRadius: "4px",
+                fontSize: "0.72rem", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              {showLogs
+                ? "Hide Logs"
+                : hasErrors
+                  ? <><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Errors ({h.errors?.length || 0}) & Logs</>
+                  : <><ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Logs ({h.log_data?.length || 0})</>
+              }
+            </button>
+
+            {showLogs && (
+              <div style={{
+                marginTop: "0.5rem", display: "grid", gridTemplateColumns: "1fr 1fr",
+                border: "1px solid #e2e8f0", borderRadius: "6px", overflow: "hidden", minHeight: "80px",
+              }}>
+                {/* Errors */}
+                <div style={{ borderRight: "1px solid #e2e8f0" }}>
+                  <div style={{
+                    padding: "0.375rem 0.75rem",
+                    background: hasErrors ? "#fef2f2" : "#f0fdf4",
+                    fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase",
+                    color: hasErrors ? "#991b1b" : "#166534",
+                  }}>
+                    {hasErrors
+                      ? <><XCircle size={12} style={{ verticalAlign: "middle" }} /> Errors ({h.errors?.length || 0})</>
+                      : <><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> No Errors</>
+                    }
+                  </div>
+                  <pre style={{
+                    margin: 0, padding: "0.5rem 0.75rem", fontSize: "0.7rem",
+                    fontFamily: "monospace", background: "#fafafa",
+                    maxHeight: "200px", overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  }}>
+                    {Array.isArray(h.errors) && h.errors.length > 0 ? h.errors.join("\n") : "— none —"}
+                  </pre>
+                </div>
+
+                {/* Log Data */}
+                <div>
+                  <div style={{
+                    padding: "0.375rem 0.75rem", background: "#f1f5f9",
+                    fontWeight: 600, fontSize: "0.7rem", textTransform: "uppercase", color: "#475569",
+                  }}>
+                    <ClipboardList size={12} style={{ verticalAlign: "middle" }} /> Log ({h.log_data?.length || 0} entries)
+                  </div>
+                  <pre style={{
+                    margin: 0, padding: "0.5rem 0.75rem", fontSize: "0.65rem",
+                    fontFamily: "monospace", background: "#fafafa",
+                    maxHeight: "200px", overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  }}>
+                    {Array.isArray(h.log_data) && h.log_data.length > 0 ? h.log_data.join("\n") : "— no log data —"}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
-    </>
+    </div>
   );
 }

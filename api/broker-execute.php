@@ -59,6 +59,23 @@ try {
             echo json_encode(executeBasket($conn, $basketId, $logFile));
             break;
 
+        case 'execute_merchant':
+            $merchantId = $input['merchant_id'] ?? '';
+            if (empty($merchantId)) throw new Exception('Missing merchant_id');
+            echo json_encode(executeMerchant($conn, $merchantId, $logFile));
+            break;
+
+        case 'history':
+            $limit = (int) ($input['limit'] ?? 30);
+            echo json_encode(getExecHistory($conn, $limit));
+            break;
+
+        case 'exec_orders':
+            $eid = $input['exec_id'] ?? '';
+            if (empty($eid)) throw new Exception('Missing exec_id');
+            echo json_encode(getExecOrders($conn, $eid));
+            break;
+
         default:
             throw new Exception("Unknown action: {$action}");
     }
@@ -377,5 +394,169 @@ function executeBasketOrders(
         'symbols'          => $symbols,
         'executed_at'      => $executedAt,
         'fills'            => $fills,
+    ];
+}
+
+
+// ==================================================================
+// EXECUTE MERCHANT — all placed orders for a specific merchant
+// ==================================================================
+
+function executeMerchant(PDO $conn, string $merchantId, string $logFile): array
+{
+    $execId     = 'EXEC-' . date('Ymd-His') . '-' . substr(uniqid(), -5);
+    $executedAt = gmdate('c');
+    $startTime  = microtime(true);
+
+    logMsg($logFile, str_repeat('=', 70));
+    logMsg($logFile, "EXEC MERCHANT {$merchantId}: {$execId}");
+
+    $stmt = $conn->prepare("
+        SELECT order_id, member_id, merchant_id, basket_id,
+               symbol, shares, amount, broker
+        FROM   orders
+        WHERE  merchant_id = ?
+          AND  LOWER(status) = 'placed'
+        ORDER  BY basket_id, order_id ASC
+    ");
+    $stmt->execute([$merchantId]);
+    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($orders)) {
+        return ['success' => false, 'error' => "No placed orders for merchant {$merchantId}"];
+    }
+
+    logMsg($logFile, "Found " . count($orders) . " placed order(s) for merchant {$merchantId}");
+
+    // Group by basket
+    $baskets = [];
+    foreach ($orders as $o) {
+        $bid = $o['basket_id'] ?? 'no_basket';
+        $baskets[$bid][] = $o;
+    }
+
+    $totalExecuted = 0;
+    $totalFailed   = 0;
+    $basketResults = [];
+
+    foreach ($baskets as $basketId => $basketOrders) {
+        $result = executeBasketOrders($conn, $basketId, $basketOrders, $execId, $executedAt, $logFile);
+        $totalExecuted += $result['orders_executed'];
+        $totalFailed   += $result['orders_failed'];
+        $basketResults[] = $result;
+    }
+
+    $duration = round(microtime(true) - $startTime, 2);
+
+    logMsg($logFile, "MERCHANT EXEC DONE: executed={$totalExecuted}, failed={$totalFailed}, "
+                     . "baskets=" . count($baskets) . ", duration={$duration}s");
+
+    return [
+        'success'           => true,
+        'exec_id'           => $execId,
+        'executed_at'       => $executedAt,
+        'orders_executed'   => $totalExecuted,
+        'orders_failed'     => $totalFailed,
+        'baskets_processed' => count($baskets),
+        'basket_results'    => $basketResults,
+        'duration_seconds'  => $duration,
+    ];
+}
+
+
+// ==================================================================
+// HISTORY — past execution batches from broker_notifications
+// ==================================================================
+
+function getExecHistory(PDO $conn, int $limit): array
+{
+    $safeLimit = max(1, min($limit, 100));
+
+    // Each broker_notifications row for 'order.confirmed' has exec_id in payload JSON.
+    // Group by exec_id to get batch-level summaries.
+    $stmt = $conn->query("
+        SELECT JSON_UNQUOTE(JSON_EXTRACT(payload, '$.exec_id')) AS exec_id,
+               MIN(sent_at) AS started_at,
+               MAX(sent_at) AS completed_at,
+               COUNT(DISTINCT basket_id)  AS baskets_processed,
+               COUNT(DISTINCT broker_id)  AS brokers_count,
+               COUNT(DISTINCT member_id)  AS members_count,
+               GROUP_CONCAT(DISTINCT broker_id) AS brokers,
+               SUM(CAST(JSON_EXTRACT(payload, '$.orders_executed') AS UNSIGNED)) AS orders_executed,
+               SUM(CAST(JSON_EXTRACT(payload, '$.total_amount') AS DECIMAL(12,2))) AS total_amount
+        FROM   broker_notifications
+        WHERE  event_type = 'order.confirmed'
+          AND  JSON_EXTRACT(payload, '$.exec_id') IS NOT NULL
+        GROUP  BY exec_id
+        ORDER  BY started_at DESC
+        LIMIT  {$safeLimit}
+    ");
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rows as &$row) {
+        $row['baskets_processed'] = (int)   $row['baskets_processed'];
+        $row['brokers_count']     = (int)   $row['brokers_count'];
+        $row['members_count']     = (int)   $row['members_count'];
+        $row['orders_executed']   = (int)   $row['orders_executed'];
+        $row['total_amount']      = (float) $row['total_amount'];
+        $row['brokers']           = $row['brokers'] ? explode(',', $row['brokers']) : [];
+
+        if ($row['started_at'] && $row['completed_at']) {
+            $row['duration_seconds'] = max(0, strtotime($row['completed_at']) - strtotime($row['started_at']));
+        } else {
+            $row['duration_seconds'] = 0;
+        }
+    }
+    unset($row);
+
+    return [
+        'success' => true,
+        'history' => $rows,
+    ];
+}
+
+
+// ==================================================================
+// EXEC_ORDERS — confirmed orders for a specific execution batch
+// Returns same column shape as preview so the hierarchy component works.
+// ==================================================================
+
+function getExecOrders(PDO $conn, string $execId): array
+{
+    // Get the execution time window from broker_notifications
+    $stmt = $conn->prepare("
+        SELECT MIN(sent_at) AS started_at,
+               MAX(sent_at) AS completed_at
+        FROM   broker_notifications
+        WHERE  event_type = 'order.confirmed'
+          AND  JSON_UNQUOTE(JSON_EXTRACT(payload, '$.exec_id')) = ?
+    ");
+    $stmt->execute([$execId]);
+    $window = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$window || !$window['started_at']) {
+        return ['success' => false, 'error' => 'Execution batch not found'];
+    }
+
+    // Query confirmed orders in this time window
+    $stmt = $conn->prepare("
+        SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
+               o.symbol, o.shares, o.amount, o.points_used, o.broker,
+               o.status, o.placed_at, o.order_type,
+               o.executed_price, o.executed_shares, o.executed_amount, o.executed_at,
+               m.merchant_name
+        FROM   orders o
+        LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
+        WHERE  o.executed_at BETWEEN DATE_SUB(?, INTERVAL 30 SECOND) AND DATE_ADD(?, INTERVAL 5 SECOND)
+          AND  LOWER(o.status) = 'confirmed'
+        ORDER BY o.merchant_id, o.broker, o.basket_id, o.symbol
+        LIMIT 1000
+    ");
+    $stmt->execute([$window['started_at'], $window['completed_at']]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return [
+        'success' => true,
+        'orders'  => $rows,
     ];
 }

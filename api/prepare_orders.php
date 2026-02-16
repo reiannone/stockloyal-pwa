@@ -73,6 +73,25 @@ switch ($action) {
         echo json_encode($process->batches($limit));
         break;
 
+    case 'batch_brokers':
+        $batchId    = $input['batch_id']    ?? '';
+        $merchantId = $input['merchant_id'] ?? '';
+        echo json_encode($process->batchBrokers($batchId, $merchantId));
+        break;
+
+    case 'batch_baskets':
+        $batchId    = $input['batch_id']    ?? '';
+        $merchantId = $input['merchant_id'] ?? '';
+        $broker     = $input['broker']      ?? '';
+        echo json_encode($process->batchBaskets($batchId, $merchantId, $broker));
+        break;
+
+    case 'batch_orders':
+        $batchId  = $input['batch_id']  ?? '';
+        $basketId = $input['basket_id'] ?? '';
+        echo json_encode($process->batchOrders($batchId, $basketId));
+        break;
+
     case 'cancel_pending_orders':
         echo json_encode($process->cancelPendingOrders());
         break;
@@ -80,7 +99,7 @@ switch ($action) {
     default:
         echo json_encode([
             'success' => false,
-            'error'   => 'Invalid action. Use: preview, prepare, stats, drilldown, approve, discard, batches',
+            'error'   => 'Invalid action. Use: preview, prepare, stats, drilldown, approve, discard, batches, batch_brokers, batch_baskets, batch_orders',
         ]);
         break;
 }

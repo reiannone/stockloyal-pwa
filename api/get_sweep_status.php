@@ -58,6 +58,15 @@ try {
             echo json_encode(getMerchantSchedules($conn));
             break;
 
+        // ==============================================================
+        // SWEEP_ORDERS — orders processed in a specific sweep batch
+        // ==============================================================
+        case 'sweep_orders':
+            $batchId = $input['batch_id'] ?? null;
+            if (!$batchId) throw new Exception("batch_id required for sweep_orders");
+            echo json_encode(getSweepOrders($conn, $batchId));
+            break;
+
         default:
             throw new Exception("Unknown action: {$action}");
     }
@@ -311,5 +320,56 @@ function getMerchantSchedules(PDO $conn): array
     return [
         'success'   => true,
         'schedules' => $rows,
+    ];
+}
+
+
+// ==================================================================
+// SWEEP_ORDERS — orders processed in a specific sweep batch
+// Uses the sweep_log time window (started_at → completed_at) to find
+// orders whose placed_at falls within that range.
+// Returns the same column shape as getPendingOrders so SweepHierarchy works.
+// ==================================================================
+
+function getSweepOrders(PDO $conn, string $batchId): array
+{
+    // Get the sweep's time window
+    $stmt = $conn->prepare("
+        SELECT started_at, completed_at
+        FROM   sweep_log
+        WHERE  batch_id = ?
+    ");
+    $stmt->execute([$batchId]);
+    $sweep = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$sweep) {
+        return ['success' => false, 'error' => 'Sweep batch not found'];
+    }
+
+    // Load orders placed during this sweep window.
+    // Use a buffer: 30s before started_at to handle legacy rows where
+    // started_at = completed_at (both were NOW() at log-insert time,
+    // but orders were placed_at = NOW() during processing, i.e. earlier).
+    $stmt = $conn->prepare("
+        SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
+               o.symbol, o.shares, o.amount, o.points_used, o.broker,
+               o.status, o.placed_at, o.order_type,
+               m.merchant_name,
+               bc.username AS brokerage_id
+        FROM   orders o
+        LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
+        LEFT JOIN broker_credentials bc
+               ON bc.member_id = o.member_id
+              AND LOWER(bc.broker) = LOWER(o.broker)
+        WHERE  o.placed_at BETWEEN DATE_SUB(?, INTERVAL 30 SECOND) AND ?
+        ORDER BY o.merchant_id, o.broker, o.basket_id, o.symbol
+        LIMIT 1000
+    ");
+    $stmt->execute([$sweep['started_at'], $sweep['completed_at']]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    return [
+        'success' => true,
+        'orders'  => $rows,
     ];
 }
