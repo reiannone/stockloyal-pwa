@@ -113,6 +113,7 @@ class SweepProcess
                     'orders_placed' => 0,
                     'orders_failed' => count($allOrders),
                     'member_count'  => $memberCount,
+                    'member_ids'    => array_values(array_unique(array_column($allOrders, 'member_id'))),
                     'basket_count'  => $basketCount,
                     'acknowledged'  => false,
                     'error'         => $e->getMessage(),
@@ -132,6 +133,12 @@ class SweepProcess
         // 5. Log batch to sweep_log
         $this->logSweepBatch($totalPlaced, $totalFailed,
                              count($merchantSet), $brokersNotified, $duration, $startedAt);
+
+        // 6. Clear picks for one-time election members
+        $oneTimeCleared = $this->clearOneTimePicks($groupResults);
+        if ($oneTimeCleared > 0) {
+            $this->log("Cleared picks for {$oneTimeCleared} one-time election member(s)");
+        }
 
         $this->log("SWEEP DONE: placed={$totalPlaced}  failed={$totalFailed}  "
                     . "groups=" . count($groups) . "  duration=" . round($duration, 2) . "s");
@@ -249,6 +256,7 @@ class SweepProcess
             'broker'          => $brokerName,
             'broker_id'       => $brokerInfo['broker_id'] ?? null,
             'member_count'    => count($memberIds),
+            'member_ids'      => array_values($memberIds),
             'basket_count'    => count($basketIds),
             'orders_placed'   => $placedCount,
             'orders_failed'   => count($allOrders) - $placedCount,
@@ -544,6 +552,79 @@ class SweepProcess
         } catch (\PDOException $e) {
             $this->log("⚠️ sweep_log insert: " . $e->getMessage());
         }
+    }
+
+    // ====================================================================
+    // PRIVATE — clear picks for one-time election members
+    // ====================================================================
+
+    /**
+     * After sweep completes, delete member_stock_picks for members
+     * whose wallet.election_type = 'one-time'.
+     *
+     * @param  array $groupResults  Results from processMerchantBrokerGroup()
+     * @return int   Number of members whose picks were cleared
+     */
+    private function clearOneTimePicks(array $groupResults): int
+    {
+        // Collect unique member_ids from successfully placed groups
+        $memberIds = [];
+        foreach ($groupResults as $r) {
+            if (($r['orders_placed'] ?? 0) > 0 && !empty($r['member_ids'])) {
+                foreach ($r['member_ids'] as $mid) {
+                    $memberIds[$mid] = true;
+                }
+            }
+        }
+
+        if (empty($memberIds)) {
+            return 0;
+        }
+
+        $memberList = array_keys($memberIds);
+        $placeholders = implode(',', array_fill(0, count($memberList), '?'));
+
+        // Find members with election_type = 'one-time'
+        try {
+            $stmt = $this->conn->prepare("
+                SELECT member_id 
+                FROM wallet 
+                WHERE member_id IN ({$placeholders})
+                  AND election_type = 'one-time'
+            ");
+            $stmt->execute($memberList);
+            $oneTimeMembers = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+        } catch (\PDOException $e) {
+            $this->log("⚠️ Failed to query one-time members: " . $e->getMessage());
+            return 0;
+        }
+
+        if (empty($oneTimeMembers)) {
+            $this->log("No one-time election members to clear picks for.");
+            return 0;
+        }
+
+        $this->log("Clearing picks for " . count($oneTimeMembers) 
+                    . " one-time member(s): " . implode(', ', $oneTimeMembers));
+
+        $deleteStmt = $this->conn->prepare(
+            "DELETE FROM member_stock_picks WHERE member_id = ?"
+        );
+
+        $cleared = 0;
+        foreach ($oneTimeMembers as $memberId) {
+            try {
+                $deleteStmt->execute([$memberId]);
+                $count = $deleteStmt->rowCount();
+                $this->log("  ✅ Cleared {$count} pick(s) for member {$memberId}");
+                $cleared++;
+            } catch (\PDOException $e) {
+                $this->log("  ⚠️ Failed to clear picks for {$memberId}: " . $e->getMessage());
+                $this->errors[] = "Clear picks for {$memberId}: " . $e->getMessage();
+            }
+        }
+
+        return $cleared;
     }
 
     // ====================================================================

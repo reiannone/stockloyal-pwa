@@ -127,8 +127,8 @@ export default function StockLoyalLanding() {
       complete: brokerComplete,
     },
     {
-      to: "/points-slider",
-      label: "Set Points Conversion",
+      to: "/election",
+      label: "Investment Election",
       subtitle: electionComplete
         ? `${electionType.charAt(0).toUpperCase() + electionType.slice(1)} election set`
         : "Investment Election",
@@ -146,7 +146,7 @@ export default function StockLoyalLanding() {
       step: 5,
     },
     {
-      to: "/fill-basket",
+      to: "/stock-picker",
       label: "Stock Picker",
       subtitle: "Choose your stocks",
       icon: <LineChart size={20} />,

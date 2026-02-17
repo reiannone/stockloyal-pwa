@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
-import { Search, Heart, HeartOff, Trash2, ShoppingBasket, ClipboardCheck, Wallet as WalletIcon } from "lucide-react";
+import { Search, Trash2, ShoppingBasket, ClipboardCheck, Wallet as WalletIcon } from "lucide-react";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
@@ -209,7 +209,7 @@ export default function StockPicker() {
     
     (async () => {
       try {
-        // Load member picks for the Set (used for heart icons)
+        // Load member picks for the Set (used for checkbox state)
         const picksData = await apiPost("get-member-picks.php", { 
           member_id: memberId,
           active_only: true 
@@ -848,7 +848,7 @@ export default function StockPicker() {
 
       if (cleaned.length === 0) {
         setResults([]);
-        setStockError("You haven't saved any picks yet. Browse categories and tap the ❤️ to save stocks for monthly sweep!");
+        setStockError("You haven't saved any picks yet. Browse categories or search by symbol then click the checkbox to save stocks for monthly sweep!");
         setLoadingCategory(false);
         return;
       }
@@ -1254,73 +1254,6 @@ export default function StockPicker() {
   // --- Derived values ---
   const maxPoints = parseInt(wallet?.points ?? "0", 10) || 0;
 
-  // ✅ Render pick action button (heart to add, trash to remove)
-  const renderPickAction = (stock) => {
-    const sym = stock.symbol.toUpperCase();
-    const isPicked = memberPicks.has(sym);
-    const isSaving = savingPick === sym;
-
-    if (category === MY_PICKS) {
-      // In My Basket view, show remove button
-      return (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRemoveFromPicks(sym);
-          }}
-          disabled={isSaving}
-          title="Remove from My Basket"
-          style={{
-            background: "transparent",
-            border: "none",
-            cursor: isSaving ? "wait" : "pointer",
-            padding: "4px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: isSaving ? 0.5 : 1,
-          }}
-        >
-          <Trash2 size={18} color="#ef4444" />
-        </button>
-      );
-    }
-
-    // In other views, show heart toggle
-    return (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (isPicked) {
-            handleRemoveFromPicks(sym);
-          } else {
-            handleSaveToPicks(sym);
-          }
-        }}
-        disabled={isSaving}
-        title={isPicked ? "Remove from My Basket" : "Add to My Basket"}
-        style={{
-          background: "transparent",
-          border: "none",
-          cursor: isSaving ? "wait" : "pointer",
-          padding: "4px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: isSaving ? 0.5 : 1,
-        }}
-      >
-        {isPicked ? (
-          <Heart size={18} color="#ef4444" fill="#ef4444" />
-        ) : (
-          <Heart size={18} color="#9ca3af" />
-        )}
-      </button>
-    );
-  };
-
   if (error) {
     return (
       <div className="page-container">
@@ -1675,7 +1608,7 @@ export default function StockPicker() {
           </p>
         ) : myActiveListData.length === 0 ? (
           <p style={{ color: "#6b7280", fontSize: "0.9rem", textAlign: "center", padding: "1rem 0" }}>
-            You haven't saved any picks yet. Browse categories above and tap the ❤️ to save stocks for sweep process!
+            You haven't saved any picks yet. Browse categories above or search by symbol then click the checkbox to save stocks for sweep process!
           </p>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -1872,7 +1805,6 @@ export default function StockPicker() {
                             <br />
                             Change %
                           </th>
-                          <th style={{ width: "40px" }}>Pick</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1919,9 +1851,6 @@ export default function StockPicker() {
                                   : Number(stock.change || 0).toFixed(2)}
                                 %
                               </div>
-                            </td>
-                            <td className="text-center">
-                              {renderPickAction(stock)}
                             </td>
                           </tr>
                         ))}
