@@ -57,6 +57,15 @@ export default function AdminFAQ() {
   });
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
+  const showNotify = (title, message, isError = false) => {
+    setModal({
+      show: true, title, message,
+      icon: null, data: null,
+      confirmText: "OK",
+      confirmColor: isError ? "#dc2626" : "#007bff",
+    });
+  };
+
   const handleEditClick = useCallback((faq) => {
     setSelected({ ...faq });
     setTimeout(() => {
@@ -97,7 +106,7 @@ export default function AdminFAQ() {
 
     const res = await apiPost("save-faq.php", selected);
     if (!res?.success) {
-      alert("Save failed: " + (res?.error || "Unknown error"));
+      showNotify("Save Failed", res?.error || "Unknown error", true);
       return;
     }
 
@@ -110,7 +119,7 @@ export default function AdminFAQ() {
       setSelected(current || null);
     }
 
-    alert("FAQ saved!");
+    showNotify("Saved", "FAQ saved successfully.");
   };
 
   const deleteFaq = (faq_id) => {
@@ -130,21 +139,25 @@ export default function AdminFAQ() {
     try {
       const res = await apiPost("delete-faq.php", { faq_id });
       if (!res?.success) {
-        alert("Delete failed: " + (res?.error || "Unknown error"));
+        showNotify("Delete Failed", res?.error || "Unknown error", true);
         return;
       }
       const updated = faqs.filter((f) => String(f.faq_id) !== String(faq_id));
       setFaqs(updated);
       setSelected(null);
-      alert("Deleted");
+      showNotify("Deleted", "FAQ has been deleted.");
     } catch (e) {
       console.error("[AdminFAQ] delete-faq failed:", e);
-      alert("Delete failed: network/server error");
+      showNotify("Delete Failed", "Network or server error.", true);
     }
   };
 
   const handleModalConfirm = () => {
-    executeDelete(modal.data?.faq_id);
+    if (modal.data?.faq_id) {
+      executeDelete(modal.data.faq_id);
+    } else {
+      closeModal();
+    }
   };
 
   const handleChange = (e) => {
