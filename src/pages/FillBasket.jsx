@@ -17,7 +17,7 @@ const categoryMap = {
   "Growth Tech": "growth_technology_stocks",
   "Mutual Funds": "top_mutual_funds",
   "ETFs": "etf",
-  "Crypto - Most Active": "most_actives_cryptocurrencies",
+  "Cryptocurrency ETFs": "most_actives_cryptocurrencies",
   "Large Caps": "undervalued_large_caps",
   "Small Caps": "aggressive_small_caps",
   "Day Gainers": "day_gainers",
@@ -34,7 +34,7 @@ const categoryImages = {
   "Growth Tech": "/icons/growth-tech.jpg",
   "Mutual Funds": "/icons/mutual-funds.jpg",
   "ETFs": "/icons/etfs.jpg",
-  "Crypto - Most Active": "/icons/crypto.jpg",
+  "Cryptocurrency ETF": "/icons/crypto.jpg",
   "Day Gainers": "/icons/day-gainers.jpg",
   "Day Losers": "/icons/day-losers.jpg",
 };
