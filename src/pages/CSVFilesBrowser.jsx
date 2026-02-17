@@ -1,8 +1,9 @@
 // src/pages/CSVFilesBrowser.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { Download, FolderOpen, File, Calendar, CheckSquare, Square, RefreshCw } from "lucide-react";
+import { Download, FolderOpen, Calendar, CheckSquare, Square, RefreshCw, Trash2 } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function CSVFilesBrowser() {
   const navigate = useNavigate();
@@ -13,8 +14,26 @@ export default function CSVFilesBrowser() {
   const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [filterBroker, setFilterBroker] = useState("");
   const [filterMerchant, setFilterMerchant] = useState("");
-  const [filterType, setFilterType] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
   const [sortBy, setSortBy] = useState("date-desc");
+
+  // ConfirmModal state
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", details: null,
+    confirmText: "Delete", confirmColor: "#ef4444",
+    icon: <Trash2 size={20} color="#ef4444" />,
+  });
+  const pendingAction = useRef(null);
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  const handleModalConfirm = () => {
+    closeModal();
+    if (pendingAction.current) {
+      pendingAction.current();
+      pendingAction.current = null;
+    }
+  };
 
   // Load CSV files list
   useEffect(() => {
@@ -66,8 +85,13 @@ export default function CSVFilesBrowser() {
     if (filterBroker) {
       result = result.filter(f => f.broker === filterBroker);
     }
-    if (filterType) {
-      result = result.filter(f => f.type === filterType);
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom);
+      result = result.filter(f => new Date(f.created_at) >= from);
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo + "T23:59:59");
+      result = result.filter(f => new Date(f.created_at) <= to);
     }
 
     // Apply sorting
@@ -84,9 +108,6 @@ export default function CSVFilesBrowser() {
       case "broker":
         result.sort((a, b) => (a.broker || "").localeCompare(b.broker || ""));
         break;
-      case "type":
-        result.sort((a, b) => (a.type || "").localeCompare(b.type || ""));
-        break;
       case "size-desc":
         result.sort((a, b) => (b.file_size || 0) - (a.file_size || 0));
         break;
@@ -95,7 +116,7 @@ export default function CSVFilesBrowser() {
     }
 
     return result;
-  }, [files, filterMerchant, filterBroker, filterType, sortBy]);
+  }, [files, filterMerchant, filterBroker, filterDateFrom, filterDateTo, sortBy]);
 
   // Handle file selection
   const toggleFileSelection = (fileId) => {
@@ -160,35 +181,78 @@ export default function CSVFilesBrowser() {
   };
 
   // Delete selected files
-  const deleteSelected = async () => {
+  const deleteSelected = () => {
     if (selectedFiles.size === 0) {
       alert("Please select files to delete");
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete ${selectedFiles.size} file(s)?`)) {
-      return;
-    }
+    pendingAction.current = async () => {
+      setLoading(true);
+      try {
+        const count = selectedFiles.size;
+        const res = await apiPost("delete-csv-files.php", {
+          file_ids: Array.from(selectedFiles)
+        });
 
-    setLoading(true);
-    try {
-      const res = await apiPost("delete-csv-files.php", {
-        file_ids: Array.from(selectedFiles)
-      });
-
-      if (res?.success) {
-        setSelectedFiles(new Set());
-        await loadFiles();
-        alert(`Deleted ${selectedFiles.size} file(s)`);
-      } else {
-        alert(res?.error || "Failed to delete files");
+        if (res?.success) {
+          setSelectedFiles(new Set());
+          await loadFiles();
+        } else {
+          alert(res?.error || "Failed to delete files");
+        }
+      } catch (err) {
+        console.error("[CSVFilesBrowser] Delete error:", err);
+        alert("Error deleting files");
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("[CSVFilesBrowser] Delete error:", err);
-      alert("Error deleting files");
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    setModal({
+      show: true,
+      title: "Delete Files",
+      message: `Are you sure you want to delete ${selectedFiles.size} file(s)?`,
+      details: "This action cannot be undone.",
+      confirmText: `Delete (${selectedFiles.size})`,
+      confirmColor: "#ef4444",
+      icon: <Trash2 size={20} color="#ef4444" />,
+    });
+  };
+
+  // Delete single file
+  const deleteSingleFile = (file) => {
+    pendingAction.current = async () => {
+      setLoading(true);
+      try {
+        const res = await apiPost("delete-csv-files.php", {
+          file_ids: [file.file_id]
+        });
+
+        if (res?.success) {
+          selectedFiles.delete(file.file_id);
+          setSelectedFiles(new Set(selectedFiles));
+          await loadFiles();
+        } else {
+          alert(res?.error || "Failed to delete file");
+        }
+      } catch (err) {
+        console.error("[CSVFilesBrowser] Delete error:", err);
+        alert("Error deleting file");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    setModal({
+      show: true,
+      title: "Delete File",
+      message: `Delete "${file.filename}"?`,
+      details: "This action cannot be undone.",
+      confirmText: "Delete",
+      confirmColor: "#ef4444",
+      icon: <Trash2 size={20} color="#ef4444" />,
+    });
   };
 
   // Format file size
@@ -212,24 +276,19 @@ export default function CSVFilesBrowser() {
     });
   };
 
-  // Get file type badge color
-  const getTypeBadgeColor = (type) => {
-    switch (type?.toLowerCase()) {
-      case "detail":
-      case "details":
-        return "#3b82f6";
-      case "ach":
-      case "payment":
-        return "#22c55e";
-      case "legacy":
-        return "#f59e0b";
-      default:
-        return "#6b7280";
-    }
-  };
-
   return (
     <div className="page-container">
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        details={modal.details}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        icon={modal.icon}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -283,21 +342,30 @@ export default function CSVFilesBrowser() {
           ))}
         </select>
 
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
+        <input
+          type="date"
+          value={filterDateFrom}
+          onChange={(e) => setFilterDateFrom(e.target.value)}
+          title="From date"
           style={{
             padding: "8px 12px",
             border: "1px solid #ddd",
             borderRadius: "4px",
             fontSize: "14px",
           }}
-        >
-          <option value="">All Types</option>
-          <option value="detail">Detail</option>
-          <option value="ach">ACH</option>
-          <option value="legacy">Legacy</option>
-        </select>
+        />
+        <input
+          type="date"
+          value={filterDateTo}
+          onChange={(e) => setFilterDateTo(e.target.value)}
+          title="To date"
+          style={{
+            padding: "8px 12px",
+            border: "1px solid #ddd",
+            borderRadius: "4px",
+            fontSize: "14px",
+          }}
+        />
 
         <select
           value={sortBy}
@@ -313,7 +381,6 @@ export default function CSVFilesBrowser() {
           <option value="date-asc">Oldest First</option>
           <option value="merchant">Merchant A-Z</option>
           <option value="broker">Broker A-Z</option>
-          <option value="type">Type</option>
           <option value="size-desc">Largest First</option>
         </select>
 
@@ -374,12 +441,13 @@ export default function CSVFilesBrowser() {
         <div style={{ textAlign: "center", padding: "40px", color: "#6b7280" }}>
           <FolderOpen size={48} style={{ margin: "0 auto 16px" }} />
           <p>No CSV files found</p>
-          {(filterMerchant || filterBroker || filterType) && (
+          {(filterMerchant || filterBroker || filterDateFrom || filterDateTo) && (
             <button
               onClick={() => {
                 setFilterMerchant("");
                 setFilterBroker("");
-                setFilterType("");
+                setFilterDateFrom("");
+                setFilterDateTo("");
               }}
               className="btn-secondary"
               style={{ marginTop: "12px" }}
@@ -414,7 +482,6 @@ export default function CSVFilesBrowser() {
                 </th>
                 <th style={{ minWidth: "200px" }}>File Details</th>
                 <th style={{ width: "120px" }}>Merchant / Broker</th>
-                <th style={{ width: "80px" }}>Type</th>
                 <th style={{ width: "100px" }}>Actions</th>
               </tr>
             </thead>
@@ -443,9 +510,8 @@ export default function CSVFilesBrowser() {
                   <td>
                     {/* Stacked file info */}
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {/* Filename with icon */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <File size={14} color="#6b7280" style={{ flexShrink: 0 }} />
+                      {/* Filename */}
+                      <div>
                         <span style={{ 
                           fontSize: "13px",
                           fontWeight: "500",
@@ -491,41 +557,44 @@ export default function CSVFilesBrowser() {
                     </div>
                   </td>
                   <td>
-                    <span
-                      style={{
-                        backgroundColor: getTypeBadgeColor(file.type),
-                        color: "white",
-                        padding: "3px 8px",
-                        borderRadius: "4px",
-                        fontSize: "11px",
-                        fontWeight: "600",
-                        textTransform: "uppercase",
-                        display: "inline-block"
-                      }}
-                    >
-                      {file.type || "?"}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      onClick={() => downloadFile(file)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "4px",
-                        padding: "6px 10px",
-                        backgroundColor: "#007bff",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
-                      <Download size={14} />
-                      <span>Get</span>
-                    </button>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <button
+                        onClick={() => downloadFile(file)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          padding: "6px 10px",
+                          backgroundColor: "#007bff",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        <Download size={14} />
+                        <span>Get</span>
+                      </button>
+                      <button
+                        onClick={() => deleteSingleFile(file)}
+                        title="Delete file"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "6px 8px",
+                          backgroundColor: "transparent",
+                          color: "#ef4444",
+                          border: "1px solid #fecaca",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
