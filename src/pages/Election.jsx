@@ -192,9 +192,24 @@ export default function Election() {
         </label>
       </div>
 
+      {selection === "one-time" && (
+        <div className="mt-4">
+          <p className="form-disclosure">
+            By selecting the One-Time Investment option, you authorize{" "}
+            <strong>{memberName}</strong> to convert the loyalty reward points currently
+            available in your account into a cash-equivalent amount on the{" "}
+            <strong>{textSweepDay || "scheduled sweep day"}</strong> of this month, which
+            will be invested according to your selected stock allocation in your{" "}
+            <em>Basket</em>. This is a single, non-recurring election. After the order is
+            submitted to your broker, your <em>Basket</em> selections will be cleared. Any
+            future investments will require a new selection and authorization.
+          </p>
+        </div>
+      )}
+
       {selection === "monthly" && (
         <div className="mt-4">
-          <p className="body-text mb-4">
+          <p className="form-disclosure">
             By selecting the Monthly Sweep option, you authorize{" "}
             <strong>{memberName}</strong> to automatically convert the loyalty reward
             points you earn on the{" "}
