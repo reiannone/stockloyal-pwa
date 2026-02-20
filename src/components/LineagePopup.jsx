@@ -1,5 +1,6 @@
 // src/components/LineagePopup.jsx
 import React, { useState, useEffect, useCallback } from "react";
+import ReactDOM from "react-dom";
 import { apiPost } from "../api.js";
 import {
   X,
@@ -49,7 +50,7 @@ const TYPE_TO_STAGE = {
 };
 
 // ─── Main popup component ──────────────────────────────────────
-export default function LineagePopup({ id, type, onClose }) {
+export default function LineagePopup({ id, type, onClose, memberId }) {
   const [lineage, setLineage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -85,9 +86,21 @@ export default function LineagePopup({ id, type, onClose }) {
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const activeStages = lineage
+  // When memberId is provided, filter lineage to only this member's data
+  const filtered = lineage && memberId
+    ? {
+        ...lineage,
+        staged:  (lineage.staged || []).filter((r) => r.member_id === memberId),
+        baskets: (lineage.baskets || []).filter((r) => r.member_id === memberId),
+        orders:  (lineage.orders || []).filter((r) => r.member_id === memberId),
+        brokers: (lineage.brokers || []).filter((r) => !r.member_id || r.member_id === memberId),
+        execs:   (lineage.execs || []).filter((r) => !r.member_id || r.member_id === memberId),
+      }
+    : lineage;
+
+  const activeStages = filtered
     ? STAGES.filter((s) => {
-        const d = lineage[s.key];
+        const d = filtered[s.key];
         if (!d) return false;
         if (Array.isArray(d)) return d.length > 0;
         return Object.keys(d).length > 0;
@@ -96,7 +109,7 @@ export default function LineagePopup({ id, type, onClose }) {
 
   const originStage = TYPE_TO_STAGE[type] || "";
 
-  return (
+  return ReactDOM.createPortal(
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -113,7 +126,7 @@ export default function LineagePopup({ id, type, onClose }) {
         </div>
 
         {/* Content */}
-        <div style={styles.body}>
+        <div style={{ ...styles.body, minHeight: loading ? "300px" : "auto" }}>
           {loading && (
             <div style={styles.center}>
               <RefreshCw size={24} style={{ color: "#6b7280", animation: "spin 1s linear infinite" }} />
@@ -128,14 +141,14 @@ export default function LineagePopup({ id, type, onClose }) {
             </div>
           )}
 
-          {lineage && !loading && (
+          {filtered && !loading && (
             <>
               {/* Visual chain */}
               <div style={styles.chain}>
                 {activeStages.map((stage, idx) => {
                   const isOrigin = stage.key === originStage;
                   const Icon = stage.icon;
-                  const data = lineage[stage.key];
+                  const data = filtered[stage.key];
                   const count = Array.isArray(data) ? data.length : 1;
 
                   return (
@@ -169,7 +182,7 @@ export default function LineagePopup({ id, type, onClose }) {
                   <StageDetail
                     key={stage.key}
                     stage={stage}
-                    data={lineage[stage.key]}
+                    data={filtered[stage.key]}
                     isOrigin={stage.key === originStage}
                     expanded={expanded[stage.key] ?? (stage.key === originStage)}
                     onToggle={() => toggleExpand(stage.key)}
@@ -180,7 +193,8 @@ export default function LineagePopup({ id, type, onClose }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -465,7 +479,7 @@ function StatusPill({ status }) {
 }
 
 // ─── LineageLink — inline clickable ID ─────────────────────────
-export function LineageLink({ id, type, children }) {
+export function LineageLink({ id, type, children, memberId }) {
   const [show, setShow] = useState(false);
 
   if (!id) return <span>{children || "-"}</span>;
@@ -479,7 +493,7 @@ export function LineageLink({ id, type, children }) {
       >
         {children || id}
       </span>
-      {show && <LineagePopup id={String(id)} type={type} onClose={() => setShow(false)} />}
+      {show && <LineagePopup id={String(id)} type={type} onClose={() => setShow(false)} memberId={memberId} />}
     </>
   );
 }

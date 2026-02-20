@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { LineageLink } from "../components/LineagePopup";
 
 // Match LedgerAdmin: inline label + control
 function FormRow({ label, children }) {
@@ -436,7 +437,7 @@ export default function OrdersAdmin() {
       {selected && (
         <div className="card" style={{ marginBottom: "1rem" }} ref={editPanelRef}>
           <h2 className="subheading" style={{ marginTop: 0 }}>
-            Edit Order #{selected.order_id}
+            Edit Order <LineageLink id={String(selected.order_id)} type="order">#{selected.order_id}</LineageLink>
           </h2>
 
           <form onSubmit={saveOrder} className="form-grid">
@@ -464,13 +465,19 @@ export default function OrdersAdmin() {
             </FormRow>
 
             <FormRow label="Basket ID">
-              <input
-                type="text"
-                className="form-input"
-                value={selected.basket_id || ""}
-                onChange={(e) => setSelected({ ...selected, basket_id: e.target.value })}
-                required
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={selected.basket_id || ""}
+                  onChange={(e) => setSelected({ ...selected, basket_id: e.target.value })}
+                  required
+                />
+                {selected.basket_id && (
+                  <LineageLink id={selected.basket_id} type="basket">🔗</LineageLink>
+                )}
+              </div>
             </FormRow>
 
             <FormRow label="Symbol">
@@ -615,13 +622,19 @@ export default function OrdersAdmin() {
             </FormRow>
 
             <FormRow label="Paid Batch ID">
-              <input
-                type="text"
-                className="form-input"
-                value={selected.paid_batch_id || ""}
-                onChange={(e) => setSelected({ ...selected, paid_batch_id: e.target.value })}
-                placeholder="Optional"
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={selected.paid_batch_id || ""}
+                  onChange={(e) => setSelected({ ...selected, paid_batch_id: e.target.value })}
+                  placeholder="Optional"
+                />
+                {selected.paid_batch_id && (
+                  <LineageLink id={selected.paid_batch_id} type="ach">🔗</LineageLink>
+                )}
+              </div>
             </FormRow>
 
             <div style={{ display: "flex", gap: "1rem", marginTop: "1.25rem", gridColumn: "1 / -1" }}>
@@ -728,7 +741,7 @@ export default function OrdersAdmin() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>
-                        {b.basket_id}
+                        <LineageLink id={b.basket_id} type="basket">{b.basket_id}</LineageLink>
                       </span>
                       <span style={{
                         fontSize: "0.75rem",
@@ -827,7 +840,9 @@ export default function OrdersAdmin() {
                               }}
                               title={isAffected ? `⚠️ Missing ${fieldName} - Click to fix` : "Click to edit"}
                             >
-                              <td style={{ fontWeight: 500 }}>{order.order_id}</td>
+                              <td style={{ fontWeight: 500 }}>
+                                <LineageLink id={String(order.order_id)} type="order">{order.order_id}</LineageLink>
+                              </td>
                               <td>{order.member_id}</td>
                               <td><strong>{order.symbol}</strong></td>
                               <td>

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { LineageLink } from "../components/LineagePopup";
 
 export default function Transactions() {
   const navigate = useNavigate();
@@ -523,7 +524,7 @@ export default function Transactions() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>
-                        {b.basket_id}
+                        <LineageLink id={b.basket_id} type="basket" memberId={memberId}>{b.basket_id}</LineageLink>
                       </span>
                       <span style={{
                         fontSize: "0.75rem",
@@ -721,8 +722,16 @@ export default function Transactions() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Order ID">{selectedTx.order_id ?? "-"}</DetailField>
-                    <DetailField label="Basket ID">{selectedTx.basket_id ?? "-"}</DetailField>
+                    <DetailField label="Order ID">
+                      {selectedTx.order_id
+                        ? <LineageLink id={String(selectedTx.order_id)} type="order" memberId={memberId}>{selectedTx.order_id}</LineageLink>
+                        : "-"}
+                    </DetailField>
+                    <DetailField label="Basket ID">
+                      {selectedTx.basket_id
+                        ? <LineageLink id={selectedTx.basket_id} type="basket" memberId={memberId}>{selectedTx.basket_id}</LineageLink>
+                        : "-"}
+                    </DetailField>
                     <DetailField label="Member ID">{selectedTx.member_id ?? "-"}</DetailField>
                     <DetailField label="Merchant ID">{selectedTx.merchant_id ?? "-"}</DetailField>
 
