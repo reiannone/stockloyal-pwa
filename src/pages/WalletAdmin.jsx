@@ -19,6 +19,11 @@ import {
   Briefcase,
   CircleCheckBig,
   Lock,
+  Search,
+  Eye,
+  EyeOff,
+  Unlock,
+  ArrowRight,
 } from "lucide-react";
 
 export default function WalletAdmin() {
@@ -657,7 +662,7 @@ export default function WalletAdmin() {
           boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)"
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "1.5rem" }}>🔍</span>
+            <Search size={24} color="#1e40af" />
             <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: "600" }}>
               Data Quality Issue: Missing {fieldName}
             </h3>
@@ -797,7 +802,7 @@ export default function WalletAdmin() {
                   }}
                   title={showPw ? "Hide passwords" : "Show passwords"}
                 >
-                  {showPw ? "🙈 Hide" : "👁 Show"}
+                  {showPw ? <><EyeOff size={14} /> Hide</> : <><Eye size={14} /> Show</>}
                 </button>
               </div>
             </FormRow>
@@ -1181,7 +1186,7 @@ export default function WalletAdmin() {
                     {lockoutResetting
                       ? "Resetting…"
                       : lockoutInfo.locked_at
-                      ? "🔓 Unlock Account & Reset Fails"
+                      ? <><Unlock size={14} style={{ verticalAlign: "middle" }} /> Unlock Account & Reset Fails</>
                       : `Reset Fail Count (${lockoutInfo.fail_count})`}
                   </button>
                 )}
@@ -1324,7 +1329,7 @@ export default function WalletAdmin() {
                     }}
                     title={
                       fromDataQuality && fieldName && !w[fieldName] 
-                        ? `⚠️ Missing ${fieldName} - Click to fix`
+                        ? `Missing ${fieldName} - Click to fix`
                         : "Click to edit this wallet"
                     }
                   >
@@ -1338,7 +1343,7 @@ export default function WalletAdmin() {
                         <span>{w.member_email}</span>
                         {/* Show warning icon if this is the missing field */}
                         {fromDataQuality && fieldName === 'member_email' && !w.member_email && (
-                          <span style={{ color: '#ef4444', fontSize: '1rem' }} title="Missing email">⚠️</span>
+                          <AlertTriangle size={14} color="#ef4444" title="Missing email" />
                         )}
                       </div>
                       {w.member_timezone && <div className="subtext">{w.member_timezone}</div>}
@@ -1352,7 +1357,7 @@ export default function WalletAdmin() {
                         <span>{w.merchant_name || "-"}</span>
                         {/* Show warning icon if merchant_name is the missing field */}
                         {fromDataQuality && fieldName === 'merchant_name' && !w.merchant_name && (
-                          <span style={{ color: '#ef4444', fontSize: '1rem' }} title="Missing merchant name">⚠️</span>
+                          <AlertTriangle size={14} color="#ef4444" title="Missing merchant name" />
                         )}
                       </div>
                       <div className="subtext">{w.broker || "-"}</div>
@@ -1393,7 +1398,7 @@ export default function WalletAdmin() {
                       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                         <span>{points == null ? "-" : points.toLocaleString()}</span>
                         <span aria-hidden="true" title="converts to">
-                          ➜
+                          <ArrowRight size={12} color="#6b7280" />
                         </span>
                         <span>
                           {cash == null
@@ -1466,8 +1471,8 @@ export default function WalletAdmin() {
 
               {deleteData.has_references && (
                 <>
-                  <p style={{ marginBottom: '12px', fontWeight: '600', color: '#dc2626' }}>
-                    ⚠️ This member has related data in the following tables:
+                  <p style={{ marginBottom: '12px', fontWeight: '600', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertTriangle size={16} color="#dc2626" /> This member has related data in the following tables:
                   </p>
                   <ul style={{ marginBottom: '12px', paddingLeft: '24px' }}>
                     {deleteData.reference_counts.orders > 0 && (

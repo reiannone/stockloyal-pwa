@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
+import { LineageLink } from "../components/LineagePopup";
 import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
 
 /**
@@ -732,7 +733,7 @@ export default function PrepareOrders() {
                         {/* Top row */}
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.9rem", color: "#1e293b" }}>
-                            {b.batch_id}
+                            <LineageLink id={b.batch_id} type="batch">{b.batch_id}</LineageLink>
                           </span>
                           {statusBadge(b.status)}
                           {b.filter_merchant && (
@@ -1095,7 +1096,7 @@ function BatchHierarchy({ batchId, merchants }) {
                                         >
                                           <ShoppingBasket size={14} color="#d97706" />
                                           <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
-                                            {bk.basket_id}
+                                            <LineageLink id={bk.basket_id} type="basket">{bk.basket_id}</LineageLink>
                                           </span>
                                           {bk.member_id && badge(`member: ${bk.member_id}`, "#fef3c7", "#92400e")}
                                           {summaryPills(bk)}
@@ -1126,7 +1127,9 @@ function BatchHierarchy({ batchId, merchants }) {
                                                       {orderData[bk.basket_id].map((o, i) => (
                                                         <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                                           <td style={{ ...tdStyleSm, fontFamily: "monospace", fontSize: "0.75rem" }}>
-                                                            {o.order_id || i + 1}
+                                                            {o.order_id
+                                                              ? <LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink>
+                                                              : i + 1}
                                                           </td>
                                                           <td style={{ ...tdStyleSm, fontWeight: 600 }}>{o.symbol}</td>
                                                           <td style={tdStyleSm}>{fmt$(o.amount)}</td>

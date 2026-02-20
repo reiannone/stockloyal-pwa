@@ -3,6 +3,7 @@ import { apiPost } from "../api"; // Use existing api helper
 import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
+import { LineageLink } from "../components/LineagePopup";
 
 /**
  * SweepAdmin - Admin page for managing the sweep process (order entry to broker)
@@ -558,7 +559,7 @@ export default function SweepAdmin() {
             <strong>{lastResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Sweep Completed</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Sweep Failed</>}</strong>
             {lastResult.results?.batch_id && (
               <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
-                {lastResult.results.batch_id}
+                <LineageLink id={lastResult.results.batch_id} type="sweep">{lastResult.results.batch_id}</LineageLink>
               </span>
             )}
           </div>
@@ -910,7 +911,7 @@ export default function SweepAdmin() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                               <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.85rem", color: "#1e293b" }}>
-                                <ShoppingBasket size={14} style={{ verticalAlign: "middle" }} /> {basketId}
+                                <ShoppingBasket size={14} style={{ verticalAlign: "middle" }} /> <LineageLink id={basketId} type="basket">{basketId}</LineageLink>
                               </span>
                               <span style={{
                                 padding: "2px 8px",
@@ -957,7 +958,7 @@ export default function SweepAdmin() {
                               <tbody>
                                 {basketOrders.map((o) => (
                                   <tr key={o.order_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                    <td style={tdStyle}>{o.order_id}</td>
+                                    <td style={tdStyle}><LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink></td>
                                     <td style={tdStyle}>{o.member_id}</td>
                                     <td style={{ ...tdStyle, fontWeight: "600" }}>{o.symbol}</td>
                                     <td style={tdStyle}>{parseFloat(o.shares).toFixed(4)}</td>
@@ -1311,7 +1312,7 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
                             >
                               <ShoppingBasket size={14} color="#d97706" />
                               <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
-                                {bkId}
+                                <LineageLink id={bkId} type="basket">{bkId}</LineageLink>
                               </span>
                               {bk.member_id && badge(`member: ${bk.member_id}`, "#fef3c7", "#92400e")}
                               {basketPills(bk)}
@@ -1336,7 +1337,9 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
                                     {bk.orders.map((o, i) => (
                                       <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                         <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
-                                          {o.order_id || i + 1}
+                                          {o.order_id
+                                            ? <LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink>
+                                            : i + 1}
                                         </td>
                                         <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
                                         <td style={tdStyle}>{formatCurrency(o.amount)}</td>
@@ -1412,7 +1415,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 </span>
                 {br.broker_ref && (
                   <span style={{ color: "#64748b", fontFamily: "monospace", marginLeft: 6 }}>
-                    {br.broker_ref}
+                    <LineageLink id={br.broker_ref} type="broker">{br.broker_ref}</LineageLink>
                   </span>
                 )}
               </>
@@ -1578,7 +1581,7 @@ function HistoryCard({ h, brokers, formatDate, formatCurrency, buildWebhookPaylo
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.82rem", color: "#1e293b" }}>
-              {h.batch_id}
+              <LineageLink id={h.batch_id} type="sweep">{h.batch_id}</LineageLink>
             </span>
             {hasErrors ? (
               <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#fee2e2", color: "#dc2626" }}>

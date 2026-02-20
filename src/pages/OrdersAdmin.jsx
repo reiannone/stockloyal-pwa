@@ -24,6 +24,7 @@ function getStatusPillStyle(statusRaw) {
   else if (status === "sell") { bg = "#fef3c7"; color = "#92400e"; }
   else if (status === "sold") { bg = "#dbeafe"; color = "#1e40af"; }
   else if (status === "pending") { bg = "#fef3c7"; color = "#92400e"; }
+  else if (status === "settled") { bg = "#e0e7ff"; color = "#3730a3"; }
   else if (status === "partial" || status === "mixed") { bg = "#f3e8ff"; color = "#6b21a8"; }
   return {
     display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -304,9 +305,10 @@ export default function OrdersAdmin() {
   const getBasketStatus = (statuses) => {
     const s = Array.from(statuses);
     if (s.length === 1) return s[0];
+    if (s.every((x) => x === "settled")) return "settled";
     if (s.includes("failed")) return "partial";
     if (s.includes("pending") || s.includes("queued")) return "pending";
-    if (s.every((x) => x === "executed" || x === "confirmed")) return "executed";
+    if (s.every((x) => x === "executed" || x === "confirmed" || x === "settled")) return "executed";
     return "mixed";
   };
 
@@ -399,6 +401,7 @@ export default function OrdersAdmin() {
             <option value="placed">Placed</option>
             <option value="confirmed">Confirmed</option>
             <option value="executed">Executed</option>
+            <option value="settled">Settled</option>
             <option value="sell">Sell</option>
             <option value="sold">Sold</option>
             <option value="failed">Failed</option>
@@ -522,6 +525,7 @@ export default function OrdersAdmin() {
                 <option value="placed">Placed</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="executed">Executed</option>
+                <option value="settled">Settled</option>
                 <option value="sell">Sell</option>
                 <option value="sold">Sold</option>
                 <option value="failed">Failed</option>
