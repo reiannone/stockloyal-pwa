@@ -346,7 +346,9 @@ class PrepareOrdersProcess
 
     public function prepare(?string $memberId = null, ?string $merchantId = null): array
     {
-        $batchId   = 'BATCH-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
+        $batchId      = 'BATCH-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
+        $basketPrefix = 'BASKET' . substr($batchId, 5);  // BASKET-Ymd-His-hex
+        
         $startTime = microtime(true);
 
         $this->log(str_repeat('=', 80));
@@ -446,7 +448,7 @@ class PrepareOrdersProcess
                 WHERE {$where}
             ";
 
-            array_unshift($params, $batchId, $batchId);
+            array_unshift($params, $batchId, $basketPrefix);
 
             $stmt = $this->conn->prepare($sql);
             $stmt->execute($params);

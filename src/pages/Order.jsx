@@ -22,7 +22,12 @@ console.log("[Order] start localStorage item broker:", localStorage.getItem("bro
 
 // Simple UUID generator for basket_id
 function generateBasketId() {
-  return "basket-" + Date.now() + "-" + Math.floor(Math.random() * 1e6);
+  const now = new Date();
+  const pad = (n, len = 2) => String(n).padStart(len, "0");
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const hex = Math.random().toString(16).slice(2, 8);
+  const memberId = localStorage.getItem("memberId") || "unknown";
+  return `BASKET-${ts}-${hex}-${memberId}`;
 }
 
 export default function Order() {

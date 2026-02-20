@@ -28,7 +28,7 @@ import {
 
 // ─── Stage config (display order = pipeline order) ─────────────
 const STAGES = [
-  { key: "prep",    label: "Prep",    icon: ClipboardList,  color: "#8b5cf6", bg: "#f5f3ff" },
+  { key: "prep",    label: "Batch",   icon: ClipboardList,  color: "#8b5cf6", bg: "#f5f3ff" },
   { key: "staged",  label: "Staged",  icon: Package,        color: "#a855f7", bg: "#faf5ff" },
   { key: "baskets", label: "Baskets", icon: ShoppingBasket, color: "#f59e0b", bg: "#fffbeb" },
   { key: "orders",  label: "Orders",  icon: FileText,       color: "#6366f1", bg: "#eef2ff" },
@@ -215,7 +215,7 @@ function StageDetail({ stage, data, isOrigin, expanded, onToggle }) {
 
       {expanded && (
         <div style={styles.sectionBody}>
-          {stage.key === "prep" && items.map((d, i) => <PrepRow key={i} data={d} />)}
+          {stage.key === "prep" && items.map((d, i) => <BatchRow key={i} data={d} />)}
           {stage.key === "staged" && <StagedTable rows={items} />}
           {stage.key === "baskets" && items.map((b, i) => <BasketRow key={i} data={b} />)}
           {stage.key === "orders" && <OrdersTable orders={items} />}
@@ -231,11 +231,11 @@ function StageDetail({ stage, data, isOrigin, expanded, onToggle }) {
 
 // ─── Row renderers ─────────────────────────────────────────────
 
-function PrepRow({ data }) {
+function BatchRow({ data }) {
   return (
     <div style={styles.detailCard}>
       <div style={styles.kvRow}>
-        <KV label="Prep Batch" value={data.batch_id} mono />
+        <KV label="Batch ID" value={data.batch_id} mono />
         <KV label="Status" value={data.status} />
         <KV label="Created" value={fmtDate(data.created_at)} />
         <KV label="Approved" value={fmtDate(data.approved_at)} />
