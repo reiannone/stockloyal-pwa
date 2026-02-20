@@ -1965,7 +1965,7 @@ export default function StockPicker() {
       <p className="form-disclosure">
         <strong>My Basket:</strong> Securities saved under <em>My Basket</em> are used in the automated <b><em>Sweep</em></b> process according to the schedule 
         established between {merchantName} and {brokerName}. You can add securities to <em>My Basket</em> by selecting 
-        them from any category and clicking the checkbox, or by sumbol using search bar <Search size={18} color="#9ca3af" />.
+        them from any category and clicking the checkbox, or by symbol using search bar <Search size={18} color="#9ca3af" />.
         To remove a selection, click the trash can <Trash2 size={18} color="#9ca3af" /> icon.
       </p>
     </div>
