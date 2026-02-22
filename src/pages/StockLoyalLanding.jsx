@@ -17,6 +17,7 @@ import {
   ChevronRight,
   CheckCircle2,
   RefreshCw,
+  Landmark,
 } from "lucide-react";
 import { apiPost } from "../api.js";
 
@@ -206,6 +207,14 @@ export default function StockLoyalLanding() {
       color: "#84cc16",
       bgColor: "#f7fee7",
     },
+    {
+      to: "/onboard",
+      label: "Brokerage Account",
+      icon: <Landmark size={32} />,
+      color: "#84cc16",
+      bgColor: "#f7fee7",
+    },
+
   ];
 
   return (

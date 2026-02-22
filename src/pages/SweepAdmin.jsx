@@ -578,7 +578,7 @@ export default function SweepAdmin() {
               {lastResult.results.basket_results?.length > 0 && (
                 <div style={{ marginTop: "0.75rem", borderTop: "1px solid rgba(0,0,0,0.1)", paddingTop: "0.75rem" }}>
                   <div style={{ fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.8rem", textTransform: "uppercase", color: "#475569" }}>
-                    Broker Notifications — Per Merchant-Broker
+                    Broker Results — Per Merchant-Broker
                   </div>
                   {lastResult.results.basket_results.map((br, i) => (
                     <BasketResultRow key={i} br={br} formatCurrency={formatCurrency} jsonViewMode={jsonViewMode} JsonToggle={JsonToggle} JsonBlock={JsonBlock} />
@@ -768,7 +768,7 @@ export default function SweepAdmin() {
                   overflow: "hidden",
                 }}>
                   {[
-                    { key: "webhook", label: <><Radio size={12} style={{ verticalAlign: "middle" }} /> Webhook View</> },
+                    { key: "webhook", label: <><Radio size={12} style={{ verticalAlign: "middle" }} /> Broker View</> },
                     { key: "basket", label: <><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Basket View</> },
                   ].map((v) => (
                     <button
@@ -813,7 +813,7 @@ export default function SweepAdmin() {
                   {pendingOrders.length} order(s)
                   {pendingView === "basket"
                     ? ` in ${Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)`
-                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} webhook feed(s)`}
+                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} broker feed(s)`}
                 </span>
               </div>
 
@@ -1190,7 +1190,7 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
         fontWeight: 600, fontSize: "0.8rem",
         borderBottom: "1px solid #e2e8f0", color: "#374151",
       }}>
-        Webhook Feeds — {merchantKeys.length} merchant(s)
+        Broker Feeds — {merchantKeys.length} merchant(s)
       </div>
 
       {merchantKeys.map((mId) => {
@@ -1208,7 +1208,7 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
             >
               <Store size={14} color="#8b5cf6" />
               <span style={{ color: "#1e293b" }}>{m.merchant_name}</span>
-              {badge(`${Object.keys(m.brokers).length} webhook(s)`, "#e0e7ff", "#3730a3")}
+              {badge(`${Object.keys(m.brokers).length} broker(s)`, "#e0e7ff", "#3730a3")}
               {pills(m)}
               {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
             </div>
@@ -1238,7 +1238,6 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
                   >
                     <Building2 size={14} color="#6366f1" />
                     <span style={{ color: "#1e293b" }}>{br.broker}</span>
-                    <Radio size={12} color="#94a3b8" title="Webhook feed" />
                     {pills(br)}
                     {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
                   </div>
@@ -1263,7 +1262,7 @@ function SweepHierarchy({ orders, buildWebhookPayload, groupOrdersByMerchantBrok
                         >
                           {payloadVisible
                             ? "Hide Payload"
-                            : <><Upload size={12} style={{ verticalAlign: "middle" }} /> Webhook Payload</>
+                            : <><Upload size={12} style={{ verticalAlign: "middle" }} /> Broker Payload</>
                           }
                         </button>
                         {payloadVisible && (
@@ -1397,6 +1396,12 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
           <strong>{br.merchant_name || br.merchant_id}</strong>
           <span style={{ color: "#64748b" }}>→</span>
           <strong style={{ color: "#6366f1" }}>{br.broker}</strong>
+          {br.broker_type === "alpaca" && (
+            <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: "#fef3c7", color: "#92400e" }}>API</span>
+          )}
+          {br.broker_type === "webhook" && (
+            <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: "#e0e7ff", color: "#3730a3" }}>WEBHOOK</span>
+          )}
           <span style={{ color: "#64748b" }}>
             {br.member_count || 1} member(s) · {br.order_count} order(s) · {formatCurrency(br.total_amount)}
           </span>
@@ -1456,7 +1461,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 color: "#475569",
                 letterSpacing: "0.05em",
               }}>
-                <Upload size={12} style={{ verticalAlign: "middle" }} /> Request Payload
+                <Upload size={12} style={{ verticalAlign: "middle" }} /> {br.broker_type === "alpaca" ? "Alpaca API Request" : "Request Payload"}
               </div>
               {br.request ? (
                 <JsonBlock data={br.request} maxHeight={300} />
@@ -1480,7 +1485,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 display: "flex",
                 justifyContent: "space-between",
               }}>
-                <span><Download size={12} style={{ verticalAlign: "middle" }} /> Response Body</span>
+                <span><Download size={12} style={{ verticalAlign: "middle" }} /> {br.broker_type === "alpaca" ? "Alpaca API Response" : "Response Body"}</span>
                 {br.http_status && (
                   <span style={{
                     color: br.http_status >= 200 && br.http_status < 300 ? "#059669" : "#dc2626"
@@ -1493,7 +1498,7 @@ function BasketResultRow({ br, formatCurrency, jsonViewMode, JsonToggle, JsonBlo
                 <JsonBlock data={br.response?.body || br.response} maxHeight={300} />
               ) : (
                 <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.7rem", color: "#94a3b8", fontFamily: "monospace" }}>
-                  — no response (webhook not configured) —
+                  — no response —
                 </div>
               )}
             </div>

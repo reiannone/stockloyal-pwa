@@ -7,17 +7,23 @@ declare(strict_types=1);
  * Called by trigger_sweep.php when admin clicks "Run Sweep" / "Run Sweep Now".
  *
  * Architecture:
- *   merchant → member basket_id → individual broker notification
+ *   merchant → member basket_id → broker execution
  *
- * Per basket:
- *   1. Mark basket orders → status = 'placed'
- *   2. POST order detail to broker webhook_url
- *   3. Capture full response body (acknowledgement + timestamp)
- *   4. Log request + response to broker_notifications
- *   5. Return everything to admin UI
+ * Broker routing by broker_master.broker_type:
  *
- * Tables read:   orders, merchant, broker_master
- * Tables write:  orders (status), broker_notifications, sweep_log
+ *   'alpaca'  →  Alpaca Broker API (real trading)
+ *                1. Journal cash (JNLC) from firm → member account
+ *                2. Submit market orders per member via POST /v1/trading/accounts/{id}/orders
+ *                3. Store Alpaca order_id → orders.broker_ref
+ *                4. Mark order confirmed/failed based on API response
+ *
+ *   'webhook' →  Legacy webhook notification (existing flow)
+ *                1. Mark orders → 'placed'
+ *                2. POST payload to broker webhook_url
+ *                3. Capture acknowledgement
+ *
+ * Tables read:   orders, merchant, broker_master, broker_credentials
+ * Tables write:  orders (status, broker_ref), broker_notifications, sweep_log
  */
 
 class SweepProcess
@@ -80,7 +86,7 @@ class SweepProcess
         $merchantSet   = [];
         $groupResults  = [];
 
-        // 3. Process each merchant-broker group (one webhook per group)
+        // 3. Process each merchant-broker group
         foreach ($groups as $comboKey => $group) {
             $merchId    = $group['merchant_id'];
             $merchName  = $group['merchant_name'];
@@ -161,7 +167,8 @@ class SweepProcess
                    o.symbol, o.shares, o.amount, o.points_used,
                    o.status, o.placed_at, o.broker, o.order_type,
                    m.merchant_name,
-                   bc.username AS brokerage_id
+                   bc.username          AS brokerage_id,
+                   bc.broker_account_id AS broker_account_id
             FROM   orders o
             LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
             LEFT JOIN broker_credentials bc ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
@@ -203,38 +210,277 @@ class SweepProcess
     private function getBrokerInfo(string $brokerName): array
     {
         $stmt = $this->conn->prepare("
-            SELECT broker_id, broker_name, webhook_url, api_key
+            SELECT broker_id, broker_name, webhook_url, api_key, broker_type
             FROM   broker_master
             WHERE  broker_name = ? OR broker_id = ?
             LIMIT  1
         ");
         $stmt->execute([$brokerName, $brokerName]);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['broker_name' => $brokerName];
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['broker_name' => $brokerName, 'broker_type' => 'webhook'];
     }
 
     // ====================================================================
-    // PRIVATE — per merchant-broker group processing
+    // PRIVATE — per merchant-broker group processing (ROUTER)
     // ====================================================================
 
     private function processMerchantBrokerGroup(array $group): array
+    {
+        $brokerName = $group['broker'];
+        $brokerInfo = $this->getBrokerInfo($brokerName);
+        $brokerType = $brokerInfo['broker_type'] ?? 'webhook';
+
+        $this->log("Broker '{$brokerName}' → type={$brokerType}");
+
+        // ── Route by broker type ──
+        if ($brokerType === 'alpaca') {
+            return $this->processAlpacaGroup($group, $brokerInfo);
+        }
+
+        // Default: webhook flow
+        return $this->processWebhookGroup($group, $brokerInfo);
+    }
+
+    // ====================================================================
+    // ALPACA BROKER API — submit real orders via API
+    // ====================================================================
+
+    private function processAlpacaGroup(array $group, array $brokerInfo): array
+    {
+        require_once __DIR__ . '/AlpacaBrokerAPI.php';
+
+        $merchId   = $group['merchant_id'];
+        $merchName = $group['merchant_name'];
+        $allOrders = $group['orders'];
+
+        $alpaca = new AlpacaBrokerAPI();
+
+        // Sub-group orders by member
+        $byMember = [];
+        foreach ($allOrders as $o) {
+            $mid = $o['member_id'] ?? 'unknown';
+            if (!isset($byMember[$mid])) {
+                $byMember[$mid] = [
+                    'member_id'         => $mid,
+                    'broker_account_id' => $o['broker_account_id'] ?? null,
+                    'brokerage_id'      => $o['brokerage_id'] ?? null,
+                    'basket_id'         => $o['basket_id'] ?? null,
+                    'orders'            => [],
+                ];
+            }
+            $byMember[$mid]['orders'][] = $o;
+        }
+
+        $totalPlaced     = 0;
+        $totalFailed     = 0;
+        $alpacaOrderIds  = [];
+        $alpacaErrors    = [];
+        $journalResults  = [];
+        $orderResults    = [];
+
+        foreach ($byMember as $mid => $memberData) {
+            $accountId = $memberData['broker_account_id'];
+
+            if (empty($accountId)) {
+                $this->log("❌ Member {$mid}: no broker_account_id — skipping all orders");
+                $this->errors[] = "Member {$mid}: no Alpaca broker_account_id in broker_credentials";
+                $totalFailed += count($memberData['orders']);
+                // Mark orders as failed
+                $this->markOrdersFailed($memberData['orders'], 'No broker account linked');
+                continue;
+            }
+
+            $this->log("── Member {$mid}  account={$accountId}  orders=" . count($memberData['orders']));
+
+            // ── Step 1: Journal cash to member account (fund the account) ──
+            $memberTotal = round(array_sum(array_column($memberData['orders'], 'amount')), 2);
+
+            if ($memberTotal > 0) {
+                $this->log("   💰 Journaling \${$memberTotal} → account {$accountId}");
+                $journalResult = $alpaca->journalCashToAccount($accountId, (string) $memberTotal);
+
+                if (!$journalResult['success']) {
+                    $errMsg = $journalResult['error'] ?? 'Journal failed';
+                    $this->log("   ❌ Journal FAILED: {$errMsg}");
+
+                    // Journal failure is non-fatal for sandbox/paper — log warning but continue
+                    // In production, you might want to skip orders if funding fails
+                    $this->log("   ⚠️ Continuing with order submission (paper trading mode)");
+                    $journalResults[$mid] = ['success' => false, 'error' => $errMsg];
+                } else {
+                    $journalId = $journalResult['data']['id'] ?? 'ok';
+                    $this->log("   ✅ Journal OK: {$journalId}");
+                    $journalResults[$mid] = ['success' => true, 'journal_id' => $journalId];
+                }
+            }
+
+            // ── Step 2: Submit each order via Alpaca API ──
+            foreach ($memberData['orders'] as $o) {
+                $orderId = $o['order_id'] ?? null;
+                $symbol  = $o['symbol'] ?? '';
+                $amount  = round((float)($o['amount'] ?? 0), 2);
+                $shares  = round((float)($o['shares'] ?? 0), 6);
+
+                if (!$orderId || !$symbol) {
+                    $this->log("   ⚠️ Skipping order with missing id/symbol");
+                    $totalFailed++;
+                    continue;
+                }
+
+                // Build Alpaca order payload
+                // Use 'notional' for dollar-based orders, 'qty' for share-based
+                $alpacaOrder = [
+                    'symbol'        => $symbol,
+                    'side'          => 'buy',
+                    'type'          => 'market',
+                    'time_in_force' => 'day',
+                ];
+
+                if ($amount > 0) {
+                    // Dollar-based fractional order (preferred for points→stock)
+                    $alpacaOrder['notional'] = (string) $amount;
+                } elseif ($shares > 0) {
+                    // Share-based order
+                    $alpacaOrder['qty'] = (string) $shares;
+                } else {
+                    $this->log("   ⚠️ Order {$orderId}: zero amount and shares — skipping");
+                    $this->markSingleOrderFailed($orderId, 'Zero amount and shares');
+                    $totalFailed++;
+                    continue;
+                }
+
+                $this->log("   📈 Order {$orderId}: {$symbol} \${$amount} (notional) → account {$accountId}");
+
+                $apiResult = $alpaca->createOrder($accountId, $alpacaOrder);
+
+                if ($apiResult['success']) {
+                    $alpacaOrderId = $apiResult['data']['id'] ?? '';
+                    $alpacaStatus  = $apiResult['data']['status'] ?? 'accepted';
+                    $filledQty     = $apiResult['data']['filled_qty'] ?? null;
+                    $filledAvg     = $apiResult['data']['filled_avg_price'] ?? null;
+
+                    $this->log("   ✅ Order {$orderId} → Alpaca: {$alpacaOrderId} status={$alpacaStatus}");
+
+                    // Mark order as placed/confirmed and store Alpaca order ID
+                    $this->markOrderConfirmed($orderId, $alpacaOrderId, $alpacaStatus, $filledQty, $filledAvg);
+                    $totalPlaced++;
+
+                    $alpacaOrderIds[] = $alpacaOrderId;
+                    $orderResults[] = [
+                        'order_id'        => $orderId,
+                        'symbol'          => $symbol,
+                        'amount'          => $amount,
+                        'alpaca_order_id' => $alpacaOrderId,
+                        'alpaca_status'   => $alpacaStatus,
+                        'success'         => true,
+                    ];
+                } else {
+                    $errMsg   = $apiResult['error'] ?? 'Order submission failed';
+                    $httpCode = $apiResult['http_code'] ?? 0;
+                    $this->log("   ❌ Order {$orderId} FAILED: HTTP {$httpCode} — {$errMsg}");
+                    $this->errors[] = "Order {$orderId} ({$symbol}): {$errMsg}";
+
+                    $this->markSingleOrderFailed($orderId, $errMsg);
+                    $totalFailed++;
+
+                    $alpacaErrors[] = [
+                        'order_id'  => $orderId,
+                        'symbol'    => $symbol,
+                        'error'     => $errMsg,
+                        'http_code' => $httpCode,
+                        'details'   => $apiResult['data'] ?? null,
+                    ];
+                    $orderResults[] = [
+                        'order_id'  => $orderId,
+                        'symbol'    => $symbol,
+                        'amount'    => $amount,
+                        'error'     => $errMsg,
+                        'success'   => false,
+                    ];
+                }
+            }
+        }
+
+        $basketIds  = array_unique(array_column($allOrders, 'basket_id'));
+        $memberIds  = array_unique(array_column($allOrders, 'member_id'));
+
+        // Build a request/response summary for the admin UI
+        $requestSummary = [
+            'broker_type'     => 'alpaca',
+            'event_type'      => 'order.placed',
+            'batch_id'        => $this->batchId,
+            'merchant_id'     => $merchId,
+            'merchant_name'   => $merchName,
+            'broker'          => $group['broker'],
+            'members'         => count($byMember),
+            'total_orders'    => count($allOrders),
+            'total_amount'    => round((float) array_sum(array_column($allOrders, 'amount')), 2),
+            'journal_results' => $journalResults,
+            'orders'          => $orderResults,
+        ];
+
+        $responseSummary = [
+            'acknowledged'     => ($totalPlaced > 0),
+            'acknowledged_at'  => ($totalPlaced > 0) ? gmdate('c') : null,
+            'alpaca_order_ids' => $alpacaOrderIds,
+            'orders_placed'    => $totalPlaced,
+            'orders_failed'    => $totalFailed,
+            'errors'           => $alpacaErrors,
+        ];
+
+        // Log to broker_notifications
+        $comboLabel = "{$merchId}::{$group['broker']}";
+        $this->logNotification($brokerInfo, $comboLabel, $comboLabel, $requestSummary, [
+            'acknowledged'    => ($totalPlaced > 0),
+            'acknowledged_at' => ($totalPlaced > 0) ? gmdate('c') : null,
+            'broker_ref'      => !empty($alpacaOrderIds) ? implode(',', array_slice($alpacaOrderIds, 0, 5)) : null,
+            'http_status'     => ($totalPlaced > 0) ? 200 : 400,
+            'body'            => $responseSummary,
+        ]);
+
+        return [
+            'merchant_id'     => $merchId,
+            'merchant_name'   => $merchName,
+            'broker'          => $group['broker'],
+            'broker_id'       => $brokerInfo['broker_id'] ?? null,
+            'broker_type'     => 'alpaca',
+            'member_count'    => count($memberIds),
+            'member_ids'      => array_values($memberIds),
+            'basket_count'    => count($basketIds),
+            'orders_placed'   => $totalPlaced,
+            'orders_failed'   => $totalFailed,
+            'order_count'     => count($allOrders),
+            'total_amount'    => round((float) array_sum(array_column($allOrders, 'amount')), 2),
+            'symbols'         => implode(', ', array_unique(array_column($allOrders, 'symbol'))),
+            'acknowledged'    => ($totalPlaced > 0),
+            'acknowledged_at' => ($totalPlaced > 0) ? gmdate('c') : null,
+            'broker_ref'      => !empty($alpacaOrderIds) ? $alpacaOrderIds[0] : null,
+            'http_status'     => ($totalPlaced > 0) ? 200 : null,
+            'request'         => $requestSummary,
+            'response'        => $responseSummary,
+        ];
+    }
+
+    // ====================================================================
+    // WEBHOOK — legacy webhook notification (existing flow, unchanged)
+    // ====================================================================
+
+    private function processWebhookGroup(array $group, array $brokerInfo): array
     {
         $brokerName = $group['broker'];
         $merchId    = $group['merchant_id'];
         $merchName  = $group['merchant_name'];
         $allOrders  = $group['orders'];
 
-        // 1. Look up broker webhook
-        $brokerInfo = $this->getBrokerInfo($brokerName);
         $webhookUrl = $brokerInfo['webhook_url'] ?? null;
 
-        // 2. Mark all orders → 'placed'
+        // 1. Mark all orders → 'placed'
         $placedCount = $this->markOrdersPlaced($allOrders);
         $this->log("✅ {$placedCount} / " . count($allOrders) . " → 'placed'");
 
-        // 3. Build grouped payload (all members/baskets for this merchant-broker)
+        // 2. Build grouped payload (all members/baskets for this merchant-broker)
         $payload = $this->buildGroupPayload($group, $brokerInfo);
 
-        // 4. Send single webhook for entire merchant-broker group
+        // 3. Send single webhook for entire merchant-broker group
         $response = null;
         if (!empty($webhookUrl)) {
             $this->log("📡 POST → {$webhookUrl}  ({$merchId} / {$brokerName})");
@@ -243,7 +489,7 @@ class SweepProcess
             $this->log("⚠️ No webhook_url for '{$brokerName}' — skipping notification");
         }
 
-        // 5. Log to broker_notifications
+        // 4. Log to broker_notifications
         $comboLabel = "{$merchId}::{$brokerName}";
         $this->logNotification($brokerInfo, $comboLabel, $comboLabel, $payload, $response);
 
@@ -255,6 +501,7 @@ class SweepProcess
             'merchant_name'   => $merchName,
             'broker'          => $brokerName,
             'broker_id'       => $brokerInfo['broker_id'] ?? null,
+            'broker_type'     => 'webhook',
             'member_count'    => count($memberIds),
             'member_ids'      => array_values($memberIds),
             'basket_count'    => count($basketIds),
@@ -274,7 +521,7 @@ class SweepProcess
     }
 
     // ====================================================================
-    // PRIVATE — mark placed
+    // PRIVATE — mark orders placed / confirmed / failed
     // ====================================================================
 
     private function markOrdersPlaced(array $orders): int
@@ -296,8 +543,64 @@ class SweepProcess
         return $count;
     }
 
+    /**
+     * Mark a single order as confirmed with Alpaca order details.
+     */
+    private function markOrderConfirmed(
+        int     $orderId,
+        string  $alpacaOrderId,
+        string  $alpacaStatus,
+        ?string $filledQty = null,
+        ?string $filledAvgPrice = null
+    ): void {
+        // Map Alpaca status to our status
+        // Alpaca statuses: new, partially_filled, filled, done_for_day, canceled, expired, replaced, accepted, pending_new
+        $ourStatus = 'placed'; // default: order accepted by broker
+        if (in_array($alpacaStatus, ['filled', 'done_for_day'])) {
+            $ourStatus = 'confirmed';
+        } elseif (in_array($alpacaStatus, ['canceled', 'expired', 'rejected'])) {
+            $ourStatus = 'failed';
+        }
+
+        $stmt = $this->conn->prepare("
+            UPDATE orders
+            SET    status     = ?,
+                   broker_ref = ?,
+                   placed_at  = NOW()
+            WHERE  order_id   = ?
+        ");
+        $stmt->execute([$ourStatus, $alpacaOrderId, $orderId]);
+    }
+
+    /**
+     * Mark a single order as failed with an error reason.
+     */
+    private function markSingleOrderFailed(int $orderId, string $reason): void
+    {
+        $stmt = $this->conn->prepare("
+            UPDATE orders
+            SET    status     = 'failed',
+                   broker_ref = ?
+            WHERE  order_id   = ?
+        ");
+        $stmt->execute(["FAILED: {$reason}", $orderId]);
+    }
+
+    /**
+     * Mark multiple orders as failed.
+     */
+    private function markOrdersFailed(array $orders, string $reason): void
+    {
+        foreach ($orders as $o) {
+            $oid = $o['order_id'] ?? null;
+            if ($oid) {
+                $this->markSingleOrderFailed((int) $oid, $reason);
+            }
+        }
+    }
+
     // ====================================================================
-    // PRIVATE — build grouped payload (merchant + broker + all members)
+    // PRIVATE — build grouped payload (webhook flow only)
     // ====================================================================
 
     private function buildGroupPayload(array $group, array $brokerInfo): array

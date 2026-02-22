@@ -36,7 +36,7 @@ export default function Onboard() {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(null); // { alpaca_account_id, account_number, account_status }
+  const [success, setSuccess] = useState(null); // { broker_account_id, account_number, account_status }
 
   // ── Step 1: Personal Info ──
   const [firstName, setFirstName] = useState("");
@@ -185,9 +185,9 @@ export default function Onboard() {
 
       if (res?.already_exists) {
         // Already has an Alpaca account
-        localStorage.setItem("alpaca_account_id", res.alpaca_account_id);
+        localStorage.setItem("broker_account_id", res.broker_account_id);
         setSuccess({
-          alpaca_account_id: res.alpaca_account_id,
+          broker_account_id: res.broker_account_id,
           account_status: "EXISTING",
           message: "Your brokerage account is already set up!",
         });
@@ -201,12 +201,12 @@ export default function Onboard() {
       }
 
       // ✅ Success
-      localStorage.setItem("alpaca_account_id", res.alpaca_account_id);
-      localStorage.setItem("alpaca_account_number", res.account_number || "");
+      localStorage.setItem("broker_account_id", res.broker_account_id);
+      localStorage.setItem("broker_account_number", res.account_number || "");
       localStorage.setItem("broker", passedBroker);
 
       setSuccess({
-        alpaca_account_id: res.alpaca_account_id,
+        broker_account_id: res.broker_account_id,
         account_number: res.account_number,
         account_status: res.account_status,
         message: res.message,
@@ -342,23 +342,25 @@ export default function Onboard() {
       {/* ╚═══════════════════════════════════════╝ */}
       {step === 0 && (
         <div className="form">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, overflow: "hidden" }}>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">First Name *</label>
               <input
                 type="text"
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 placeholder="John"
                 required
               />
             </div>
-            <div>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">Last Name *</label>
               <input
                 type="text"
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 placeholder="Doe"
@@ -435,22 +437,24 @@ export default function Onboard() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, overflow: "hidden" }}>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">City *</label>
               <input
                 type="text"
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="San Francisco"
                 required
               />
             </div>
-            <div>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">State *</label>
               <select
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={state}
                 onChange={(e) => setState(e.target.value)}
                 required
@@ -463,12 +467,13 @@ export default function Onboard() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, overflow: "hidden" }}>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">ZIP Code *</label>
               <input
                 type="text"
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value={zip}
                 onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
                 placeholder="94102"
@@ -476,11 +481,12 @@ export default function Onboard() {
                 required
               />
             </div>
-            <div>
+            <div style={{ minWidth: 0, overflow: "hidden" }}>
               <label className="form-label">Country</label>
               <input
                 type="text"
                 className="form-input"
+                style={{ width: "100%", boxSizing: "border-box" }}
                 value="United States"
                 disabled
               />
@@ -677,6 +683,20 @@ export default function Onboard() {
             style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
           >
             Next <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Back button on Review step (step 3) — lets user fix errors */}
+      {step === 3 && !submitting && (
+        <div style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleBack}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+          >
+            <ChevronLeft size={16} /> Back to Edit
           </button>
         </div>
       )}

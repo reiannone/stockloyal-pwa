@@ -10,13 +10,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 header("Content-Type: application/json");
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    header("Access-Control-Allow-Methods: POST, OPTIONS");
-    header("Access-Control-Allow-Headers: Content-Type");
-    exit;
-}
-
 require_once __DIR__ . '/config.php';
 
 // ✅ Expect JSON
@@ -25,12 +18,15 @@ $memberId = isset($input['member_id']) ? strtolower(trim((string)$input['member_
 $broker   = trim((string)($input['broker'] ?? ''));
 $username = trim((string)($input['username'] ?? ''));
 $password = (string)($input['password'] ?? '');
+$email    = trim((string)($input['email'] ?? ''));
 
-if (!$memberId || !$broker || !$username || !$password) {
+// For Alpaca: only need member_id, broker, and email
+// For others: need member_id, broker, username, password
+if (!$memberId || !$broker) {
     http_response_code(400);
     echo json_encode([
         "success" => false,
-        "error"   => "Missing required fields: member_id, broker, username, password"
+        "error"   => "Missing required fields: member_id, broker"
     ]);
     exit;
 }
@@ -50,7 +46,6 @@ try {
     $maxFails = 10;
 
     if ($lockRow && $lockRow['locked_at'] !== null) {
-        // Already locked
         echo json_encode([
             "success"    => true,
             "validated"  => false,
@@ -61,23 +56,128 @@ try {
         exit;
     }
 
-    // ── Call broker-receiver.php webhook internally ──
-    $webhookUrl = 'https://api.stockloyal.com/api/broker-receiver.php';
-
-    // In local/dev environment, use localhost
-    if (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false) {
-        $webhookUrl = 'http://localhost/api/broker-receiver.php';
-    }
-
-    // Look up broker API key for authentication
+    // ── Determine broker type ──
     $brokerStmt = $conn->prepare("
-        SELECT broker_id, broker_name, api_key 
+        SELECT broker_id, broker_name, api_key, broker_type
         FROM broker_master 
         WHERE broker_id = ? 
         LIMIT 1
     ");
     $brokerStmt->execute([$broker]);
     $brokerRow = $brokerStmt->fetch(PDO::FETCH_ASSOC);
+
+    $brokerType = $brokerRow['broker_type'] ?? 'webhook'; // 'alpaca' or 'webhook'
+
+    // ╔═══════════════════════════════════════════════════════╗
+    // ║  ALPACA BROKER API VALIDATION                         ║
+    // ╚═══════════════════════════════════════════════════════╝
+    if ($brokerType === 'alpaca') {
+
+        if (empty($email)) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error"   => "Email is required for Alpaca account lookup"
+            ]);
+            exit;
+        }
+
+        require_once __DIR__ . '/AlpacaBrokerAPI.php';
+        $alpaca = new AlpacaBrokerAPI();
+
+        // Search for existing Alpaca account by email
+        $account = $alpaca->findAccountByEmail($email);
+
+        if ($account) {
+            // ✅ Account found — store the broker_account_id
+            $brokerAccountId = $account['id'] ?? '';
+            $brokerAccountNumber   = $account['account_number'] ?? '';
+            $brokerAccountStatus   = $account['status'] ?? 'UNKNOWN';
+
+            // Upsert broker_credentials with Alpaca account info
+            if ($lockRow) {
+                // Row exists — update it
+                $updateStmt = $conn->prepare("
+                    UPDATE broker_credentials
+                    SET broker = :broker,
+                        broker_account_id     = :broker_acct_id,
+                        broker_account_number = :broker_acct_num,
+                        broker_account_status = :broker_acct_status,
+                        credential_fail_count = 0,
+                        locked_at = NULL,
+                        fail_reset_at = NOW()
+                    WHERE member_id = :member_id
+                ");
+                $updateStmt->execute([
+                    ':broker'        => $broker,
+                    ':broker_acct_id'     => $brokerAccountId,
+                    ':broker_acct_num' => $brokerAccountNumber,
+                    ':broker_acct_status' => $brokerAccountStatus,
+                    ':member_id'     => $memberId,
+                ]);
+            } else {
+                // No row yet — insert
+                $insertStmt = $conn->prepare("
+                    INSERT INTO broker_credentials
+                        (member_id, broker, username, encrypted_password, broker_account_id, broker_account_number, broker_account_status)
+                    VALUES
+                        (:member_id, :broker, :email, '', :broker_acct_id, :broker_acct_num, :broker_acct_status)
+                ");
+                $insertStmt->execute([
+                    ':member_id'     => $memberId,
+                    ':broker'        => $broker,
+                    ':email'         => $email,
+                    ':broker_acct_id'     => $brokerAccountId,
+                    ':broker_acct_num' => $brokerAccountNumber,
+                    ':broker_acct_status' => $brokerAccountStatus,
+                ]);
+            }
+
+            // Also update wallet.broker
+            $walletStmt = $conn->prepare("UPDATE wallet SET broker = :broker WHERE member_id = :member_id");
+            $walletStmt->execute([':broker' => $broker, ':member_id' => $memberId]);
+
+            echo json_encode([
+                "success"            => true,
+                "validated"          => true,
+                "fail_count"         => 0,
+                "broker_account_id"  => $brokerAccountId,
+                "account_number"     => $brokerAccountNumber,
+                "account_status"     => $brokerAccountStatus,
+                "message"            => "Alpaca account found and linked successfully.",
+            ]);
+        } else {
+            // ❌ No Alpaca account found — direct to onboarding
+            echo json_encode([
+                "success"         => true,
+                "validated"       => false,
+                "no_account"      => true,
+                "fail_count"      => $currentFailCount, // Don't increment — not a credential failure
+                "message"         => "No brokerage account found for this email. Please complete onboarding to open an account.",
+                "redirect"        => "/onboard",
+            ]);
+        }
+        exit;
+    }
+
+    // ╔═══════════════════════════════════════════════════════╗
+    // ║  WEBHOOK-BASED VALIDATION (existing brokers)          ║
+    // ╚═══════════════════════════════════════════════════════╝
+
+    if (!$username || !$password) {
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "error"   => "Missing required fields: username, password"
+        ]);
+        exit;
+    }
+
+    $webhookUrl = 'https://api.stockloyal.com/api/broker-receiver.php';
+
+    if (strpos($_SERVER['HTTP_HOST'] ?? '', 'localhost') !== false) {
+        $webhookUrl = 'http://localhost/api/broker-receiver.php';
+    }
 
     $webhookPayload = json_encode([
         'event_type'  => 'credentials.validate',
@@ -94,7 +194,6 @@ try {
         'X-Event-Type: credentials.validate',
     ];
 
-    // Include broker API key if available
     if (!empty($brokerRow['api_key'])) {
         $headers[] = 'X-API-Key: ' . $brokerRow['api_key'];
     }
@@ -135,14 +234,10 @@ try {
         exit;
     }
 
-    // ✅ Return the validation result to the frontend
     if ($result['validated']) {
-        // ── Success: reset fail count ──
         $resetStmt = $conn->prepare("
             UPDATE broker_credentials
-            SET credential_fail_count = 0,
-                locked_at = NULL,
-                fail_reset_at = NOW()
+            SET credential_fail_count = 0, locked_at = NULL, fail_reset_at = NOW()
             WHERE member_id = :member_id
         ");
         $resetStmt->execute([":member_id" => $memberId]);
@@ -154,7 +249,6 @@ try {
             "message"    => $result['message'] ?? 'Credentials verified.',
         ]);
     } else {
-        // ── Failure: increment fail count ──
         $newFailCount = $currentFailCount + 1;
         $isNowLocked = ($newFailCount >= $maxFails);
 

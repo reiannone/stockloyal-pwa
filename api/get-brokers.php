@@ -19,7 +19,9 @@ try {
     $sql = "SELECT 
                 broker_id,
                 broker_name,
+                broker_type,
                 logo_url,
+                website_url,
                 ach_bank_name,
                 ach_routing_num,
                 ach_account_num,

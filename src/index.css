@@ -940,6 +940,7 @@ button.nav-item {
   padding: 0.5rem;
   border: 1px solid #d1d5db;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 .password-wrapper {
   position: relative;
@@ -1234,6 +1235,7 @@ button.nav-item {
   padding: 6px 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
+  box-sizing: border-box;
 }
 
 /* Fixed-width labels, left justified */
