@@ -36,6 +36,18 @@ try {
             $sweep   = new SweepProcess($conn);
             $results = $sweep->run($merchantId);
 
+            // If market is closed, return early without marking prepare_batches
+            if (!empty($results['market_closed'])) {
+                echo json_encode([
+                    'success'      => false,
+                    'market_closed' => true,
+                    'message'      => $results['errors'][0] ?? 'Market is closed',
+                    'next_market_open' => $results['next_market_open'] ?? null,
+                    'results'      => $results,
+                ]);
+                break;
+            }
+
             // Mark approved prepare_batches as "submitted" if all their orders have been swept
             try {
                 $conn->exec("

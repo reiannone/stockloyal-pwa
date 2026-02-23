@@ -104,14 +104,17 @@ function getPlacedOrders(PDO $conn, ?string $brokerId): array
                o.status, o.placed_at, o.broker, o.order_type,
                o.broker_ref,
                m.merchant_name,
-               bc.broker_account_id,
+               COALESCE(bc_direct.broker_account_id, bc_alpaca.broker_account_id) AS broker_account_id,
                COALESCE(bm.broker_type, 'webhook') AS broker_type
         FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
-        LEFT JOIN broker_credentials bc
-               ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
         LEFT JOIN broker_master bm
                ON (bm.broker_name = o.broker OR bm.broker_id = o.broker)
+        LEFT JOIN broker_credentials bc_direct
+               ON bc_direct.member_id = o.member_id AND LOWER(bc_direct.broker) = LOWER(o.broker)
+        LEFT JOIN broker_credentials bc_alpaca
+               ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
+               AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
         WHERE  LOWER(o.status) = 'placed'
     ";
 
@@ -200,13 +203,16 @@ function executeAll(PDO $conn, ?string $brokerId, string $logFile): array
     $sql = "
         SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
                o.symbol, o.shares, o.amount, o.broker, o.broker_ref,
-               bc.broker_account_id,
+               COALESCE(bc_direct.broker_account_id, bc_alpaca.broker_account_id) AS broker_account_id,
                COALESCE(bm.broker_type, 'webhook') AS broker_type
         FROM   orders o
-        LEFT JOIN broker_credentials bc
-               ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
         LEFT JOIN broker_master bm
                ON (bm.broker_name = o.broker OR bm.broker_id = o.broker)
+        LEFT JOIN broker_credentials bc_direct
+               ON bc_direct.member_id = o.member_id AND LOWER(bc_direct.broker) = LOWER(o.broker)
+        LEFT JOIN broker_credentials bc_alpaca
+               ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
+               AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
         WHERE  LOWER(o.status) = 'placed'
     ";
     $params = [];
@@ -283,13 +289,16 @@ function executeBasket(PDO $conn, string $basketId, string $logFile): array
     $stmt = $conn->prepare("
         SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
                o.symbol, o.shares, o.amount, o.broker, o.broker_ref,
-               bc.broker_account_id,
+               COALESCE(bc_direct.broker_account_id, bc_alpaca.broker_account_id) AS broker_account_id,
                COALESCE(bm.broker_type, 'webhook') AS broker_type
         FROM   orders o
-        LEFT JOIN broker_credentials bc
-               ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
         LEFT JOIN broker_master bm
                ON (bm.broker_name = o.broker OR bm.broker_id = o.broker)
+        LEFT JOIN broker_credentials bc_direct
+               ON bc_direct.member_id = o.member_id AND LOWER(bc_direct.broker) = LOWER(o.broker)
+        LEFT JOIN broker_credentials bc_alpaca
+               ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
+               AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
         WHERE  o.basket_id = ?
           AND  LOWER(o.status) = 'placed'
         ORDER  BY o.order_id ASC
@@ -643,13 +652,16 @@ function executeMerchant(PDO $conn, string $merchantId, string $logFile): array
     $stmt = $conn->prepare("
         SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id,
                o.symbol, o.shares, o.amount, o.broker, o.broker_ref,
-               bc.broker_account_id,
+               COALESCE(bc_direct.broker_account_id, bc_alpaca.broker_account_id) AS broker_account_id,
                COALESCE(bm.broker_type, 'webhook') AS broker_type
         FROM   orders o
-        LEFT JOIN broker_credentials bc
-               ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
         LEFT JOIN broker_master bm
                ON (bm.broker_name = o.broker OR bm.broker_id = o.broker)
+        LEFT JOIN broker_credentials bc_direct
+               ON bc_direct.member_id = o.member_id AND LOWER(bc_direct.broker) = LOWER(o.broker)
+        LEFT JOIN broker_credentials bc_alpaca
+               ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
+               AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
         WHERE  o.merchant_id = ?
           AND  LOWER(o.status) = 'placed'
         ORDER  BY o.basket_id, o.order_id ASC

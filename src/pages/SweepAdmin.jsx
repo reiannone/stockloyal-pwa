@@ -552,11 +552,18 @@ export default function SweepAdmin() {
           padding: "1rem",
           marginBottom: "1rem",
           borderRadius: "8px",
-          background: lastResult.success ? "#d1fae5" : "#fee2e2",
-          border: `1px solid ${lastResult.success ? "#10b981" : "#ef4444"}`
+          background: lastResult.market_closed ? "#fefce8" : lastResult.success ? "#d1fae5" : "#fee2e2",
+          border: `1px solid ${lastResult.market_closed ? "#eab308" : lastResult.success ? "#10b981" : "#ef4444"}`
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong>{lastResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Sweep Completed</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Sweep Failed</>}</strong>
+            <strong>
+              {lastResult.market_closed
+                ? <><Clock size={14} style={{ verticalAlign: "middle" }} /> Market Closed — Sweep Deferred</>
+                : lastResult.success
+                  ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Sweep Completed</>
+                  : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Sweep Failed</>
+              }
+            </strong>
             {lastResult.results?.batch_id && (
               <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
                 <LineageLink id={lastResult.results.batch_id} type="sweep">{lastResult.results.batch_id}</LineageLink>
@@ -564,7 +571,22 @@ export default function SweepAdmin() {
             )}
           </div>
 
-          {lastResult.results && (
+          {/* Market closed detail */}
+          {lastResult.market_closed && (
+            <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#92400e" }}>
+              <p style={{ margin: "0 0 0.25rem" }}>{lastResult.message || "The US equity market is currently closed."}</p>
+              {lastResult.next_market_open && (
+                <p style={{ margin: 0 }}>
+                  Next market open: <strong>{new Date(lastResult.next_market_open).toLocaleString()}</strong>
+                </p>
+              )}
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.8rem", color: "#a16207" }}>
+                No orders were modified. Re-run the sweep when the market opens.
+              </p>
+            </div>
+          )}
+
+          {lastResult.results && !lastResult.market_closed && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
               <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
                 <span><Package size={12} style={{ verticalAlign: "middle" }} /> Orders Placed: <strong>{lastResult.results.orders_placed ?? 0}</strong></span>

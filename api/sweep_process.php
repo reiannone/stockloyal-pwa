@@ -75,8 +75,44 @@ class SweepProcess
             return $this->buildResult(0, 0, 0, [], [], microtime(true) - $startTime);
         }
 
-        // 2. Group: merchant+broker → baskets → orders[]
+        // 1b. Pre-flight: check if any orders route to Alpaca
         $groups = $this->groupByMerchantBroker($orders);
+        $hasAlpaca = false;
+        foreach ($groups as $g) {
+            $bi = $this->getBrokerInfo($g['broker']);
+            if (($bi['broker_type'] ?? 'webhook') === 'alpaca') {
+                $hasAlpaca = true;
+                break;
+            }
+        }
+
+        // 1c. If Alpaca orders exist, verify market is open
+        if ($hasAlpaca) {
+            $clockCheck = $this->checkMarketOpen();
+            if (!$clockCheck['is_open']) {
+                $nextOpen = $clockCheck['next_open'] ?? 'unknown';
+                $msg = "Market is closed — sweep aborted. Next open: {$nextOpen}";
+                $this->log("🚫 {$msg}");
+                $this->errors[] = $msg;
+
+                return [
+                    'success'            => false,
+                    'batch_id'           => $this->batchId,
+                    'orders_placed'      => 0,
+                    'orders_failed'      => 0,
+                    'merchants_processed' => 0,
+                    'baskets_processed'  => count(array_unique(array_column($orders, 'basket_id'))),
+                    'brokers_notified'   => [],
+                    'basket_results'     => [],
+                    'duration_seconds'   => round(microtime(true) - $startTime, 2),
+                    'errors'             => $this->errors,
+                    'log'                => $this->logMessages,
+                    'market_closed'      => true,
+                    'next_market_open'   => $nextOpen,
+                ];
+            }
+            $this->log("✅ Market is OPEN — proceeding with sweep");
+        }
 
         $this->log("Found " . count($orders) . " order(s) across "
                     . count($groups) . " merchant-broker group(s)");
@@ -167,11 +203,17 @@ class SweepProcess
                    o.symbol, o.shares, o.amount, o.points_used,
                    o.status, o.placed_at, o.broker, o.order_type,
                    m.merchant_name,
-                   bc.username          AS brokerage_id,
-                   bc.broker_account_id AS broker_account_id
+                   COALESCE(bc_direct.username, bc_alpaca.username) AS brokerage_id,
+                   COALESCE(bc_direct.broker_account_id, bc_alpaca.broker_account_id) AS broker_account_id
             FROM   orders o
             LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
-            LEFT JOIN broker_credentials bc ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
+            LEFT JOIN broker_master bm
+                   ON (bm.broker_name = o.broker OR bm.broker_id = o.broker)
+            LEFT JOIN broker_credentials bc_direct
+                   ON bc_direct.member_id = o.member_id AND LOWER(bc_direct.broker) = LOWER(o.broker)
+            LEFT JOIN broker_credentials bc_alpaca
+                   ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
+                   AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
             WHERE  LOWER(o.status) IN ('pending','queued')
         ";
 
@@ -217,6 +259,158 @@ class SweepProcess
         ");
         $stmt->execute([$brokerName, $brokerName]);
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['broker_name' => $brokerName, 'broker_type' => 'webhook'];
+    }
+
+    // ====================================================================
+    // PRIVATE — Alpaca pre-flight checks
+    // ====================================================================
+
+    /**
+     * Check if US equity market is currently open via Alpaca clock API.
+     * Returns: ['is_open' => bool, 'next_open' => string, 'next_close' => string]
+     */
+    private function checkMarketOpen(): array
+    {
+        require_once __DIR__ . '/AlpacaBrokerAPI.php';
+        try {
+            $alpaca = new AlpacaBrokerAPI();
+            $result = $alpaca->getMarketClock();
+
+            if (!$result['success']) {
+                $this->log("⚠️ Clock API failed: " . ($result['error'] ?? 'unknown'));
+                // If we can't check, default to open (don't block sweep on clock failure)
+                return ['is_open' => true, 'next_open' => null, 'next_close' => null];
+            }
+
+            $data = $result['data'];
+            $isOpen    = $data['is_open'] ?? false;
+            $nextOpen  = $data['next_open'] ?? null;
+            $nextClose = $data['next_close'] ?? null;
+
+            $this->log("🕐 Market clock: is_open=" . ($isOpen ? 'YES' : 'NO')
+                        . "  next_open={$nextOpen}  next_close={$nextClose}");
+
+            return [
+                'is_open'    => (bool) $isOpen,
+                'next_open'  => $nextOpen,
+                'next_close' => $nextClose,
+            ];
+        } catch (\Exception $e) {
+            $this->log("⚠️ Clock API exception: " . $e->getMessage());
+            return ['is_open' => true, 'next_open' => null, 'next_close' => null];
+        }
+    }
+
+    /**
+     * Validate a symbol against Alpaca's asset database.
+     * Returns: ['valid' => bool, 'error_code' => string|null, 'error' => string|null, 'asset' => array|null]
+     *
+     * Error codes:
+     *   ASSET_NOT_FOUND        — symbol doesn't exist
+     *   ASSET_NOT_ACTIVE       — delisted or halted
+     *   ASSET_NOT_TRADABLE     — exists but can't be traded
+     *   ASSET_NOT_FRACTIONABLE — can't use notional (dollar) orders
+     */
+    private function validateAlpacaAsset(AlpacaBrokerAPI $alpaca, string $symbol, bool $needsFractional): array
+    {
+        $result = $alpaca->getAsset($symbol);
+
+        if (!$result['success']) {
+            $httpCode = $result['http_code'] ?? 0;
+            if ($httpCode === 404) {
+                return ['valid' => false, 'error_code' => 'ASSET_NOT_FOUND',
+                        'error' => "Asset \"{$symbol}\" not found on Alpaca"];
+            }
+            return ['valid' => false, 'error_code' => 'ASSET_LOOKUP_FAILED',
+                    'error' => "Asset lookup failed: " . ($result['error'] ?? 'unknown')];
+        }
+
+        $asset  = $result['data'];
+        $status = $asset['status'] ?? '';
+        $tradable     = $asset['tradable'] ?? false;
+        $fractionable = $asset['fractionable'] ?? false;
+
+        if ($status !== 'active') {
+            return ['valid' => false, 'error_code' => 'ASSET_NOT_ACTIVE',
+                    'error' => "Asset {$symbol} status is \"{$status}\" (not active)", 'asset' => $asset];
+        }
+        if (!$tradable) {
+            return ['valid' => false, 'error_code' => 'ASSET_NOT_TRADABLE',
+                    'error' => "Asset {$symbol} is not tradable", 'asset' => $asset];
+        }
+        if ($needsFractional && !$fractionable) {
+            return ['valid' => false, 'error_code' => 'ASSET_NOT_FRACTIONABLE',
+                    'error' => "Asset {$symbol} does not support fractional/notional orders", 'asset' => $asset];
+        }
+
+        return ['valid' => true, 'error_code' => null, 'error' => null, 'asset' => $asset];
+    }
+
+    /**
+     * Normalize symbol for Alpaca's API format.
+     * Yahoo uses BTC-USD, ETH-USD — Alpaca uses BTC/USD, ETH/USD for crypto.
+     */
+    private function normalizeSymbolForAlpaca(string $symbol): string
+    {
+        // Common crypto pairs: XXX-USD → XXX/USD
+        if (preg_match('/^([A-Z]{2,6})-USD$/i', $symbol, $m)) {
+            $base = strtoupper($m[1]);
+            $cryptoBases = ['BTC','ETH','LTC','DOGE','SOL','AVAX','DOT','LINK',
+                            'UNI','AAVE','MATIC','SHIB','ADA','XRP','ALGO','ATOM',
+                            'FIL','NEAR','APE','BCH','CRV','MKR','SUSHI','USDT','USDC'];
+            if (in_array($base, $cryptoBases)) {
+                return "{$base}/USD";
+            }
+        }
+        return strtoupper($symbol);
+    }
+
+    /**
+     * Parse Alpaca order rejection error into a categorized fail code.
+     * Alpaca returns error messages like:
+     *   "insufficient buying power"
+     *   "asset XYZ is not active"
+     *   "asset "ABC-USD" not found"
+     *   "asset "OLB" is not fractionable"
+     *
+     * Returns: ['code' => string, 'message' => string]
+     */
+    private function parseAlpacaOrderError(string $errorMsg, int $httpCode): array
+    {
+        $lower = strtolower($errorMsg);
+
+        if (str_contains($lower, 'insufficient buying power') || str_contains($lower, 'insufficient qty')) {
+            return ['code' => 'INSUFFICIENT_FUNDS', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'not found')) {
+            return ['code' => 'ASSET_NOT_FOUND', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'not active')) {
+            return ['code' => 'ASSET_NOT_ACTIVE', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'not fractionable')) {
+            return ['code' => 'ASSET_NOT_FRACTIONABLE', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'not tradable')) {
+            return ['code' => 'ASSET_NOT_TRADABLE', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'market is not open') || str_contains($lower, 'market closed')) {
+            return ['code' => 'MARKET_CLOSED', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'order is too small') || str_contains($lower, 'notional is too small')) {
+            return ['code' => 'ORDER_TOO_SMALL', 'message' => $errorMsg];
+        }
+        if (str_contains($lower, 'too large') || str_contains($lower, 'exceeds')) {
+            return ['code' => 'ORDER_TOO_LARGE', 'message' => $errorMsg];
+        }
+        if ($httpCode === 403) {
+            return ['code' => 'ACCOUNT_RESTRICTED', 'message' => $errorMsg];
+        }
+        if ($httpCode === 429) {
+            return ['code' => 'RATE_LIMITED', 'message' => $errorMsg];
+        }
+
+        return ['code' => 'BROKER_REJECTED', 'message' => $errorMsg];
     }
 
     // ====================================================================
@@ -284,8 +478,7 @@ class SweepProcess
                 $this->log("❌ Member {$mid}: no broker_account_id — skipping all orders");
                 $this->errors[] = "Member {$mid}: no Alpaca broker_account_id in broker_credentials";
                 $totalFailed += count($memberData['orders']);
-                // Mark orders as failed
-                $this->markOrdersFailed($memberData['orders'], 'No broker account linked');
+                $this->markOrdersFailed($memberData['orders'], 'No broker account linked', 'NO_BROKER_ACCOUNT');
                 continue;
             }
 
@@ -313,7 +506,10 @@ class SweepProcess
                 }
             }
 
-            // ── Step 2: Submit each order via Alpaca API ──
+            // ── Step 2: Validate and submit each order via Alpaca API ──
+            // Cache asset validation results to avoid re-checking same symbol
+            static $assetCache = [];
+
             foreach ($memberData['orders'] as $o) {
                 $orderId = $o['order_id'] ?? null;
                 $symbol  = $o['symbol'] ?? '';
@@ -326,29 +522,72 @@ class SweepProcess
                     continue;
                 }
 
+                // Normalize symbol (crypto: BTC-USD → BTC/USD)
+                $alpacaSymbol = $this->normalizeSymbolForAlpaca($symbol);
+                if ($alpacaSymbol !== $symbol) {
+                    $this->log("   🔄 Symbol normalized: {$symbol} → {$alpacaSymbol}");
+                }
+
+                // Determine if we need fractional support (notional/dollar-based orders)
+                $needsFractional = ($amount > 0);
+
+                // Validate asset (cached per symbol)
+                if (!isset($assetCache[$alpacaSymbol])) {
+                    $assetCache[$alpacaSymbol] = $this->validateAlpacaAsset($alpaca, $alpacaSymbol, $needsFractional);
+                }
+                $assetCheck = $assetCache[$alpacaSymbol];
+
+                // Re-check fractionable if the cached result didn't need it but this order does
+                if ($assetCheck['valid'] && $needsFractional && isset($assetCheck['asset'])) {
+                    $isFractionable = $assetCheck['asset']['fractionable'] ?? false;
+                    if (!$isFractionable) {
+                        $assetCheck = [
+                            'valid'      => false,
+                            'error_code' => 'ASSET_NOT_FRACTIONABLE',
+                            'error'      => "Asset {$alpacaSymbol} does not support fractional/notional orders",
+                            'asset'      => $assetCheck['asset'],
+                        ];
+                    }
+                }
+
+                if (!$assetCheck['valid']) {
+                    $failCode = $assetCheck['error_code'] ?? 'ASSET_NOT_FOUND';
+                    $failMsg  = $assetCheck['error'] ?? 'Asset validation failed';
+                    $this->log("   ❌ Order {$orderId} ({$alpacaSymbol}): {$failMsg}");
+                    $this->errors[] = "Order {$orderId} ({$alpacaSymbol}): {$failMsg}";
+                    $this->markSingleOrderFailed($orderId, $failMsg, $failCode);
+                    $totalFailed++;
+                    $orderResults[] = [
+                        'order_id'   => $orderId,
+                        'symbol'     => $symbol,
+                        'amount'     => $amount,
+                        'error'      => $failMsg,
+                        'fail_code'  => $failCode,
+                        'success'    => false,
+                    ];
+                    continue;
+                }
+
                 // Build Alpaca order payload
-                // Use 'notional' for dollar-based orders, 'qty' for share-based
                 $alpacaOrder = [
-                    'symbol'        => $symbol,
+                    'symbol'        => $alpacaSymbol,
                     'side'          => 'buy',
                     'type'          => 'market',
                     'time_in_force' => 'day',
                 ];
 
                 if ($amount > 0) {
-                    // Dollar-based fractional order (preferred for points→stock)
                     $alpacaOrder['notional'] = (string) $amount;
                 } elseif ($shares > 0) {
-                    // Share-based order
                     $alpacaOrder['qty'] = (string) $shares;
                 } else {
                     $this->log("   ⚠️ Order {$orderId}: zero amount and shares — skipping");
-                    $this->markSingleOrderFailed($orderId, 'Zero amount and shares');
+                    $this->markSingleOrderFailed($orderId, 'Zero amount and shares', 'ORDER_TOO_SMALL');
                     $totalFailed++;
                     continue;
                 }
 
-                $this->log("   📈 Order {$orderId}: {$symbol} \${$amount} (notional) → account {$accountId}");
+                $this->log("   📈 Order {$orderId}: {$alpacaSymbol} \${$amount} (notional) → account {$accountId}");
 
                 $apiResult = $alpaca->createOrder($accountId, $alpacaOrder);
 
@@ -360,14 +599,14 @@ class SweepProcess
 
                     $this->log("   ✅ Order {$orderId} → Alpaca: {$alpacaOrderId} status={$alpacaStatus}");
 
-                    // Mark order as placed/confirmed and store Alpaca order ID
                     $this->markOrderConfirmed($orderId, $alpacaOrderId, $alpacaStatus, $filledQty, $filledAvg);
                     $totalPlaced++;
 
                     $alpacaOrderIds[] = $alpacaOrderId;
                     $orderResults[] = [
                         'order_id'        => $orderId,
-                        'symbol'          => $symbol,
+                        'symbol'          => $alpacaSymbol,
+                        'original_symbol' => ($alpacaSymbol !== $symbol) ? $symbol : null,
                         'amount'          => $amount,
                         'alpaca_order_id' => $alpacaOrderId,
                         'alpaca_status'   => $alpacaStatus,
@@ -376,25 +615,32 @@ class SweepProcess
                 } else {
                     $errMsg   = $apiResult['error'] ?? 'Order submission failed';
                     $httpCode = $apiResult['http_code'] ?? 0;
-                    $this->log("   ❌ Order {$orderId} FAILED: HTTP {$httpCode} — {$errMsg}");
-                    $this->errors[] = "Order {$orderId} ({$symbol}): {$errMsg}";
 
-                    $this->markSingleOrderFailed($orderId, $errMsg);
+                    // Parse error into categorized fail code
+                    $parsed   = $this->parseAlpacaOrderError($errMsg, $httpCode);
+                    $failCode = $parsed['code'];
+
+                    $this->log("   ❌ Order {$orderId} FAILED: HTTP {$httpCode} — {$errMsg} [{$failCode}]");
+                    $this->errors[] = "Order {$orderId} ({$alpacaSymbol}): {$errMsg}";
+
+                    $this->markSingleOrderFailed($orderId, $errMsg, $failCode);
                     $totalFailed++;
 
                     $alpacaErrors[] = [
-                        'order_id'  => $orderId,
-                        'symbol'    => $symbol,
-                        'error'     => $errMsg,
-                        'http_code' => $httpCode,
-                        'details'   => $apiResult['data'] ?? null,
+                        'order_id'   => $orderId,
+                        'symbol'     => $alpacaSymbol,
+                        'error'      => $errMsg,
+                        'fail_code'  => $failCode,
+                        'http_code'  => $httpCode,
+                        'details'    => $apiResult['data'] ?? null,
                     ];
                     $orderResults[] = [
-                        'order_id'  => $orderId,
-                        'symbol'    => $symbol,
-                        'amount'    => $amount,
-                        'error'     => $errMsg,
-                        'success'   => false,
+                        'order_id'   => $orderId,
+                        'symbol'     => $alpacaSymbol,
+                        'amount'     => $amount,
+                        'error'      => $errMsg,
+                        'fail_code'  => $failCode,
+                        'success'    => false,
                     ];
                 }
             }
@@ -573,28 +819,33 @@ class SweepProcess
     }
 
     /**
-     * Mark a single order as failed with an error reason.
+     * Mark a single order as failed with an error reason and categorized code.
+     * fail_reason codes: INSUFFICIENT_FUNDS, ASSET_NOT_FOUND, ASSET_NOT_ACTIVE,
+     *   ASSET_NOT_FRACTIONABLE, ASSET_NOT_TRADABLE, MARKET_CLOSED,
+     *   ORDER_TOO_SMALL, ORDER_TOO_LARGE, ACCOUNT_RESTRICTED, BROKER_REJECTED,
+     *   NO_BROKER_ACCOUNT, ASSET_LOOKUP_FAILED, RATE_LIMITED
      */
-    private function markSingleOrderFailed(int $orderId, string $reason): void
+    private function markSingleOrderFailed(int $orderId, string $reason, string $failCode = 'BROKER_REJECTED'): void
     {
         $stmt = $this->conn->prepare("
             UPDATE orders
-            SET    status     = 'failed',
-                   broker_ref = ?
-            WHERE  order_id   = ?
+            SET    status      = 'failed',
+                   broker_ref  = ?,
+                   fail_reason = ?
+            WHERE  order_id    = ?
         ");
-        $stmt->execute(["FAILED: {$reason}", $orderId]);
+        $stmt->execute(["FAILED: {$reason}", $failCode, $orderId]);
     }
 
     /**
      * Mark multiple orders as failed.
      */
-    private function markOrdersFailed(array $orders, string $reason): void
+    private function markOrdersFailed(array $orders, string $reason, string $failCode = 'BROKER_REJECTED'): void
     {
         foreach ($orders as $o) {
             $oid = $o['order_id'] ?? null;
             if ($oid) {
-                $this->markSingleOrderFailed((int) $oid, $reason);
+                $this->markSingleOrderFailed((int) $oid, $reason, $failCode);
             }
         }
     }

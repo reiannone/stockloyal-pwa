@@ -11,17 +11,14 @@ import "../styles/StockPicker.css";
 const MY_PICKS = "My Basket"; // ✅ Member's persisted list of securities for sweeps
 const POPULAR_MEMBER_PICKS = "Popular Member Picks";
 
-// ✅ Map categories -> API screener IDs
+// ✅ Map categories -> Alpaca market data actions
 const categoryMap = {
-  "Most Active": "most_actives",
-  "Growth Tech": "growth_technology_stocks",
-  "Mutual Funds": "top_mutual_funds",
-  "ETFs": "etf",
-  "Cryptocurrency ETFs": "most_actives_cryptocurrencies",
-  "Large Caps": "undervalued_large_caps",
-  "Small Caps": "aggressive_small_caps",
+  "Most Active": "most_active",
+  "Most Traded": "most_traded",
   "Day Gainers": "day_gainers",
   "Day Losers": "day_losers",
+  "Cryptocurrency": "crypto",
+  "ETFs": "etfs",
 };
 
 // ✅ Map categories -> background images
@@ -29,14 +26,11 @@ const categoryImages = {
   [POPULAR_MEMBER_PICKS]: "/icons/StockLoyal-icon.png",
   [MY_PICKS]: "/icons/thumbs-up.jpg",
   "Most Active": "/icons/most-active.jpg",
-  "Large Caps": "/icons/large-caps.jpg",
-  "Small Caps": "/icons/small-caps.jpg",
-  "Growth Tech": "/icons/growth-tech.jpg",
-  "Mutual Funds": "/icons/mutual-funds.jpg",
-  "ETFs": "/icons/etfs.jpg",
-  "Cryptocurrency ETFs": "/icons/crypto.jpg",
+  "Most Traded": "/icons/trending.jpg",
   "Day Gainers": "/icons/day-gainers.jpg",
   "Day Losers": "/icons/day-losers.jpg",
+  "Cryptocurrency": "/icons/crypto.jpg",
+  "ETFs": "/icons/etfs.jpg",
 };
 
 export default function StockPicker() {
@@ -101,7 +95,7 @@ export default function StockPicker() {
   const [selectedStocks, setSelectedStocks] = useState([]);
   const [loadingCategory, setLoadingCategory] = useState(false);
 
-  // ✅ Pagination for infinite scroll (Yahoo screener only)
+  // ✅ Pagination for infinite scroll (kept for future use)
   const [currentOffset, setCurrentOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -130,6 +124,33 @@ export default function StockPicker() {
   // 🎡 Audio + haptic feedback for wheel ticks
   const audioCtxRef = useRef(null);
   const lastTickTimeRef = useRef(0);
+
+
+  // ✅ Shared helper: enrich symbols via Alpaca market data API
+  const enrichWithAlpacaQuotes = async (symbols) => {
+    if (!symbols || symbols.length === 0) return new Map();
+
+    const symbolCsv = symbols.join(",");
+    const quoteResp = await apiPost("alpaca_market_data.php", {
+      action: "quotes",
+      symbols: symbolCsv,
+    });
+
+    const quoteArr = Array.isArray(quoteResp?.data) ? quoteResp.data : [];
+    const quoteBySymbol = new Map();
+
+    quoteArr.forEach((q) => {
+      const sym = String(q?.symbol || "").toUpperCase();
+      if (!sym) return;
+      quoteBySymbol.set(sym, {
+        name: q?.name || sym,
+        price: q?.price != null ? Number(q.price) : null,
+        change: q?.change != null ? Number(q.change) : 0,
+      });
+    });
+
+    return quoteBySymbol;
+  };
 
   const triggerWheelFeedback = () => {
     if (typeof window === "undefined") return;
@@ -227,7 +248,7 @@ export default function StockPicker() {
     })();
   }, [memberId]);
 
-  // ✅ Function to load My Basket with Yahoo quote enrichment
+  // ✅ Function to load My Basket with Alpaca quote enrichment
   const loadMyActiveList = async () => {
     if (!memberId) return;
     
@@ -262,44 +283,8 @@ export default function StockPicker() {
         return;
       }
 
-      // 2) Enrich with Yahoo quote data via proxy.php { symbol: "AAPL,MSFT,..." }
-      const symbolCsv = cleaned.map((r) => r.symbol).join(",");
-      const quoteResp = await apiPost("proxy.php", { symbol: symbolCsv });
-
-      const quoteArr =
-        quoteResp?.data ??
-        quoteResp?.results ??
-        quoteResp?.finance?.result?.[0]?.quotes ??
-        [];
-
-      // Build map by symbol
-      const quoteBySymbol = new Map();
-      (Array.isArray(quoteArr) ? quoteArr : []).forEach((q) => {
-        const sym = String(q?.symbol || "").toUpperCase();
-        if (!sym) return;
-
-        const name = q?.name || q?.shortName || q?.longName || sym;
-
-        const price =
-          q?.price ??
-          q?.regularMarketPrice ??
-          q?.postMarketPrice ??
-          q?.preMarketPrice ??
-          null;
-
-        const change =
-          q?.change ??
-          q?.regularMarketChangePercent ??
-          q?.postMarketChangePercent ??
-          q?.preMarketChangePercent ??
-          0;
-
-        quoteBySymbol.set(sym, {
-          name,
-          price: price != null ? Number(price) : null,
-          change: change != null ? Number(change) : 0,
-        });
-      });
+      // 2) Enrich with Alpaca quote data
+      const quoteBySymbol = await enrichWithAlpacaQuotes(cleaned.map((r) => r.symbol));
 
       // 3) Merge
       const merged = cleaned.map((r) => {
@@ -661,8 +646,8 @@ export default function StockPicker() {
     });
   };
 
-  // --- Yahoo Screener via proxy.php ---
-  const handleCategoryClick = async (cat, scrId) => {
+  // --- Alpaca Screener via alpaca_market_data.php ---
+  const handleCategoryClick = async (cat, alpacaCategory) => {
     if (isCashOutsideLimits) return;
 
     try {
@@ -673,46 +658,38 @@ export default function StockPicker() {
       setIsStockListOpen(true);
       setLoadingCategory(true);
 
-      // ✅ Reset pagination (Yahoo screener)
+      // ✅ Alpaca returns all results at once (no pagination)
       setCurrentOffset(0);
-      setHasMore(true);
-      setCurrentScrId(scrId);
+      setHasMore(false);
+      setCurrentScrId("");
 
-      const data = await apiPost("proxy.php", { scrId, offset: 0 });
-      if (!data || data.error) throw new Error(data.error || "Failed to load");
+      const data = await apiPost("alpaca_market_data.php", {
+        action: "screener",
+        category: alpacaCategory,
+        top: 20,
+      });
 
-      const quotes =
-        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
+      if (!data?.success) throw new Error(data?.error || "Failed to load");
 
-      const fetched = quotes.map((q) => ({
+      const stocks = Array.isArray(data.data) ? data.data : [];
+
+      const fetched = stocks.map((q) => ({
         symbol: q.symbol,
-        name: q.shortName || q.longName || q.symbol,
-        price:
-          q.regularMarketPrice ??
-          q.postMarketPrice ??
-          q.preMarketPrice ??
-          null,
-        change:
-          q.regularMarketChangePercent ??
-          q.postMarketChangePercent ??
-          q.preMarketChangePercent ??
-          0,
+        name: q.name || q.symbol,
+        price: q.price ?? null,
+        change: q.change ?? 0,
       }));
 
       setResults(fetched);
-
-      // Yahoo typically returns 25 results per page
-      setHasMore(fetched.length >= 25);
-      setCurrentOffset(25);
     } catch (err) {
-      console.error("[StockPicker] proxy error:", err);
+      console.error("[StockPicker] Alpaca screener error:", err);
       setStockError("Failed to fetch stocks.");
     } finally {
       setLoadingCategory(false);
     }
   };
 
-  // ✅ Popular Member Picks (orders aggregation + Yahoo enrichment via proxy.php symbol-mode)
+  // ✅ Popular Member Picks (orders aggregation + Alpaca enrichment)
   const handlePopularMemberPicks = async () => {
     if (isCashOutsideLimits) return;
 
@@ -724,7 +701,7 @@ export default function StockPicker() {
       setIsStockListOpen(true);
       setLoadingCategory(true);
 
-      // ✅ Disable Yahoo pagination for this list
+      // ✅ Disable pagination for this list
       setCurrentScrId("");
       setCurrentOffset(0);
       setHasMore(false);
@@ -748,44 +725,8 @@ export default function StockPicker() {
         return;
       }
 
-      // 2) Enrich with Yahoo quote data via proxy.php { symbol: "AAPL,MSFT,..." }
-      const symbolCsv = cleaned.map((r) => r.symbol).join(",");
-      const quoteResp = await apiPost("proxy.php", { symbol: symbolCsv });
-
-      const quoteArr =
-        quoteResp?.data ??
-        quoteResp?.results ??
-        quoteResp?.finance?.result?.[0]?.quotes ??
-        [];
-
-      // Build map by symbol, handling both "already-normalized" and raw Yahoo quote shapes
-      const quoteBySymbol = new Map();
-      (Array.isArray(quoteArr) ? quoteArr : []).forEach((q) => {
-        const sym = String(q?.symbol || "").toUpperCase();
-        if (!sym) return;
-
-        const name = q?.name || q?.shortName || q?.longName || sym;
-
-        const price =
-          q?.price ??
-          q?.regularMarketPrice ??
-          q?.postMarketPrice ??
-          q?.preMarketPrice ??
-          null;
-
-        const change =
-          q?.change ??
-          q?.regularMarketChangePercent ??
-          q?.postMarketChangePercent ??
-          q?.preMarketChangePercent ??
-          0;
-
-        quoteBySymbol.set(sym, {
-          name,
-          price: price != null ? Number(price) : null,
-          change: change != null ? Number(change) : 0,
-        });
-      });
+      // 2) Enrich with Alpaca quote data
+      const quoteBySymbol = await enrichWithAlpacaQuotes(cleaned.map((r) => r.symbol));
 
       // 3) Merge: keep purchases visible under Name column
       const merged = cleaned.map((r) => {
@@ -822,7 +763,7 @@ export default function StockPicker() {
       setIsStockListOpen(true);
       setLoadingCategory(true);
 
-      // ✅ Disable Yahoo pagination for this list
+      // ✅ Disable pagination for this list
       setCurrentScrId("");
       setCurrentOffset(0);
       setHasMore(false);
@@ -853,44 +794,8 @@ export default function StockPicker() {
         return;
       }
 
-      // 2) Enrich with Yahoo quote data via proxy.php { symbol: "AAPL,MSFT,..." }
-      const symbolCsv = cleaned.map((r) => r.symbol).join(",");
-      const quoteResp = await apiPost("proxy.php", { symbol: symbolCsv });
-
-      const quoteArr =
-        quoteResp?.data ??
-        quoteResp?.results ??
-        quoteResp?.finance?.result?.[0]?.quotes ??
-        [];
-
-      // Build map by symbol
-      const quoteBySymbol = new Map();
-      (Array.isArray(quoteArr) ? quoteArr : []).forEach((q) => {
-        const sym = String(q?.symbol || "").toUpperCase();
-        if (!sym) return;
-
-        const name = q?.name || q?.shortName || q?.longName || sym;
-
-        const price =
-          q?.price ??
-          q?.regularMarketPrice ??
-          q?.postMarketPrice ??
-          q?.preMarketPrice ??
-          null;
-
-        const change =
-          q?.change ??
-          q?.regularMarketChangePercent ??
-          q?.postMarketChangePercent ??
-          q?.preMarketChangePercent ??
-          0;
-
-        quoteBySymbol.set(sym, {
-          name,
-          price: price != null ? Number(price) : null,
-          change: change != null ? Number(change) : 0,
-        });
-      });
+      // 2) Enrich with Alpaca quote data
+      const quoteBySymbol = await enrichWithAlpacaQuotes(cleaned.map((r) => r.symbol));
 
       // 3) Merge: show allocation if set
       const merged = cleaned.map((r) => {
@@ -948,7 +853,7 @@ export default function StockPicker() {
     }
   };
 
-  // ✅ Load more stocks when scrolling (infinite scroll) — Yahoo only
+  // ✅ Load more stocks when scrolling (infinite scroll) — kept for future use
   const loadMoreStocks = async () => {
     if (loadingMore || !hasMore || !currentScrId) {
       console.log("🚫 Skipping load more:", { loadingMore, hasMore, currentScrId });
@@ -959,29 +864,21 @@ export default function StockPicker() {
       console.log("📥 Loading more stocks - offset:", currentOffset);
       setLoadingMore(true);
 
-      const data = await apiPost("proxy.php", {
-        scrId: currentScrId,
-        offset: currentOffset,
+      // Alpaca screener returns all results at once — pagination not needed
+      // Kept for future use if larger datasets are supported
+      const data = await apiPost("alpaca_market_data.php", {
+        action: "screener",
+        category: currentScrId,
+        top: 50,
       });
 
-      if (!data || data.error) throw new Error(data.error || "Failed to load more");
+      if (!data?.success) throw new Error(data?.error || "Failed to load more");
 
-      const quotes =
-        data.finance?.result?.[0]?.quotes ?? data.data ?? data.results ?? [];
-
-      const fetched = quotes.map((q) => ({
+      const fetched = (data.data || []).map((q) => ({
         symbol: q.symbol,
-        name: q.shortName || q.longName || q.symbol,
-        price:
-          q.regularMarketPrice ??
-          q.postMarketPrice ??
-          q.preMarketPrice ??
-          null,
-        change:
-          q.regularMarketChangePercent ??
-          q.postMarketChangePercent ??
-          q.preMarketChangePercent ??
-          0,
+        name: q.name || q.symbol,
+        price: q.price ?? null,
+        change: q.change ?? 0,
       }));
 
       if (fetched.length === 0) {
@@ -1101,90 +998,23 @@ export default function StockPicker() {
       setCurrentOffset(0);
       setHasMore(false);
 
-      // Determine if input looks like a symbol (1-5 uppercase letters) or a name search
-      const isSymbolSearch = /^[A-Za-z]{1,5}$/.test(input) && input === input.toUpperCase();
-      
+      // Search via Alpaca market data (handles both symbol and name search)
       let searchResults = [];
-      
-      if (isSymbolSearch) {
-        // Direct symbol lookup via proxy.php
-        const quoteResp = await apiPost("proxy.php", { symbol: input.toUpperCase() });
-        const quoteArr =
-          quoteResp?.data ??
-          quoteResp?.results ??
-          quoteResp?.finance?.result?.[0]?.quotes ??
-          [];
 
-        if (Array.isArray(quoteArr) && quoteArr.length > 0) {
-          searchResults = quoteArr.map((q) => ({
-            symbol: q.symbol || q.Symbol || input.toUpperCase(),
-            name: q.name || q.shortName || q.longName || input.toUpperCase(),
-            price:
-              q.price ??
-              q.regularMarketPrice ??
-              q.postMarketPrice ??
-              q.preMarketPrice ??
-              null,
-            change:
-              q.change ??
-              q.regularMarketChangePercent ??
-              q.postMarketChangePercent ??
-              q.preMarketChangePercent ??
-              0,
-          }));
-        }
-      }
-      
-      // If no results from symbol search, or input looks like a name, try name search
-      if (searchResults.length === 0) {
-        const searchResp = await apiPost("proxy.php", { search: input });
-        const searchArr = searchResp?.quotes || searchResp?.data || [];
-        
-        if (Array.isArray(searchArr) && searchArr.length > 0) {
-          // Filter to only equity types (stocks) and get symbols
-          const symbols = searchArr
-            .filter(q => q.quoteType === 'EQUITY' || q.typeDisp === 'Equity' || !q.quoteType)
-            .map(q => q.symbol)
-            .filter(Boolean)
-            .slice(0, 10); // Limit to 10 results
-          
-          if (symbols.length > 0) {
-            // Get full quote data for each symbol
-            const quoteResp = await apiPost("proxy.php", { symbol: symbols.join(",") });
-            const quoteArr =
-              quoteResp?.data ??
-              quoteResp?.results ??
-              quoteResp?.finance?.result?.[0]?.quotes ??
-              [];
+      const searchResp = await apiPost("alpaca_market_data.php", {
+        action: "search",
+        query: input,
+      });
 
-            // Build a map of search results for name fallback
-            const searchMap = new Map();
-            searchArr.forEach(q => {
-              if (q.symbol) {
-                searchMap.set(q.symbol.toUpperCase(), q.shortname || q.longname || q.symbol);
-              }
-            });
-
-            if (Array.isArray(quoteArr)) {
-              searchResults = quoteArr.map((q) => ({
-                symbol: q.symbol || q.Symbol,
-                name: q.name || q.shortName || q.longName || searchMap.get((q.symbol || "").toUpperCase()) || q.symbol,
-                price:
-                  q.price ??
-                  q.regularMarketPrice ??
-                  q.postMarketPrice ??
-                  q.preMarketPrice ??
-                  null,
-                change:
-                  q.change ??
-                  q.regularMarketChangePercent ??
-                  q.postMarketChangePercent ??
-                  q.preMarketChangePercent ??
-                  0,
-              }));
-            }
-          }
-        }
+      if (searchResp?.success && Array.isArray(searchResp.data)) {
+        searchResults = searchResp.data.map((q) => ({
+          symbol: q.symbol,
+          name: q.name || q.symbol,
+          price: q.price ?? null,
+          change: q.change ?? 0,
+          tradable: q.tradable ?? true,
+          fractionable: q.fractionable ?? false,
+        }));
       }
 
       if (searchResults.length === 0) {
@@ -1278,7 +1108,7 @@ export default function StockPicker() {
       <h1 className="page-title">Build My Basket of Securities</h1>
 
       {/* Points / Cash display */}
-      <div class="card card--accent"
+      <div className="card card--accent"
         style={{
           background: "#f9fafb",
           borderRadius: "12px",
@@ -1446,7 +1276,7 @@ export default function StockPicker() {
           </span>
         </button>
 
-        {/* Yahoo screener categories */}
+        {/* Alpaca screener categories */}
         {Object.entries(categoryMap).map(([catName, scrId]) => (
           <button
             key={catName}
@@ -1857,7 +1687,7 @@ export default function StockPicker() {
                       </tbody>
                     </table>
 
-                    {/* ✅ Loading indicator for infinite scroll (Yahoo only) */}
+                    {/* ✅ Loading indicator for infinite scroll */}
                     {loadingMore && (
                       <div
                         style={{

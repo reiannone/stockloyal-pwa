@@ -283,6 +283,25 @@ class AlpacaBrokerAPI {
         return $this->get('/v1/accounts/' . urlencode($accountId) . '/transfers');
     }
 
+    // ─── Market / Assets ────────────────────────────────────
+
+    /**
+     * Get market clock — is the market open?
+     * Returns: { timestamp, is_open, next_open, next_close }
+     */
+    public function getMarketClock(): array {
+        return $this->get('/v1/clock');
+    }
+
+    /**
+     * Get asset info by symbol.
+     * Returns: { id, symbol, name, status, tradable, fractionable, ... }
+     * Use to validate symbols before order submission.
+     */
+    public function getAsset(string $symbol): array {
+        return $this->get('/v1/assets/' . urlencode($symbol));
+    }
+
     // ─── Utility ────────────────────────────────────────────
 
     /**
