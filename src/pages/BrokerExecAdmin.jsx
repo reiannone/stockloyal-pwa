@@ -60,11 +60,7 @@ export default function BrokerExecAdmin() {
         for (const bg of (res.brokers || [])) {
           for (const bk of (bg.baskets || [])) {
             for (const o of (bk.orders || [])) {
-              flat.push({
-                ...o,
-                merchant_name: bk.merchant_name || bk.merchant_id,
-                broker_type: o.broker_type || bg.broker_type || null,
-              });
+              flat.push({ ...o, merchant_name: bk.merchant_name || bk.merchant_id });
             }
           }
         }
@@ -184,13 +180,13 @@ export default function BrokerExecAdmin() {
       />
 
       {/* Header */}
-      <h1 className="page-title">Broker Trade Execution</h1>
+      <h1 className="page-title">Broker Trade Execution <em>[Simulation]</em></h1>
       <p className="page-deck">
-        Execute placed orders — Alpaca orders are confirmed via live API, others are simulated with market variance.
+        Simulate broker market execution for placed orders. The broker executes trades automatically at market open, 9:30AM ET.
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={3} counts={queueCounts} />
+      <OrderPipeline currentStep={4} counts={queueCounts} />
 
       {/* Action Bar */}
       <div style={{
@@ -291,9 +287,6 @@ export default function BrokerExecAdmin() {
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               <span><TrendingUp size={12} style={{ verticalAlign: "middle" }} /> Executed: <strong>{lastResult.orders_executed || 0}</strong></span>
               <span><XCircle size={12} style={{ verticalAlign: "middle" }} /> Failed: <strong>{lastResult.orders_failed || 0}</strong></span>
-              {(lastResult.orders_pending > 0) && (
-                <span><Hourglass size={12} style={{ verticalAlign: "middle" }} /> Pending: <strong>{lastResult.orders_pending}</strong></span>
-              )}
               <span><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Baskets: <strong>{lastResult.baskets_processed || 0}</strong></span>
               <span><Clock size={12} style={{ verticalAlign: "middle" }} /> Duration: <strong>{lastResult.duration_seconds || 0}s</strong></span>
             </div>
@@ -361,12 +354,10 @@ export default function BrokerExecAdmin() {
         background: "#fffbeb", border: "1px solid #fde68a",
         borderRadius: "8px", fontSize: "0.8rem", color: "#92400e",
       }}>
-        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> Execution Modes:</strong>{" "}
-        <strong style={{ color: "#059669" }}>API</strong> brokers (Alpaca) → orders were submitted during sweep; this step
-        polls the Alpaca API for real fill prices and quantities.{" "}
-        <strong style={{ color: "#d97706" }}>Webhook</strong> brokers → prices are simulated with ±2% market variance.{" "}
-        Alpaca orders still pending on the exchange will show as "pending" — click Execute again to re-check.
-        Orders move from <code>placed → confirmed</code> with executed_price, executed_shares, and executed_amount populated.
+        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> Simulation Mode:</strong> Executed prices are simulated with ±2% market variance
+        from the target buy price. In production, the broker returns actual fill prices from the
+        exchange at market open (9:30 AM ET). Orders move from <code>placed → confirmed</code> with
+        executed_price, executed_shares, and executed_amount populated.
       </div>
     </div>
   );
@@ -407,7 +398,7 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecut
     hierarchy[mId].memberSet.add(o.member_id);
 
     if (!hierarchy[mId].brokers[br]) {
-      hierarchy[mId].brokers[br] = { broker: br, broker_type: o.broker_type || null, baskets: {}, orders: [], totalAmount: 0, memberSet: new Set() };
+      hierarchy[mId].brokers[br] = { broker: br, baskets: {}, orders: [], totalAmount: 0, memberSet: new Set() };
     }
     hierarchy[mId].brokers[br].orders.push(o);
     hierarchy[mId].brokers[br].totalAmount += parseFloat(o.amount || 0);
@@ -507,9 +498,6 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecut
                   >
                     <Building2 size={14} color="#6366f1" />
                     <span style={{ color: "#1e293b" }}>{br.broker}</span>
-                    {br.broker_type === "alpaca" && badge("API", "#dcfce7", "#166534")}
-                    {br.broker_type === "webhook" && badge("WEBHOOK", "#fef3c7", "#92400e")}
-                    {!br.broker_type && badge("SIM", "#f1f5f9", "#64748b")}
                     <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                       {pills(br)}
                       {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
@@ -576,12 +564,6 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecut
                                     <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                       <td style={{ ...tdStyle, fontFamily: "monospace", fontSize: "0.75rem" }}>
                                         #{o.order_id || i + 1}
-                                        {o.broker_ref && !o.broker_ref.startsWith("FAILED:") && (
-                                          <div style={{ fontSize: "0.6rem", color: "#94a3b8", marginTop: 1 }}
-                                            title={o.broker_ref}>
-                                            {o.broker_ref.substring(0, 8)}…
-                                          </div>
-                                        )}
                                       </td>
                                       <td style={{ ...tdStyle, fontWeight: 600 }}>{o.symbol}</td>
                                       <td style={tdStyle}>{formatCurrency(amount)}</td>

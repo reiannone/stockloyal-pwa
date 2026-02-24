@@ -27,6 +27,7 @@ import {
   ShoppingBasket,
   ClipboardCheck,
   CircleDollarSign,
+  NotebookPen,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -109,6 +110,20 @@ export default function AdminLanding() {
       bgColor: "#eef2ff",
     },
     {
+      to: "/payments-processing",
+      label: "Fund IB Sweep Account",
+      icon: <CreditCard size={32} />,
+      color: "#3b82f6",
+      bgColor: "#eff6ff",
+    },
+    {
+      to: "/journal-admin",
+      label: "Fund Member Accounts",
+      icon: <NotebookPen size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+    {
       to: "/sweep-admin",
       label: "Sweep Process Order Entry",
       icon: <Paintbrush size={32} />,
@@ -121,13 +136,6 @@ export default function AdminLanding() {
       icon: <Briefcase size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
-    },
-    {
-      to: "/payments-processing",
-      label: "Payments Processing",
-      icon: <CreditCard size={32} />,
-      color: "#3b82f6",
-      bgColor: "#eff6ff",
     },
     {
       to: "/fee-admin",

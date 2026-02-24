@@ -33,10 +33,10 @@ const STAGES = [
   { key: "staged",  label: "Staged",  icon: Package,        color: "#a855f7", bg: "#faf5ff" },
   { key: "baskets", label: "Baskets", icon: ShoppingBasket, color: "#f59e0b", bg: "#fffbeb" },
   { key: "orders",  label: "Orders",  icon: FileText,       color: "#6366f1", bg: "#eef2ff" },
+  { key: "ach",     label: "ACH",     icon: CreditCard,     color: "#059669", bg: "#ecfdf5" },
   { key: "sweep",   label: "Sweep",   icon: RefreshCw,      color: "#10b981", bg: "#ecfdf5" },
   { key: "brokers", label: "Broker",  icon: Building2,      color: "#3b82f6", bg: "#eff6ff" },
   { key: "execs",   label: "Exec",    icon: Play,           color: "#ec4899", bg: "#fdf2f8" },
-  { key: "ach",     label: "ACH",     icon: CreditCard,     color: "#059669", bg: "#ecfdf5" },
 ];
 
 const TYPE_TO_STAGE = {

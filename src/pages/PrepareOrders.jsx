@@ -117,6 +117,10 @@ export default function PrepareOrders() {
     setBatchesLoading(false);
   }, []);
 
+  // ── Detect existing staged batch ──
+  const stagedBatch = batches.find((b) => b.status === "staged");
+  const isRefreshMode = !!stagedBatch;
+
   // ── Prepare (stage) - show modal ──
   const showPrepareModal = () => {
     // Check if there's an approved batch for the current month
@@ -130,13 +134,13 @@ export default function PrepareOrders() {
       setModal({
         show: true,
         type: "monthly-warning",
-        title: "Prep Already Run This Month",
+        title: "Prep Already Approved This Month",
         icon: <AlertTriangle size={20} color="#f59e0b" />,
         message: (
           <>
             A preparation batch has already been <strong>approved</strong> for <strong>{currentMonth}</strong>.
             <div style={{ marginTop: "12px" }}>
-              Running prep again will create <strong>additional</strong> orders.
+              Running a new trial will create a <strong>separate</strong> batch.
             </div>
           </>
         ),
@@ -150,36 +154,61 @@ export default function PrepareOrders() {
             ))}
           </div>
         ),
-        confirmText: "Override & Continue",
+        confirmText: "Override & Create New Trial",
         confirmColor: "#dc2626",
         data: { forceOverride: true },
       });
       return;
     }
 
-    // Normal prepare modal
-    const openBatches = batches.filter((b) => b.status === "staged");
-    const warnings = [];
-    if (openBatches.length > 0) {
-      warnings.push(`${openBatches.length} open staged batch(es) will be discarded automatically.`);
+    if (isRefreshMode) {
+      // Refresh existing trial
+      const rc = parseInt(stagedBatch.refresh_count || 0);
+      setModal({
+        show: true,
+        type: "prepare",
+        title: "Refresh Trial Run",
+        icon: <RefreshCw size={20} color="#6366f1" />,
+        message: (
+          <>
+            Refresh the existing staged batch with <strong>updated data</strong> (prices, member changes, basket edits)?
+            <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
+              Batch <strong style={{ fontFamily: "monospace" }}>{stagedBatch.batch_id}</strong> will be rebuilt in place.
+              {rc > 0 && <> (refreshed {rc} time{rc !== 1 ? "s" : ""} so far)</>}
+            </div>
+          </>
+        ),
+        details: (
+          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "0.85rem" }}>
+            <span>Current: <strong>{fmtN(stagedBatch.total_orders)}</strong> orders</span>
+            <span>Amount: <strong>{fmt$(stagedBatch.total_amount)}</strong></span>
+            <span>Members: <strong>{fmtN(stagedBatch.total_members)}</strong></span>
+          </div>
+        ),
+        confirmText: "Refresh Trial",
+        confirmColor: "#6366f1",
+        data: { forceOverride: false },
+      });
+    } else {
+      // New trial
+      setModal({
+        show: true,
+        type: "prepare",
+        title: "Run Trial",
+        icon: <ClipboardList size={20} color="#6366f1" />,
+        message: (
+          <>
+            Stage a <strong>trial run</strong> for all eligible members?
+            <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
+              This is a dry run for reconciliation purposes. No orders are created until the batch is <strong>approved</strong>.
+            </div>
+          </>
+        ),
+        confirmText: "Run Trial",
+        confirmColor: "#6366f1",
+        data: { forceOverride: false },
+      });
     }
-    warnings.push("Any existing pending orders (not yet swept) will also be cancelled.");
-
-    setModal({
-      show: true,
-      type: "prepare",
-      title: "Stage Orders",
-      icon: <ClipboardList size={20} color="#6366f1" />,
-      message: "Stage orders for all eligible members?",
-      details: warnings.length > 0 ? (
-        <ul style={{ margin: 0, paddingLeft: "20px" }}>
-          {warnings.map((w, i) => <li key={i} style={{ marginBottom: "4px" }}>{w}</li>)}
-        </ul>
-      ) : null,
-      confirmText: "Stage Orders",
-      confirmColor: "#6366f1",
-      data: { forceOverride: false },
-    });
   };
 
   // ── Execute prepare ──
@@ -224,9 +253,17 @@ export default function PrepareOrders() {
     setModal({
       show: true,
       type: "approve",
-      title: "Approve Batch",
+      title: "Approve & Lock Batch",
       icon: <CheckCircle2 size={20} color="#10b981" />,
-      message: `Approve batch "${batchId}"?`,
+      message: (
+        <>
+          Approve batch <strong style={{ fontFamily: "monospace" }}>{batchId}</strong>?
+          <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
+            This will <strong>lock</strong> the batch and create live orders. No further refreshes will be possible.
+            The pipeline advances to <strong>Payment Settlement</strong>.
+          </div>
+        </>
+      ),
       details: batch ? (
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
           <span>Members: <strong>{fmtN(batch.total_members)}</strong></span>
@@ -234,7 +271,7 @@ export default function PrepareOrders() {
           <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
         </div>
       ) : null,
-      confirmText: "Approve",
+      confirmText: "Approve & Lock",
       confirmColor: "#10b981",
       data: { batchId },
     });
@@ -434,8 +471,9 @@ export default function PrepareOrders() {
       {/* ── Header ── */}
       <h1 className="page-title">Prepare Batch Orders</h1>
       <p className="page-deck">
-        This process prepares and stages orders based on each member's basket selections and the percentage of points specified in their investment elections. 
-        Minimum and maximum dollar limits may apply to each member in the batch process, as defined by their broker.
+        Run a trial to stage orders based on each member's basket selections and investment elections.
+        Refresh as many times as needed to reconcile funding requirements with merchant partners.
+        Once approved, the batch is locked and advances to payment settlement.
       </p>
 
       {/* ── Order Pipeline ── */}
@@ -478,7 +516,7 @@ export default function PrepareOrders() {
           background: prepareResult.success ? "#d1fae5" : "#fee2e2",
           border: `1px solid ${prepareResult.success ? "#10b981" : "#ef4444"}`,
         }}>
-          <strong>{prepareResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Batch Staged Successfully</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}</strong>
+          <strong>{prepareResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> {prepareResult.is_refresh ? "Trial Refreshed Successfully" : "Trial Staged Successfully"}</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}</strong>
           {prepareResult.success && prepareResult.results && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               <span>Batch: <strong style={{ fontFamily: "monospace" }}>{prepareResult.batch_id}</strong></span>
@@ -564,7 +602,9 @@ export default function PrepareOrders() {
                 cursor: preparing || !preview?.eligible_members ? "not-allowed" : "pointer",
               }}
             >
-              {preparing ? "Staging..." : <><CirclePlay size={14} style={{ verticalAlign: "middle" }} /> Prepare (Stage)</>}
+              {preparing ? "Staging..." : isRefreshMode
+                ? <><RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh Trial</>
+                : <><CirclePlay size={14} style={{ verticalAlign: "middle" }} /> Run Trial</>}
             </button>
           </div>
 
@@ -746,6 +786,11 @@ export default function PrepareOrders() {
                               member: {b.filter_member}
                             </span>
                           )}
+                          {parseInt(b.refresh_count || 0) > 0 && (
+                            <span style={{ fontSize: "0.7rem", background: "#dbeafe", color: "#1e40af", padding: "1px 8px", borderRadius: 4 }}>
+                              <RefreshCw size={10} style={{ verticalAlign: "middle" }} /> refreshed ×{b.refresh_count}
+                            </span>
+                          )}
                         </div>
                         {/* Stats row */}
                         <div style={{ display: "flex", gap: 16, fontSize: "0.8rem", color: "#475569", flexWrap: "wrap" }}>
@@ -763,6 +808,14 @@ export default function PrepareOrders() {
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         {b.status === "staged" && (
                           <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); showPrepareModal(); }}
+                              disabled={actionLoading || preparing}
+                              style={actionBtn("#6366f1")}
+                              title="Rebuild this batch with fresh data"
+                            >
+                              <RefreshCw size={12} style={{ verticalAlign: "middle" }} /> Refresh
+                            </button>
                             <button
                               onClick={(e) => { e.stopPropagation(); showApproveModal(b.batch_id); }}
                               disabled={actionLoading}
@@ -809,7 +862,7 @@ export default function PrepareOrders() {
                                 <span style={{ fontSize: "1.1rem" }}><AlertTriangle size={18} /></span>
                                 <span>
                                   <strong>{batchStats.missing_prices}</strong> orders have no price data (shares = 0).
-                                  Yahoo Finance may not have returned prices for those symbols.
+                                  Yahoo Finance may not have returned prices for those symbols. Try refreshing the trial to re-fetch prices.
                                 </span>
                               </div>
                             )}

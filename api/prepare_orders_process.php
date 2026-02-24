@@ -346,41 +346,57 @@ class PrepareOrdersProcess
 
     public function prepare(?string $memberId = null, ?string $merchantId = null): array
     {
-        $batchId      = 'BATCH-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
-        $basketPrefix = 'BASKET' . substr($batchId, 5);  // BASKET-Ymd-His-hex
-        
         $startTime = microtime(true);
 
-        $this->log(str_repeat('=', 80));
-        $this->log("PREPARE START: {$batchId}");
+        // ── Check for existing staged batch → refresh instead of creating new ──
+        $existingBatch = null;
+        $isRefresh = false;
+        try {
+            $exStmt = $this->conn->prepare(
+                "SELECT batch_id, refresh_count FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
+            );
+            $exStmt->execute();
+            $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
+        } catch (\Exception $e) {
+            // refresh_count column may not exist yet — treat as no existing batch
+            try {
+                $exStmt = $this->conn->prepare(
+                    "SELECT batch_id, 0 AS refresh_count FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
+                );
+                $exStmt->execute();
+                $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
+            } catch (\Exception $e2) {
+                $this->log("⚠️ Could not check for existing staged batch: " . $e2->getMessage());
+            }
+        }
+
+        if ($existingBatch) {
+            // ── Refresh mode: reuse existing batch_id ──
+            $batchId      = $existingBatch['batch_id'];
+            $refreshCount = (int) ($existingBatch['refresh_count'] ?? 0) + 1;
+            $isRefresh    = true;
+
+            $this->log(str_repeat('=', 80));
+            $this->log("REFRESH START: {$batchId} (refresh #{$refreshCount})");
+
+            // Clear old staged rows for this batch
+            $this->conn->prepare(
+                "DELETE FROM prepared_orders WHERE batch_id = ? AND status = 'staged'"
+            )->execute([$batchId]);
+            $this->log("REFRESH: cleared old staged rows for {$batchId}");
+        } else {
+            // ── New batch mode ──
+            $batchId      = 'BATCH-' . date('Ymd-His') . '-' . substr(uniqid(), -6);
+            $refreshCount = 0;
+
+            $this->log(str_repeat('=', 80));
+            $this->log("PREPARE START: {$batchId} (new trial)");
+        }
+
+        $basketPrefix = 'BASKET' . substr($batchId, 5);  // BASKET-Ymd-His-hex
+
         if ($memberId)   $this->log("  filter member:   {$memberId}");
         if ($merchantId) $this->log("  filter merchant: {$merchantId}");
-
-        // ── Auto-cleanup: discard any open staged batches ──
-        try {
-            $openStmt = $this->conn->query(
-                "SELECT batch_id FROM prepare_batches WHERE status = 'staged'"
-            );
-            $openBatches = $openStmt->fetchAll(PDO::FETCH_COLUMN);
-
-            if (!empty($openBatches)) {
-                $this->conn->prepare(
-                    "UPDATE prepared_orders SET status = 'discarded' WHERE batch_id IN ("
-                    . implode(',', array_fill(0, count($openBatches), '?'))
-                    . ") AND status = 'staged'"
-                )->execute($openBatches);
-
-                $this->conn->prepare(
-                    "UPDATE prepare_batches SET status = 'discarded', discarded_at = NOW() WHERE batch_id IN ("
-                    . implode(',', array_fill(0, count($openBatches), '?'))
-                    . ") AND status = 'staged'"
-                )->execute($openBatches);
-
-                $this->log("AUTO-DISCARD: " . count($openBatches) . " staged batch(es): " . implode(', ', $openBatches));
-            }
-        } catch (\Exception $e) {
-            $this->log("⚠️ Auto-discard failed: " . $e->getMessage());
-        }
 
         // ── Auto-cleanup: cancel any pending orders ──
         try {
@@ -613,28 +629,79 @@ class PrepareOrdersProcess
             $aggStmt->execute([$batchId]);
             $agg = $aggStmt->fetch(PDO::FETCH_ASSOC);
 
-            // ── Record batch row ──
-            $this->conn->prepare("
-                INSERT INTO prepare_batches
-                    (batch_id, status, filter_merchant, filter_member,
-                     total_members, total_orders, total_amount, total_points,
-                     members_skipped, bypassed_below_min, capped_at_max,
-                     total_amount_before_caps)
-                VALUES (?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ")->execute([
-                $batchId, $merchantId, $memberId,
-                (int)   $agg['total_members'],
-                (int)   $agg['total_orders'],
-                (float) $agg['total_amount'],
-                (int)   $agg['total_points'],
-                $skipped,
-                $bypassedBelowMin,
-                $cappedAtMax,
-                (float) $amountBeforeCaps,
-            ]);
+            // ── Record batch row (insert or update) ──
+            if ($isRefresh) {
+                // Update existing batch record with fresh stats
+                try {
+                    $this->conn->prepare("
+                        UPDATE prepare_batches
+                        SET filter_merchant = ?, filter_member = ?,
+                            total_members = ?, total_orders = ?, total_amount = ?, total_points = ?,
+                            members_skipped = ?, bypassed_below_min = ?, capped_at_max = ?,
+                            total_amount_before_caps = ?,
+                            refresh_count = ?,
+                            refreshed_at = NOW()
+                        WHERE batch_id = ?
+                    ")->execute([
+                        $merchantId, $memberId,
+                        (int)   $agg['total_members'],
+                        (int)   $agg['total_orders'],
+                        (float) $agg['total_amount'],
+                        (int)   $agg['total_points'],
+                        $skipped,
+                        $bypassedBelowMin,
+                        $cappedAtMax,
+                        (float) $amountBeforeCaps,
+                        $refreshCount,
+                        $batchId,
+                    ]);
+                } catch (\Exception $e) {
+                    // refresh_count / refreshed_at columns may not exist yet
+                    $this->conn->prepare("
+                        UPDATE prepare_batches
+                        SET filter_merchant = ?, filter_member = ?,
+                            total_members = ?, total_orders = ?, total_amount = ?, total_points = ?,
+                            members_skipped = ?, bypassed_below_min = ?, capped_at_max = ?,
+                            total_amount_before_caps = ?
+                        WHERE batch_id = ?
+                    ")->execute([
+                        $merchantId, $memberId,
+                        (int)   $agg['total_members'],
+                        (int)   $agg['total_orders'],
+                        (float) $agg['total_amount'],
+                        (int)   $agg['total_points'],
+                        $skipped,
+                        $bypassedBelowMin,
+                        $cappedAtMax,
+                        (float) $amountBeforeCaps,
+                        $batchId,
+                    ]);
+                }
+            } else {
+                // Insert new batch record
+                $this->conn->prepare("
+                    INSERT INTO prepare_batches
+                        (batch_id, status, filter_merchant, filter_member,
+                         total_members, total_orders, total_amount, total_points,
+                         members_skipped, bypassed_below_min, capped_at_max,
+                         total_amount_before_caps, refresh_count)
+                    VALUES (?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ")->execute([
+                    $batchId, $merchantId, $memberId,
+                    (int)   $agg['total_members'],
+                    (int)   $agg['total_orders'],
+                    (float) $agg['total_amount'],
+                    (int)   $agg['total_points'],
+                    $skipped,
+                    $bypassedBelowMin,
+                    $cappedAtMax,
+                    (float) $amountBeforeCaps,
+                ]);
+            }
 
             $dur = round(microtime(true) - $startTime, 2);
-            $this->log("PREPARE DONE: {$agg['total_members']} members, "
+            $mode = $isRefresh ? "REFRESH #{$refreshCount}" : "NEW TRIAL";
+            $this->log("PREPARE DONE ({$mode}): {$agg['total_members']} members, "
                       . "{$agg['total_orders']} orders, \${$agg['total_amount']}, "
                       . "{$agg['total_shares']} total shares, "
                       . "bypassed_below_min={$bypassedBelowMin}, capped_at_max={$cappedAtMax} — {$dur}s");
@@ -642,6 +709,8 @@ class PrepareOrdersProcess
             return [
                 'success'  => true,
                 'batch_id' => $batchId,
+                'is_refresh'    => $isRefresh,
+                'refresh_count' => $refreshCount,
                 'results'  => [
                     'total_members'          => (int)   $agg['total_members'],
                     'total_orders'           => (int)   $agg['total_orders'],
@@ -958,17 +1027,34 @@ class PrepareOrdersProcess
     {
         try {
             $limitInt = (int) $limit;
-            $stmt = $this->conn->prepare("
-                SELECT batch_id, status, filter_merchant, filter_member,
-                       total_members, total_orders, total_amount, total_points,
-                       members_skipped, bypassed_below_min, capped_at_max,
-                       total_amount_before_caps,
-                       created_at, approved_at, discarded_at, notes
-                FROM prepare_batches
-                ORDER BY created_at DESC
-                LIMIT {$limitInt}
-            ");
-            $stmt->execute();
+            try {
+                $stmt = $this->conn->prepare("
+                    SELECT batch_id, status, filter_merchant, filter_member,
+                           total_members, total_orders, total_amount, total_points,
+                           members_skipped, bypassed_below_min, capped_at_max,
+                           total_amount_before_caps,
+                           COALESCE(refresh_count, 0) AS refresh_count,
+                           created_at, approved_at, discarded_at, refreshed_at, notes
+                    FROM prepare_batches
+                    ORDER BY created_at DESC
+                    LIMIT {$limitInt}
+                ");
+                $stmt->execute();
+            } catch (\Exception $e) {
+                // Fallback if refresh_count / refreshed_at columns don't exist yet
+                $stmt = $this->conn->prepare("
+                    SELECT batch_id, status, filter_merchant, filter_member,
+                           total_members, total_orders, total_amount, total_points,
+                           members_skipped, bypassed_below_min, capped_at_max,
+                           total_amount_before_caps,
+                           0 AS refresh_count, NULL AS refreshed_at,
+                           created_at, approved_at, discarded_at, notes
+                    FROM prepare_batches
+                    ORDER BY created_at DESC
+                    LIMIT {$limitInt}
+                ");
+                $stmt->execute();
+            }
             return ['success' => true, 'batches' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
         } catch (\Exception $e) {
             return ['success' => true, 'batches' => [], 'note' => $e->getMessage()];

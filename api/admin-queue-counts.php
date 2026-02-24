@@ -4,11 +4,13 @@ declare(strict_types=1);
 /**
  * admin-queue-counts.php
  *
- * Returns counts of open items for each admin processing stage:
- *   - prepare:  members eligible for order preparation (enrolled in sweep, cash_balance > 0, no pending/placed orders)
- *   - sweep:    orders with status 'pending' awaiting sweep to broker
- *   - execute:  orders with status 'placed' awaiting broker execution
- *   - payments: orders with status 'confirmed' awaiting payment settlement
+ * Returns counts of open items for each IB processing stage:
+ *
+ *   Stage 1 - prepare:    Members eligible for order preparation
+ *   Stage 2 - settlement: Orders confirmed but not yet settled (merchant hasn't paid)
+ *   Stage 3 - journal:    Orders settled but not yet journaled to member Alpaca accounts
+ *   Stage 4 - sweep:      Orders journaled and ready to submit to broker
+ *   Stage 5 - execute:    Orders placed with broker awaiting execution/confirmation
  */
 
 require_once __DIR__ . '/cors.php';
@@ -22,87 +24,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    // Prepare: total orders (stock picks) for eligible members
-    $prepare = $conn->query("
-        SELECT COUNT(*) AS cnt
-        FROM   member_stock_picks msp
-        JOIN   wallet w ON w.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
-        WHERE  msp.is_active = 1
-          AND  w.sweep_percentage > 0
-          AND  w.cash_balance > 0
-          AND  LOWER(w.member_status) = 'active'
-          AND  NOT EXISTS (
-               SELECT 1 FROM orders o
-               WHERE  o.member_id = w.member_id
-                 AND  LOWER(o.status) IN ('pending','placed')
+    // ── Stage 1: Prepare ─────────────────────────────────────────────
+    // Members enrolled in sweep with cash_balance > 0 and no pending/placed orders
+    $prepareStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT m.member_id) AS cnt
+        FROM members m
+        WHERE m.sweep_enrolled = 1
+          AND m.cash_balance > 0
+          AND NOT EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.member_id = m.member_id
+                AND o.status IN ('pending', 'placed')
           )
-    ")->fetch()['cnt'];
+    ");
+    $prepareStmt->execute();
+    $prepare = (int) $prepareStmt->fetchColumn();
 
-    // Sweep: pending orders awaiting sweep to broker
-    $sweep = $conn->query("
+    // ── Stage 2: Settlement ──────────────────────────────────────────
+    // Orders confirmed/executed but NOT yet settled (merchant payment pending)
+    $settlementStmt = $conn->prepare("
         SELECT COUNT(*) AS cnt
-        FROM   orders
-        WHERE  LOWER(status) = 'pending'
-    ")->fetch()['cnt'];
+        FROM orders
+        WHERE LOWER(status) IN ('confirmed', 'executed')
+          AND (paid_flag = 0 OR paid_flag IS NULL)
+    ");
+    $settlementStmt->execute();
+    $settlement = (int) $settlementStmt->fetchColumn();
 
-    // Execute: placed orders awaiting broker execution
-    $execute = $conn->query("
+    // ── Stage 3: Journal ─────────────────────────────────────────────
+    // Orders settled (merchant paid) but NOT yet journaled to member accounts
+    $journalStmt = $conn->prepare("
         SELECT COUNT(*) AS cnt
-        FROM   orders
-        WHERE  LOWER(status) = 'placed'
-    ")->fetch()['cnt'];
+        FROM orders
+        WHERE LOWER(status) = 'settled'
+          AND (journal_status IS NULL OR journal_status = 'pending')
+    ");
+    $journalStmt->execute();
+    $journal = (int) $journalStmt->fetchColumn();
 
-    // Payments: orders with status 'confirmed' or 'executed' that are not yet paid (with basket count)
-    $paymentsRow = $conn->query("
-        SELECT 
-            COUNT(*) AS total_orders,
-            COUNT(DISTINCT basket_id) AS total_baskets
-        FROM   orders
-        WHERE  LOWER(status) IN ('confirmed', 'executed')
-          AND  (paid_at IS NULL OR paid_at = '0000-00-00 00:00:00')
-    ")->fetch();
+    // ── Stage 4: Sweep ───────────────────────────────────────────────
+    // Orders with status = 'pending' ready to submit to broker
+    // (After journal, orders move to 'pending' for the sweep process)
+    $sweepStmt = $conn->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM orders
+        WHERE LOWER(status) = 'pending'
+    ");
+    $sweepStmt->execute();
+    $sweep = (int) $sweepStmt->fetchColumn();
+
+    // ── Stage 5: Execute ─────────────────────────────────────────────
+    // Orders placed with broker awaiting confirmation
+    $executeStmt = $conn->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM orders
+        WHERE LOWER(status) = 'placed'
+    ");
+    $executeStmt->execute();
+    $execute = (int) $executeStmt->fetchColumn();
 
     echo json_encode([
-        'success'  => true,
-        'counts'   => [
-            'prepare'         => (int) $prepare,
-            'sweep'           => (int) $sweep,
-            'execute'         => (int) $execute,
-            'payments'        => (int) $paymentsRow['total_orders'],
-            'payments_baskets'=> (int) $paymentsRow['total_baskets'],
-            'payments_orders' => (int) $paymentsRow['total_orders'],
+        'success' => true,
+        'counts'  => [
+            'prepare'    => $prepare,
+            'settlement' => $settlement,
+            'journal'    => $journal,
+            'sweep'      => $sweep,
+            'execute'    => $execute,
         ],
     ]);
 
 } catch (Exception $e) {
-    // If paid_at column doesn't exist, retry payments without that filter
-    if (str_contains($e->getMessage(), 'paid_at')) {
-        try {
-            $paymentsRow = $conn->query("
-                SELECT 
-                    COUNT(*) AS total_orders,
-                    COUNT(DISTINCT basket_id) AS total_baskets
-                FROM   orders
-                WHERE  LOWER(status) IN ('confirmed', 'executed')
-            ")->fetch();
-
-            echo json_encode([
-                'success'  => true,
-                'counts'   => [
-                    'prepare'         => (int) ($prepare ?? 0),
-                    'sweep'           => (int) ($sweep ?? 0),
-                    'execute'         => (int) ($execute ?? 0),
-                    'payments'        => (int) $paymentsRow['total_orders'],
-                    'payments_baskets'=> (int) $paymentsRow['total_baskets'],
-                    'payments_orders' => (int) $paymentsRow['total_orders'],
-                ],
-            ]);
-            exit;
-        } catch (Exception $e2) {
-            // fall through
-        }
+    // Fallback with zeroes
+    try {
+        echo json_encode([
+            'success' => true,
+            'counts'  => [
+                'prepare'    => 0,
+                'settlement' => 0,
+                'journal'    => 0,
+                'sweep'      => 0,
+                'execute'    => 0,
+            ],
+            'warning' => $e->getMessage(),
+        ]);
+    } catch (Exception $e2) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     }
-
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

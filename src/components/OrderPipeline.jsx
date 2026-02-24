@@ -1,259 +1,252 @@
 // src/components/OrderPipeline.jsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardCheck, Paintbrush, Briefcase, CreditCard, CheckCircle2 } from "lucide-react";
+import {
+  ClipboardCheck,
+  CreditCard,
+  ArrowRightLeft,
+  Paintbrush,
+  Briefcase,
+  CheckCircle2,
+} from "lucide-react";
 
 /**
- * OrderPipeline - Subway-style timeline showing order processing steps
- * 
- * @param {number} currentStep - The current active step (1-4), or 0 for overview mode (all steps full color)
- * @param {object} counts - Optional queue counts { prepare, sweep, execute, payments_baskets, payments_orders }
+ * IB Pipeline — 5 stages:
+ *
+ * 1. Prepare Orders    – Stage member order baskets from cash balances
+ * 2. Settlement        – Merchant pays StockLoyal sweep account (ACH)
+ * 3. Journal Funds     – Journal cash from SL firm sweep → member Alpaca accounts
+ * 4. Order Sweep       – Submit stock orders through member accounts
+ * 5. Broker Execution  – Confirm/settle trades at Alpaca
  */
-export default function OrderPipeline({ currentStep = 1, counts = null }) {
-  const navigate = useNavigate();
+const STEPS = [
+  {
+    step: 1,
+    to: "/prepare-orders",
+    label: "Prepare Orders",
+    subtitle: "Stage baskets",
+    icon: <ClipboardCheck size={18} />,
+    key: "prepare",
+    color: "#8b5cf6",
+  },
+  {
+    step: 2,
+    to: "/payments-processing",
+    label: "Fund IB Sweep Account",
+    subtitle: "Merchant → SL Sweep",
+    icon: <CreditCard size={18} />,
+    key: "settlement",
+    color: "#f59e0b",
+  },
+  {
+    step: 3,
+    to: "/journal-admin",
+    label: "Fund Member Accounts",
+    subtitle: "SL Sweep → Members",
+    icon: <ArrowRightLeft size={18} />,
+    key: "journal",
+    color: "#10b981",
+  },
+  {
+    step: 4,
+    to: "/sweep-admin",
+    label: "Sweep Order Entry",
+    subtitle: "Submit to broker",
+    icon: <Paintbrush size={18} />,
+    key: "sweep",
+    color: "#6366f1",
+  },
+  {
+    step: 5,
+    to: "/admin-broker-exec",
+    label: "Broker Execution",
+    subtitle: "Confirm trades",
+    icon: <Briefcase size={18} />,
+    key: "execute",
+    color: "#3b82f6",
+  },
+];
 
-  const steps = [
-    { 
-      to: "/prepare-orders", 
-      label: "Prepare Orders", 
-      subtitle: "Stage batches",
-      icon: <ClipboardCheck size={18} />, 
-      key: "prepare", 
-      color: "#8b5cf6",
-      step: 1
-    },
-    { 
-      to: "/sweep-admin", 
-      label: "Sweep Process", 
-      subtitle: "Submit to brokers",
-      icon: <Paintbrush size={18} />, 
-      key: "sweep", 
-      color: "#6366f1",
-      step: 2
-    },
-    { 
-      to: "/admin-broker-exec", 
-      label: "Broker Execution", 
-      subtitle: "Confirm trades",
-      icon: <Briefcase size={18} />, 
-      key: "execute", 
-      color: "#3b82f6",
-      step: 3
-    },
-    { 
-      to: "/payments-processing", 
-      label: "Payment Settlement", 
-      subtitle: "Process ACH",
-      icon: <CreditCard size={18} />, 
-      key: "payments", 
-      color: "#10b981",
-      step: 4
-    },
-  ];
+export default function OrderPipeline({
+  currentStep,
+  queueCounts = null,
+  title = "IB Order Processing Pipeline",
+  subtitle = "StockLoyal as Introducing Broker — settlement → funding → trading",
+}) {
+  const navigate = useNavigate();
 
   return (
     <div
       style={{
-        padding: "16px 20px",
-        backgroundColor: "#f8fafc",
+        marginBottom: "24px",
+        padding: "24px",
+        backgroundColor: "white",
         borderRadius: "12px",
-        border: "1px solid #e2e8f0",
-        marginBottom: "1.5rem",
+        border: "1px solid #e5e7eb",
       }}
     >
-      {/* Timeline */}
+      {title && (
+        <h3
+          style={{
+            margin: "0 0 4px 0",
+            fontSize: "16px",
+            fontWeight: "600",
+            color: "#374151",
+          }}
+        >
+          {title}
+        </h3>
+      )}
+      {subtitle && (
+        <p style={{ margin: "0 0 20px 0", fontSize: "12px", color: "#6b7280" }}>
+          {subtitle}
+        </p>
+      )}
+
+      {/* Subway Timeline */}
       <div style={{ position: "relative" }}>
-        {/* Connecting Line - Background */}
+        {/* Connecting Line */}
         <div
           style={{
             position: "absolute",
-            top: "20px",
-            left: "40px",
-            right: "40px",
+            top: "22px",
+            left: "24px",
+            right: "24px",
             height: "3px",
-            backgroundColor: "#e2e8f0",
+            backgroundColor: "#e5e7eb",
             zIndex: 0,
           }}
         />
-        {/* Connecting Line - Progress */}
-        {currentStep > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            top: "20px",
-            left: "40px",
-            width: `calc(${((currentStep - 1) / 3) * 100}% - ${currentStep === 4 ? 80 : 40}px)`,
-            height: "3px",
-            backgroundColor: "#10b981",
-            zIndex: 1,
-            transition: "width 0.3s ease",
-          }}
-        />
-        )}
 
         {/* Timeline Steps */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`,
             gap: "4px",
             position: "relative",
-            zIndex: 2,
+            zIndex: 1,
           }}
         >
-          {steps.map(({ to, label, subtitle, icon, key, color, step }) => {
-            const isOverview = currentStep === 0;
-            const isActive = !isOverview && step === currentStep;
-            const isCompleted = !isOverview && step < currentStep;
-            const isPayments = key === "payments";
-            const baskets = counts?.payments_baskets ?? null;
-            const orders = counts?.payments_orders ?? null;
-            const count = counts?.[key] ?? null;
-            
-            const paymentsIsZero = isPayments && baskets === 0 && orders === 0;
-            const isZero = isPayments ? paymentsIsZero : count === 0;
-            const hasData = counts != null && (isPayments ? (baskets !== null && orders !== null) : count !== null);
+          {STEPS.map(({ step, to, label, subtitle: stepSubtitle, icon, key, color }) => {
+            const isActive = step === currentStep;
+            const isCompleted = step < currentStep;
 
-            // Determine circle color
-            const circleColor = isOverview ? color : isActive ? color : isCompleted ? "#10b981" : "#cbd5e1";
-            const circleSize = isActive ? 40 : 36;
+            // Queue count
+            const count = queueCounts?.[key] ?? null;
+            const hasData = queueCounts != null && count !== null;
+            const isZero = count === 0;
+
+            // Visual state
+            const circleColor = isActive ? color : isCompleted ? color : "#d1d5db";
+            const circleOpacity = isActive ? 1 : isCompleted ? 0.6 : 0.4;
 
             return (
-              <button
-                key={to}
+              <div
+                key={step}
                 onClick={() => navigate(to)}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  padding: "0",
-                  backgroundColor: "transparent",
-                  border: "none",
                   cursor: "pointer",
-                  transition: "transform 0.2s",
-                  opacity: isOverview || isActive ? 1 : 0.85,
+                  transition: "transform 0.15s",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                  e.currentTarget.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.opacity = (isOverview || isActive) ? "1" : "0.85";
-                }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
               >
-                {/* Station Circle */}
+                {/* Circle */}
                 <div
                   style={{
-                    width: `${circleSize}px`,
-                    height: `${circleSize}px`,
+                    width: "44px",
+                    height: "44px",
                     borderRadius: "50%",
                     backgroundColor: circleColor,
+                    opacity: circleOpacity,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     color: "white",
-                    marginBottom: "8px",
-                    boxShadow: isActive ? "0 4px 12px rgba(0,0,0,0.2)" : "0 2px 6px rgba(0,0,0,0.1)",
-                    border: isActive ? "3px solid white" : "2px solid white",
                     position: "relative",
-                    transition: "all 0.2s",
+                    border: isActive ? `3px solid ${color}` : "3px solid transparent",
+                    boxShadow: isActive ? `0 0 0 3px ${color}33` : "none",
                   }}
                 >
-                  {isCompleted ? <CheckCircle2 size={18} /> : icon}
-                  
-                  {/* Badge for pending counts */}
-                  {hasData && !isZero && !isCompleted && (
-                    <span
+                  {isCompleted ? <CheckCircle2 size={20} /> : icon}
+
+                  {/* Badge */}
+                  {hasData && !isZero && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "-6px",
+                        right: "-6px",
+                        minWidth: "20px",
+                        height: "20px",
+                        borderRadius: "10px",
+                        backgroundColor: "#ef4444",
+                        color: "white",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "0 5px",
+                        border: "2px solid white",
+                      }}
+                    >
+                      {count}
+                    </div>
+                  )}
+
+                  {/* Zero = checkmark badge */}
+                  {hasData && isZero && (
+                    <div
                       style={{
                         position: "absolute",
                         top: "-4px",
                         right: "-4px",
-                        backgroundColor: "#ef4444",
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        backgroundColor: "#22c55e",
                         color: "white",
-                        fontSize: "9px",
-                        fontWeight: "700",
-                        borderRadius: "8px",
-                        padding: "1px 5px",
-                        minWidth: "14px",
-                        textAlign: "center",
+                        fontSize: "11px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
                         border: "2px solid white",
                       }}
                     >
-                      {isPayments ? orders : count}
-                    </span>
+                      ✓
+                    </div>
                   )}
-                  {/* Green checkmark when queue is empty */}
-                  {hasData && isZero && (
-                    <CheckCircle2
-                      size={14}
-                      color="#4ade80"
-                      style={{
-                        position: "absolute",
-                        top: "-3px",
-                        right: "-3px",
-                        backgroundColor: "white",
-                        borderRadius: "50%",
-                      }}
-                    />
-                  )}
-                </div>
-
-                {/* Step indicator */}
-                <div
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: "700",
-                    color: isOverview ? color : isActive ? color : isCompleted ? "#10b981" : "#94a3b8",
-                    marginBottom: "2px",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                  }}
-                >
-                  Step {step}
                 </div>
 
                 {/* Label */}
                 <div
                   style={{
+                    marginTop: "8px",
+                    textAlign: "center",
                     fontSize: "12px",
                     fontWeight: isActive ? "700" : "500",
-                    color: isOverview || isActive ? "#1f2937" : "#64748b",
-                    textAlign: "center",
-                    lineHeight: 1.2,
+                    color: isActive ? color : isCompleted ? "#374151" : "#9ca3af",
+                    lineHeight: "1.3",
                   }}
                 >
                   {label}
                 </div>
-
-                {/* Subtitle - show on active or overview */}
-                {(isActive || isOverview) && (
-                  <div
-                    style={{
-                      fontSize: "10px",
-                      color: "#6b7280",
-                      textAlign: "center",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {subtitle}
-                  </div>
-                )}
-
-                {/* Payments extra info */}
-                {isPayments && hasData && !isZero && (
-                  <div
-                    style={{
-                      fontSize: "9px",
-                      color: "#ef4444",
-                      fontWeight: "600",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {baskets} basket{baskets !== 1 ? "s" : ""}
-                  </div>
-                )}
-              </button>
+                <div
+                  style={{
+                    textAlign: "center",
+                    fontSize: "10px",
+                    color: "#9ca3af",
+                    marginTop: "2px",
+                  }}
+                >
+                  {stepSubtitle}
+                </div>
+              </div>
             );
           })}
         </div>

@@ -40,6 +40,7 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import OrdersAdmin from "./pages/OrdersAdmin.jsx";
 import PrepareOrders from "./pages/PrepareOrders.jsx";
+import JournalAdmin from "./pages/JournalAdmin.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
 import BrokerSellOrder from "./pages/BrokerSellOrder.jsx";
 import BrokerExecAdmin from "./pages/BrokerExecAdmin.jsx";
@@ -382,6 +383,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <PrepareOrders />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/jornal-admin"
+                element={
+                  <PageWrapper>
+                    <JournalAdmin />
                   </PageWrapper>
                 }
               />
