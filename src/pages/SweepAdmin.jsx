@@ -428,7 +428,7 @@ export default function SweepAdmin() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={3} counts={queueCounts} />
+      <OrderPipeline currentStep={4} queueCounts={queueCounts} />
 
       {/* All Caught Up Message */}
       {!loading && overview && (overview.total_pending_orders || 0) === 0 && (

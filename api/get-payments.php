@@ -1,11 +1,26 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * get-payments.php
+ *
+ * Returns approved orders awaiting merchant settlement (ACH funding to SL sweep).
+ *
+ * IB Flow:
+ *   Orders start as 'approved' with paid_flag=0 (ready for merchant funding)
+ *   → Fund IB Sweep sets paid_flag=1 (merchant paid SL) — status stays 'approved'
+ *   → Journal moves to 'funded' and transfers from SL sweep to member accounts
+ *   → Order Sweep places trades ('placed')
+ *   → Broker Exec confirms ('settled')
+ *
+ * Input:  { merchant_id }
+ * Output: { success, orders[], summary[] }
+ */
+
 require_once __DIR__ . '/cors.php';
-require_once __DIR__ . '/_loadenv.php';
 require_once __DIR__ . '/config.php';
 
-header("Content-Type: application/json");
+header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
@@ -13,125 +28,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 try {
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405);
-        echo json_encode([
-            "success" => false,
-            "error"   => "Method not allowed",
-        ]);
+    $input = json_decode(file_get_contents('php://input'), true) ?: [];
+    $merchantId = trim($input['merchant_id'] ?? '');
+
+    if (empty($merchantId)) {
+        echo json_encode(['success' => false, 'error' => 'merchant_id required']);
         exit;
     }
 
-    $input = json_decode(file_get_contents("php://input"), true);
-    if (!is_array($input)) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error"   => "Invalid JSON payload",
-        ]);
-        exit;
-    }
-
-    $merchant_id = trim($input['merchant_id'] ?? '');
-    if ($merchant_id === '') {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error"   => "merchant_id is required",
-        ]);
-        exit;
-    }
-
-    // Optional: paid_filter (unpaid|paid|all) – default unpaid
-    $paid_filter = strtolower(trim($input['paid_filter'] ?? 'unpaid'));
-    switch ($paid_filter) {
-        case 'paid':
-            $paidWhere = " AND o.paid_flag = 1";
-            break;
-        case 'all':
-            $paidWhere = "";
-            break;
-        case 'unpaid':
-        default:
-            $paid_filter = 'unpaid';
-            $paidWhere = " AND o.paid_flag = 0";
-            break;
-    }
-
-    // Orders (raw-ish) — also includes computed payment_amount for convenience
-    $sqlOrders = "
-        SELECT 
-            o.*,
-            bc.username AS broker_username,
-            COALESCE(o.executed_amount, o.amount) AS payment_amount
+    // ── Get approved orders for this merchant ─────────────────────────
+    $stmt = $conn->prepare("
+        SELECT
+            o.order_id,
+            o.member_id,
+            o.merchant_id,
+            o.basket_id,
+            o.symbol,
+            o.amount,
+            o.shares,
+            o.points_used,
+            o.status,
+            o.broker,
+            o.order_type,
+            o.executed_amount,
+            o.executed_shares,
+            o.executed_at,
+            o.paid_flag,
+            o.paid_batch_id,
+            o.paid_at,
+            o.placed_at
         FROM orders o
-        LEFT JOIN broker_credentials bc
-            ON o.broker COLLATE utf8mb4_general_ci = bc.broker COLLATE utf8mb4_general_ci
-           AND o.member_id COLLATE utf8mb4_general_ci = bc.member_id COLLATE utf8mb4_general_ci
-        WHERE o.merchant_id = :merchant_id
-          AND o.status IN ('confirmed','executed')
-          $paidWhere
-        ORDER BY o.broker, o.order_id
-    ";
+        WHERE o.merchant_id = ?
+          AND LOWER(o.status) = 'approved'
+          AND (o.paid_flag = 0 OR o.paid_flag IS NULL)
+        ORDER BY o.basket_id, o.order_id
+    ");
+    $stmt->execute([$merchantId]);
+    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmtOrders = $conn->prepare($sqlOrders);
-    $stmtOrders->bindValue(':merchant_id', $merchant_id, PDO::PARAM_STR);
-    $stmtOrders->execute();
-    $orders = $stmtOrders->fetchAll(PDO::FETCH_ASSOC);
-
-    // Summary by broker (one row per broker)
-    $sqlSummary = "
+    // ── Broker summary with ACH details ───────────────────────────────
+    $summaryStmt = $conn->prepare("
         SELECT
             o.broker,
-            COALESCE(bc.username, '') AS broker_username,
-            bm.broker_id,
-            bm.ach_bank_name,
-            bm.ach_routing_num,
-            bm.ach_account_num,
-            bm.ach_account_type,
+            b.broker_id,
+            b.ach_bank_name,
+            b.ach_routing_num,
+            b.ach_account_num,
+            b.ach_account_type,
             COUNT(*) AS order_count,
-            COUNT(DISTINCT o.basket_id) AS basket_count,
-            SUM(COALESCE(o.executed_amount, o.amount)) AS total_payment_amount,
-            SUM(COALESCE(o.executed_amount, o.amount)) AS total_payment_due
+            SUM(o.amount) AS total_amount
         FROM orders o
-        LEFT JOIN broker_credentials bc
-            ON o.broker COLLATE utf8mb4_general_ci = bc.broker COLLATE utf8mb4_general_ci
-           AND o.member_id COLLATE utf8mb4_general_ci = bc.member_id COLLATE utf8mb4_general_ci
-        LEFT JOIN broker_master bm
-            ON bm.broker_name COLLATE utf8mb4_general_ci = o.broker COLLATE utf8mb4_general_ci
-        WHERE o.merchant_id = :merchant_id
-          AND o.status IN ('confirmed','executed')
-          $paidWhere
-        GROUP BY
-            o.broker,
-            bc.username,
-            bm.broker_id,
-            bm.ach_bank_name,
-            bm.ach_routing_num,
-            bm.ach_account_num,
-            bm.ach_account_type
+        LEFT JOIN broker_master b ON o.broker = b.broker_name
+        WHERE o.merchant_id = ?
+          AND LOWER(o.status) = 'approved'
+          AND (o.paid_flag = 0 OR o.paid_flag IS NULL)
+        GROUP BY o.broker, b.broker_id, b.ach_bank_name,
+                 b.ach_routing_num, b.ach_account_num, b.ach_account_type
         ORDER BY o.broker
-    ";
-
-    $stmtSummary = $conn->prepare($sqlSummary);
-    $stmtSummary->bindValue(':merchant_id', $merchant_id, PDO::PARAM_STR);
-    $stmtSummary->execute();
-    $summary = $stmtSummary->fetchAll(PDO::FETCH_ASSOC);
+    ");
+    $summaryStmt->execute([$merchantId]);
+    $summary = $summaryStmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode([
-        "success"      => true,
-        "merchant_id"  => $merchant_id,
-        "paid_filter"  => $paid_filter,
-        "orders"       => $orders,
-        "summary"      => $summary,
-    ], JSON_NUMERIC_CHECK);
+        'success' => true,
+        'orders'  => $orders,
+        'summary' => $summary,
+    ]);
 
 } catch (Exception $e) {
-    error_log("get-payments.php ERROR: " . $e->getMessage());
     http_response_code(500);
-    echo json_encode([
-        "success" => false,
-        "error"   => "Server error",
-        "details" => $e->getMessage(),
-    ]);
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

@@ -387,7 +387,7 @@ function App() {
                 }
               />
               <Route
-                path="/jornal-admin"
+                path="/journal-admin"
                 element={
                   <PageWrapper>
                     <JournalAdmin />

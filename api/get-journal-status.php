@@ -49,10 +49,10 @@ try {
         // Non-fatal — continue with null
     }
 
-    // ─── 2. Get settled but not-yet-journaled orders ──────────────────
+    // ─── 2. Get approved + paid orders awaiting journal ─────────────
     //     These are orders where:
-    //       - status = 'settled' (merchant has paid StockLoyal)
-    //       - journal_status IS NULL or 'pending' (not yet journaled to member)
+    //       - status = 'approved' (not yet journaled/funded)
+    //       - paid_flag = 1 (merchant has paid StockLoyal)
     $stmt = $conn->prepare("
         SELECT
             o.order_id,
@@ -66,15 +66,16 @@ try {
             o.alpaca_journal_id,
             m.first_name,
             m.last_name,
-            m.email,
-            m.alpaca_account_id,
-            m.alpaca_account_status,
-            mer.business_name AS merchant_name
+            m.member_email,
+            bc.broker_account_id,
+            bc.broker_account_status,
+            mer.merchant_name
         FROM orders o
-        LEFT JOIN members m ON o.member_id = m.member_id
+        LEFT JOIN wallet m ON o.member_id = m.member_id
+        LEFT JOIN broker_credentials bc ON o.member_id = bc.member_id AND o.broker = bc.broker
         LEFT JOIN merchant mer ON o.merchant_id = mer.merchant_id
-        WHERE o.status = 'settled'
-          AND (o.journal_status IS NULL OR o.journal_status = 'pending')
+        WHERE o.status = 'approved'
+          AND o.paid_flag = 1
         ORDER BY o.member_id, o.order_id
     ");
     $stmt->execute();
@@ -88,11 +89,11 @@ try {
             $memberMap[$mid] = [
                 'member_id'            => $mid,
                 'member_name'          => trim(($row['first_name'] ?? '') . ' ' . ($row['last_name'] ?? '')),
-                'email'                => $row['email'],
+                'member_email'          => $row['member_email'],
                 'merchant_id'          => $row['merchant_id'],
                 'merchant_name'        => $row['merchant_name'],
-                'alpaca_account_id'    => $row['alpaca_account_id'],
-                'alpaca_account_status'=> $row['alpaca_account_status'],
+                'broker_account_id'    => $row['broker_account_id'],
+                'broker_account_status'=> $row['broker_account_status'],
                 'total_amount'         => 0.0,
                 'order_count'          => 0,
                 'orders'               => [],
@@ -122,8 +123,8 @@ try {
             SUM(o.amount) AS amount,
             COUNT(*) AS order_count
         FROM orders o
-        LEFT JOIN members m ON o.member_id = m.member_id
-        WHERE o.journal_status = 'completed'
+        LEFT JOIN wallet m ON o.member_id = m.member_id
+        WHERE o.journaled_at IS NOT NULL
           AND o.journaled_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         GROUP BY o.member_id, o.alpaca_journal_id, o.journal_status, o.journaled_at,
                  m.first_name, m.last_name

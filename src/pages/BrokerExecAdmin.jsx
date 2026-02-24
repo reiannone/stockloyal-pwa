@@ -186,7 +186,7 @@ export default function BrokerExecAdmin() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={4} counts={queueCounts} />
+      <OrderPipeline currentStep={5} queueCounts={queueCounts} />
 
       {/* Action Bar */}
       <div style={{

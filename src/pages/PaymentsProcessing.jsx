@@ -121,7 +121,7 @@ export default function PaymentsProcessing() {
       );
       setAllOrders(flat);
     } catch (e) {
-      setAllError("Failed to load merchant payment summary.");
+      setAllError("Failed to load merchant funding summary.");
       setAllOrders([]);
     } finally {
       setAllLoading(false);
@@ -149,7 +149,7 @@ export default function PaymentsProcessing() {
     } catch (e) {
       setMOrders([]);
       setMSummary([]);
-      setMError("Failed to load merchant payments.");
+      setMError("Failed to load merchant funding data.");
     } finally {
       setMLoading(false);
     }
@@ -163,7 +163,7 @@ export default function PaymentsProcessing() {
     }
   }, [merchantId, merchantsLoading, merchants.length, loadAllMerchants, loadSingleMerchant]);
 
-  // ── Load payment history ──
+  // ── Load funding history ──
   const loadHistory = useCallback(async (loadMore = false) => {
     setHistoryLoading(true);
     try {
@@ -307,8 +307,8 @@ export default function PaymentsProcessing() {
     }
   };
 
-  // ── Cancel payment ──
-  const handleCancelPayment = async (batchId) => {
+  // ── Cancel funding ──
+  const handleCancelFunding = async (batchId) => {
     closeModal();
     setProcessing(true);
     setCancelResults(null);
@@ -333,11 +333,11 @@ export default function PaymentsProcessing() {
   // ── Confirm handlers ──
   const confirmProcessAll = () => {
     setModal({
-      show: true, title: "Process All Payments",
-      message: `Process payments for ${topTotals.merchants} merchant(s), ${topTotals.brokers} broker(s), settling ${topTotals.orders} orders totaling ${fmtMoney(topTotals.totalDue)}.`,
+      show: true, title: "Fund IB Sweep Account",
+      message: `Process IB sweep funding for ${topTotals.merchants} merchant(s), ${topTotals.brokers} broker(s), funding ${topTotals.orders} approved orders totaling ${fmtMoney(topTotals.totalDue)}.`,
       details: (
         <div style={{ fontSize: "0.82rem", color: "#92400e", background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>
-          <strong>This will:</strong> Generate XLSX + CSV files, mark orders settled, set paid_flag = 1, record ledger entries.
+          <strong>This will:</strong> Generate XLSX + CSV files, mark orders as funded, record merchant ACH transfer to StockLoyal IB sweep account.
         </div>
       ),
       icon: <CreditCard size={20} color="#3b82f6" />,
@@ -348,8 +348,8 @@ export default function PaymentsProcessing() {
 
   const confirmProcessMerchant = (mid, mName, count, amount) => {
     setModal({
-      show: true, title: "Process Merchant Payments",
-      message: `Process all payments for ${mName || mid}: ${count} orders totaling ${fmtMoney(amount)}.`,
+      show: true, title: "Fund Merchant to IB Sweep",
+      message: `Process IB sweep funding for ${mName || mid}: ${count} approved orders totaling ${fmtMoney(amount)}.`,
       icon: <Store size={20} color="#8b5cf6" />,
       confirmText: "Confirm & Process", confirmColor: "#10b981",
       data: { type: "merchant", merchantId: mid },
@@ -358,8 +358,8 @@ export default function PaymentsProcessing() {
 
   const confirmProcessBroker = (mid, broker, count, amount) => {
     setModal({
-      show: true, title: "Process Broker Payments",
-      message: `Process payments for broker "${broker}": ${count} orders totaling ${fmtMoney(amount)}.`,
+      show: true, title: "Fund Broker to IB Sweep",
+      message: `Process IB sweep funding for broker "${broker}": ${count} approved orders totaling ${fmtMoney(amount)}.`,
       icon: <Building2 size={20} color="#f59e0b" />,
       confirmText: "Confirm & Process", confirmColor: "#f59e0b",
       data: { type: "broker", merchantId: mid, broker },
@@ -368,11 +368,11 @@ export default function PaymentsProcessing() {
 
   const confirmCancelBatch = (batch) => {
     setModal({
-      show: true, title: "Cancel Payment Batch",
-      message: `Reverse batch "${batch.batch_id}"? This will restore ${batch.order_count || "?"} orders back to "executed" status.`,
+      show: true, title: "Cancel Funding Batch",
+      message: `Reverse batch "${batch.batch_id}"? This will restore ${batch.order_count || "?"} orders back to "approved" status.`,
       details: (
         <div style={{ fontSize: "0.82rem", color: "#991b1b", background: "#fef2f2", border: "1px solid #ef4444", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>
-          <strong>This will:</strong> Revert orders to executed, set paid_flag = 0, remove ledger entries.
+          <strong>This will:</strong> Revert orders to approved, clear funding flags, remove ledger entries.
         </div>
       ),
       icon: <XCircle size={20} color="#ef4444" />,
@@ -387,7 +387,7 @@ export default function PaymentsProcessing() {
     if (d.type === "all") handleBatchProcess("all");
     else if (d.type === "merchant") handleBatchProcess("merchant", d);
     else if (d.type === "broker") handleBatchProcess("broker", d);
-    else if (d.type === "cancel") handleCancelPayment(d.batchId);
+    else if (d.type === "cancel") handleCancelFunding(d.batchId);
   };
 
   const loading = merchantId ? mLoading : allLoading;
@@ -404,17 +404,17 @@ export default function PaymentsProcessing() {
 
       {/* Header */}
       <h1 className="page-title">
-        Payments Processing
+        Fund IB Sweep Account
         {merchantId && <> — <span style={{ fontWeight: 400 }}>{merchantName || merchantId}</span></>}
       </h1>
       <p className="page-deck">
         {merchantId
-          ? <>ACH settlement for merchant <strong>{merchantName || merchantId}</strong>. Process broker payments, generate XLSX + CSV exports.</>
-          : <>Summary of <strong>unpaid</strong> ACH obligations across all merchants.</>
+          ? <>ACH funding for merchant <strong>{merchantName || merchantId}</strong>. Process approved orders, transfer funds to StockLoyal IB sweep account.</>
+          : <>Summary of <strong>approved</strong> orders awaiting merchant ACH funding to StockLoyal IB sweep account.</>
         }
       </p>
 
-      <OrderPipeline currentStep={4} counts={queueCounts} />
+      <OrderPipeline currentStep={2} queueCounts={queueCounts} />
 
       {/* Action bar */}
       <div style={{
@@ -424,7 +424,7 @@ export default function PaymentsProcessing() {
         {/* Tabs */}
         <div style={{ display: "inline-flex", borderRadius: 6, border: "1px solid #d1d5db", overflow: "hidden" }}>
           {[
-            { key: "unpaid", label: <><CreditCard size={12} style={{ verticalAlign: "middle" }} /> Unpaid</> },
+            { key: "unpaid", label: <><CreditCard size={12} style={{ verticalAlign: "middle" }} /> Approved</> },
             { key: "history", label: <><History size={12} style={{ verticalAlign: "middle" }} /> History</> },
           ].map((t) => (
             <button
@@ -458,7 +458,7 @@ export default function PaymentsProcessing() {
                 color: "#fff", border: "none", borderRadius: 6, fontSize: "0.875rem", fontWeight: 600,
                 cursor: processing ? "not-allowed" : "pointer",
               }}>
-              <CreditCard size={14} style={{ verticalAlign: "middle" }} /> Process All
+              <CreditCard size={14} style={{ verticalAlign: "middle" }} /> Fund IB Account
             </button>
           )}
         </div>
@@ -467,8 +467,8 @@ export default function PaymentsProcessing() {
       {/* Summary Stats */}
       {activeTab === "unpaid" && topTotals.orders > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
-          <StatCard label="Unpaid Orders" value={topTotals.orders} subtext="Awaiting settlement" color="#f59e0b" />
-          <StatCard label="Total Due" value={fmtMoney(topTotals.totalDue)} subtext="ACH amount" color="#10b981" />
+          <StatCard label="Approved Orders" value={topTotals.orders} subtext="Awaiting merchant funding" color="#f59e0b" />
+          <StatCard label="Funding Required" value={fmtMoney(topTotals.totalDue)} subtext="ACH to IB sweep" color="#10b981" />
           <StatCard label="Brokers" value={topTotals.brokers} subtext="Payees" color="#6366f1" />
           <StatCard label="Members" value={topTotals.members} subtext="Investors" color="#06b6d4" />
         </div>
@@ -514,7 +514,7 @@ export default function PaymentsProcessing() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
             {cancelResults.success ? <RotateCcw size={20} color="#f59e0b" /> : <AlertCircle size={20} color="#ef4444" />}
             <strong style={{ color: cancelResults.success ? "#92400e" : "#991b1b" }}>
-              {cancelResults.success ? "Payment Cancelled" : "Cancel Failed"}
+              {cancelResults.success ? "Funding Cancelled" : "Cancel Failed"}
             </strong>
           </div>
           {cancelResults.success ? (
@@ -541,14 +541,14 @@ export default function PaymentsProcessing() {
       {activeTab === "unpaid" && (
         <>
           {loading ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>Loading payments...</div>
+            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>Loading approved orders...</div>
           ) : orders.length === 0 ? (
             <div style={{
               textAlign: "center", padding: "3rem", background: "#d1fae5",
               borderRadius: 8, border: "2px solid #10b981",
             }}>
               <CheckCircle size={32} color="#10b981" style={{ marginBottom: 8 }} />
-              <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#065f46" }}>All caught up! No pending payments.</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#065f46" }}>All caught up! No approved orders awaiting funding.</div>
             </div>
           ) : (
             <PaymentsHierarchy
@@ -567,13 +567,13 @@ export default function PaymentsProcessing() {
       {activeTab === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {historyLoading && history.length === 0 ? (
-            <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Loading payment history...</div>
+            <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Loading funding history...</div>
           ) : history.length === 0 ? (
             <div style={{
               padding: "2rem", textAlign: "center", color: "#94a3b8",
               background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0",
             }}>
-              No settled payment batches found.
+              No funding batches found.
             </div>
           ) : (
             <>
@@ -604,9 +604,9 @@ export default function PaymentsProcessing() {
         marginTop: "1.5rem", padding: "1rem", background: "#eff6ff",
         border: "1px solid #93c5fd", borderRadius: 8, fontSize: "0.8rem", color: "#1e40af",
       }}>
-        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> Payment Processing:</strong> Each broker payment generates an XLSX workbook
-        with two sheets (ACH Summary + Order Detail) plus individual CSV files. Orders are marked as <code>settled</code> with
-        <code>paid_flag = 1</code> and ledger entries are recorded per member.
+        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> IB Sweep Funding:</strong> Processes approved orders to collect ACH funding from merchants
+        into the StockLoyal IB sweep account. Each batch generates an XLSX workbook with ACH Summary + Order Detail sheets, plus individual CSV files.
+        Orders are marked as <code>settled</code> and ready for journal funding to member Alpaca accounts (Stage 3).
       </div>
     </div>
   );
@@ -691,7 +691,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProces
         padding: "0.5rem 0.75rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.8rem",
         borderBottom: "1px solid #e2e8f0", color: "#374151",
       }}>
-        Unpaid Orders — {merchantKeys.length} merchant(s)
+        Approved Orders — {merchantKeys.length} merchant(s)
       </div>
 
       {merchantKeys.map((mId) => {
@@ -825,8 +825,8 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProces
                                     <td style={tdStyle}>
                                       <span style={{
                                         fontSize: "0.7rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4,
-                                        background: o.status === "confirmed" ? "#d1fae5" : o.status === "executed" ? "#dbeafe" : "#fef3c7",
-                                        color: o.status === "confirmed" ? "#059669" : o.status === "executed" ? "#2563eb" : "#92400e",
+                                        background: o.status === "approved" ? "#dbeafe" : o.status === "confirmed" ? "#d1fae5" : o.status === "executed" ? "#dbeafe" : "#fef3c7",
+                                        color: o.status === "approved" ? "#1d4ed8" : o.status === "confirmed" ? "#059669" : o.status === "executed" ? "#2563eb" : "#92400e",
                                       }}>
                                         {o.status}
                                       </span>
@@ -853,7 +853,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProces
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PaymentHistoryCard — Expandable card per settled batch
+// PaymentHistoryCard — Expandable card per funding batch
 // ═══════════════════════════════════════════════════════════════════════════
 
 function PaymentHistoryCard({ batch, processing, onCancel }) {
@@ -994,7 +994,7 @@ function ResultsBanner({ results, onDismiss }) {
         )}
         <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#3b82f6" }}>{totalOrders}</div>
-          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Orders Settled</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Orders Funded</div>
         </div>
         <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#8b5cf6" }}>{fmtMoney(totalAmount)}</div>

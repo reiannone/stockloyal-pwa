@@ -406,7 +406,7 @@ export default function AdminLanding() {
         }}
       >
         {/* Order Processing Pipeline - Subway Timeline */}
-        <OrderPipeline currentStep={0} counts={queueCounts} />
+        <OrderPipeline currentStep={0} queueCounts={queueCounts} />
 
         {/* Tiles Grid */}
         <div

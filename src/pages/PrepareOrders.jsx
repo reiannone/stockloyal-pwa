@@ -477,7 +477,7 @@ export default function PrepareOrders() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={1} counts={queueCounts} />
+      <OrderPipeline currentStep={1} queueCounts={queueCounts} />
 
       {/* ── Tabs ── */}
       <div style={{

@@ -14,7 +14,7 @@ import {
  * IB Pipeline — 5 stages:
  *
  * 1. Prepare Orders    – Stage member order baskets from cash balances
- * 2. Settlement        – Merchant pays StockLoyal sweep account (ACH)
+ * 2. Fund IB Sweep     – Merchant pays StockLoyal IB sweep account (ACH)
  * 3. Journal Funds     – Journal cash from SL firm sweep → member Alpaca accounts
  * 4. Order Sweep       – Submit stock orders through member accounts
  * 5. Broker Execution  – Confirm/settle trades at Alpaca
@@ -32,7 +32,7 @@ const STEPS = [
   {
     step: 2,
     to: "/payments-processing",
-    label: "Fund IB Sweep Account",
+    label: "Fund IB Sweep",
     subtitle: "Merchant → SL Sweep",
     icon: <CreditCard size={18} />,
     key: "settlement",
@@ -41,7 +41,7 @@ const STEPS = [
   {
     step: 3,
     to: "/journal-admin",
-    label: "Fund Member Accounts",
+    label: "Journal Funds",
     subtitle: "SL Sweep → Members",
     icon: <ArrowRightLeft size={18} />,
     key: "journal",
@@ -50,7 +50,7 @@ const STEPS = [
   {
     step: 4,
     to: "/sweep-admin",
-    label: "Sweep Order Entry",
+    label: "Order Sweep",
     subtitle: "Submit to broker",
     icon: <Paintbrush size={18} />,
     key: "sweep",
@@ -71,7 +71,7 @@ export default function OrderPipeline({
   currentStep,
   queueCounts = null,
   title = "IB Order Processing Pipeline",
-  subtitle = "StockLoyal as Introducing Broker — settlement → funding → trading",
+  subtitle = "StockLoyal as Introducing Broker — fund IB sweep → fund members → trade",
 }) {
   const navigate = useNavigate();
 

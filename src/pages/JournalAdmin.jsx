@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ExternalLink,
   Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import { apiPost } from "../api";
@@ -23,10 +24,12 @@ import { apiPost } from "../api";
 /* ─── Status badge helper ─────────────────────────────────────── */
 function StatusBadge({ status }) {
   const map = {
-    settled:    { bg: "#dcfce7", fg: "#166534", label: "Settled" },
+    approved:   { bg: "#dbeafe", fg: "#1e40af", label: "Approved" },
+    funded:     { bg: "#dcfce7", fg: "#166534", label: "Funded" },
+    settled:    { bg: "#f0fdf4", fg: "#166534", label: "Settled" },
     pending:    { bg: "#fef3c7", fg: "#92400e", label: "Pending" },
-    journaled:  { bg: "#dbeafe", fg: "#1e40af", label: "Journaled" },
-    ready:      { bg: "#e0e7ff", fg: "#3730a3", label: "Ready to Journal" },
+    placed:     { bg: "#e0e7ff", fg: "#3730a3", label: "Placed" },
+    ready:      { bg: "#e0e7ff", fg: "#3730a3", label: "Ready to Fund" },
     failed:     { bg: "#fee2e2", fg: "#991b1b", label: "Failed" },
     executed:   { bg: "#f0fdf4", fg: "#166534", label: "Executed" },
     queued:     { bg: "#fef9c3", fg: "#854d0e", label: "Queued" },
@@ -67,8 +70,8 @@ export default function JournalAdmin() {
 
   // Data
   const [firmBalance, setFirmBalance] = useState(null);
-  const [pendingJournals, setPendingJournals] = useState([]);  // Orders settled but not yet journaled
-  const [recentJournals, setRecentJournals] = useState([]);     // Completed journals
+  const [pendingJournals, setPendingJournals] = useState([]);  // Orders approved + paid, awaiting journal
+  const [recentJournals, setRecentJournals] = useState([]);     // Completed journals (funded)
   const [memberSummary, setMemberSummary] = useState([]);       // Grouped by member
   const [queueCounts, setQueueCounts] = useState(null);
 
@@ -126,12 +129,37 @@ export default function JournalAdmin() {
     });
   };
 
+  // ── Pre-flight balance check ─────────────────────────────────
+  const checkBalance = async (requiredAmount) => {
+    try {
+      const fresh = await apiPost("get-journal-status.php");
+      if (fresh.success && fresh.firm_balance !== null) {
+        setFirmBalance(fresh.firm_balance);
+        if (fresh.firm_balance < requiredAmount) {
+          setError(
+            `Insufficient IB sweep funds: balance is ${fmt(fresh.firm_balance)} but ${fmt(requiredAmount)} is required. ` +
+            `Shortfall of ${fmt(requiredAmount - fresh.firm_balance)}.`
+          );
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      // If balance check fails, allow proceeding — backend will also validate
+      return true;
+    }
+  };
+
   // ── Run journal process ────────────────────────────────────────
   const runJournal = async () => {
     if (selectedMembers.size === 0) {
       setError("Select at least one member to journal");
       return;
     }
+
+    // Pre-flight balance check with fresh data
+    const ok = await checkBalance(selectedTotal);
+    if (!ok) return;
 
     setJournaling(true);
     setError(null);
@@ -163,6 +191,10 @@ export default function JournalAdmin() {
 
   // ── Journal ALL ────────────────────────────────────────────────
   const runJournalAll = async () => {
+    // Pre-flight balance check with fresh data
+    const ok = await checkBalance(totalPending);
+    if (!ok) return;
+
     setJournaling(true);
     setError(null);
     setSuccessMsg(null);
@@ -196,6 +228,12 @@ export default function JournalAdmin() {
     .filter((m) => selectedMembers.has(m.member_id))
     .reduce((s, m) => s + parseFloat(m.total_amount || 0), 0);
 
+  // ── Insufficient funds detection ───────────────────────────────
+  const balanceKnown = firmBalance !== null && firmBalance !== undefined;
+  const deficit = balanceKnown ? totalPending - firmBalance : 0;
+  const insufficientForAll = balanceKnown && firmBalance < totalPending;
+  const insufficientForSelected = balanceKnown && selectedTotal > 0 && firmBalance < selectedTotal;
+
   // ── Render ─────────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "16px" }}>
@@ -219,7 +257,7 @@ export default function JournalAdmin() {
             Journal Funds
           </h2>
           <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b7280" }}>
-            Transfer settled funds from StockLoyal sweep account → individual member Alpaca accounts
+            Transfer funded amounts from StockLoyal IB sweep account → individual member broker accounts
           </p>
         </div>
       </div>
@@ -295,21 +333,26 @@ export default function JournalAdmin() {
               style={{
                 padding: "16px",
                 borderRadius: "10px",
-                border: "1px solid #e5e7eb",
-                backgroundColor: "#fff",
+                border: insufficientForAll ? "1px solid #fca5a5" : "1px solid #e5e7eb",
+                backgroundColor: insufficientForAll ? "#fef2f2" : "#fff",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                <Building2 size={16} color="#6b7280" />
-                <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: "500" }}>
-                  SL Firm Sweep Balance
+                <Building2 size={16} color={insufficientForAll ? "#dc2626" : "#6b7280"} />
+                <span style={{ fontSize: "12px", color: insufficientForAll ? "#991b1b" : "#6b7280", fontWeight: "500" }}>
+                  IB Sweep Account Balance
                 </span>
               </div>
-              <div style={{ fontSize: "22px", fontWeight: "700", color: "#111827" }}>
+              <div style={{ fontSize: "22px", fontWeight: "700", color: insufficientForAll ? "#dc2626" : "#111827" }}>
                 {firmBalance !== null ? fmt(firmBalance) : "—"}
               </div>
-              <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "4px" }}>
-                Alpaca Firm Account
+              <div style={{ fontSize: "11px", color: insufficientForAll ? "#dc2626" : "#9ca3af", marginTop: "4px" }}>
+                {balanceKnown
+                  ? insufficientForAll
+                    ? `⚠ Shortfall: ${fmt(deficit)} needed`
+                    : `✓ Surplus: ${fmt(firmBalance - totalPending)} after funding`
+                  : "IB Sweep Account"
+                }
               </div>
             </div>
 
@@ -383,6 +426,33 @@ export default function JournalAdmin() {
             </div>
           </div>
 
+          {/* ── Insufficient Funds Warning ─────────────────── */}
+          {balanceKnown && insufficientForAll && memberSummary.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "14px 18px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fca5a5",
+                borderRadius: "10px",
+                marginBottom: "16px",
+              }}
+            >
+              <ShieldAlert size={20} color="#dc2626" style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: "600", color: "#991b1b" }}>
+                  Insufficient IB Sweep Funds
+                </div>
+                <div style={{ fontSize: "12px", color: "#b91c1c", marginTop: "2px" }}>
+                  Sweep balance is {fmt(firmBalance)} but {fmt(totalPending)} is needed to fund {memberSummary.length} member(s).
+                  Merchant ACH settlement of {fmt(deficit)} must be received before journaling can proceed.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Action Bar ─────────────────────────────────── */}
           <div
             style={{
@@ -399,7 +469,8 @@ export default function JournalAdmin() {
           >
             <button
               onClick={runJournalAll}
-              disabled={journaling || memberSummary.length === 0}
+              disabled={journaling || memberSummary.length === 0 || insufficientForAll}
+              title={insufficientForAll ? `Insufficient funds: need ${fmt(totalPending)}, have ${fmt(firmBalance)}` : ""}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -407,25 +478,28 @@ export default function JournalAdmin() {
                 padding: "8px 18px",
                 borderRadius: "8px",
                 border: "none",
-                backgroundColor: journaling ? "#86efac" : "#10b981",
-                color: "white",
+                backgroundColor: insufficientForAll ? "#e5e7eb" : journaling ? "#86efac" : "#10b981",
+                color: insufficientForAll ? "#9ca3af" : "white",
                 fontWeight: "600",
                 fontSize: "13px",
-                cursor: journaling || memberSummary.length === 0 ? "not-allowed" : "pointer",
-                opacity: memberSummary.length === 0 ? 0.5 : 1,
+                cursor: journaling || memberSummary.length === 0 || insufficientForAll ? "not-allowed" : "pointer",
+                opacity: memberSummary.length === 0 || insufficientForAll ? 0.5 : 1,
               }}
             >
               {journaling ? (
                 <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              ) : insufficientForAll ? (
+                <ShieldAlert size={14} />
               ) : (
                 <Play size={14} />
               )}
-              {journaling ? "Journaling…" : "Journal All"}
+              {journaling ? "Journaling…" : insufficientForAll ? "Insufficient Funds" : "Journal All"}
             </button>
 
             <button
               onClick={runJournal}
-              disabled={journaling || selectedMembers.size === 0}
+              disabled={journaling || selectedMembers.size === 0 || insufficientForSelected}
+              title={insufficientForSelected ? `Insufficient funds: need ${fmt(selectedTotal)}, have ${fmt(firmBalance)}` : ""}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -433,15 +507,20 @@ export default function JournalAdmin() {
                 padding: "8px 18px",
                 borderRadius: "8px",
                 border: "1px solid #d1d5db",
-                backgroundColor: selectedMembers.size > 0 ? "#fff" : "#f3f4f6",
-                color: selectedMembers.size > 0 ? "#374151" : "#9ca3af",
+                backgroundColor: insufficientForSelected ? "#fef2f2" : selectedMembers.size > 0 ? "#fff" : "#f3f4f6",
+                color: insufficientForSelected ? "#dc2626" : selectedMembers.size > 0 ? "#374151" : "#9ca3af",
                 fontWeight: "500",
                 fontSize: "13px",
-                cursor: journaling || selectedMembers.size === 0 ? "not-allowed" : "pointer",
+                cursor: journaling || selectedMembers.size === 0 || insufficientForSelected ? "not-allowed" : "pointer",
               }}
             >
-              <ArrowRightLeft size={14} />
+              {insufficientForSelected ? <ShieldAlert size={14} /> : <ArrowRightLeft size={14} />}
               Journal Selected ({selectedMembers.size})
+              {insufficientForSelected && selectedTotal > 0 && (
+                <span style={{ fontSize: "11px", opacity: 0.8 }}>
+                  — need {fmt(selectedTotal)}
+                </span>
+              )}
             </button>
 
             <div style={{ flex: 1 }} />
@@ -483,7 +562,7 @@ export default function JournalAdmin() {
                 All caught up!
               </p>
               <p style={{ margin: "4px 0 0 0", fontSize: "13px", color: "#4ade80" }}>
-                No settled orders awaiting journal. Run Settlement first or wait for merchants to pay.
+                No paid orders awaiting journal. Process merchant payments first in Fund IB Sweep.
               </p>
             </div>
           ) : (
@@ -523,7 +602,7 @@ export default function JournalAdmin() {
                 <div>Member</div>
                 <div style={{ textAlign: "right" }}>Amount</div>
                 <div style={{ textAlign: "center" }}>Orders</div>
-                <div style={{ textAlign: "center" }}>Alpaca Acct</div>
+                <div style={{ textAlign: "center" }}>Broker Acct</div>
                 <div style={{ textAlign: "center" }}>Status</div>
               </div>
 
@@ -531,7 +610,7 @@ export default function JournalAdmin() {
               {memberSummary.map((m) => {
                 const isExpanded = expandedMember === m.member_id;
                 const isSelected = selectedMembers.has(m.member_id);
-                const hasAlpaca = !!m.alpaca_account_id;
+                const hasBrokerAcct = !!m.broker_account_id;
 
                 return (
                   <React.Fragment key={m.member_id}>
@@ -554,9 +633,9 @@ export default function JournalAdmin() {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={!hasAlpaca}
+                          disabled={!hasBrokerAcct}
                           onChange={() => toggleMember(m.member_id)}
-                          title={hasAlpaca ? "" : "No Alpaca account — cannot journal"}
+                          title={hasBrokerAcct ? "" : "No broker account — cannot journal"}
                         />
                       </div>
 
@@ -585,7 +664,7 @@ export default function JournalAdmin() {
                       </div>
 
                       <div style={{ textAlign: "center" }}>
-                        {hasAlpaca ? (
+                        {hasBrokerAcct ? (
                           <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>
                             ✓ Linked
                           </span>
@@ -597,7 +676,7 @@ export default function JournalAdmin() {
                       </div>
 
                       <div style={{ textAlign: "center" }}>
-                        <StatusBadge status={hasAlpaca ? "ready" : "failed"} />
+                        <StatusBadge status={hasBrokerAcct ? "ready" : "failed"} />
                       </div>
                     </div>
 
@@ -651,9 +730,9 @@ export default function JournalAdmin() {
                           </div>
                         ))}
 
-                        {m.alpaca_account_id && (
+                        {m.broker_account_id && (
                           <div style={{ marginTop: "8px", fontSize: "11px", color: "#6b7280" }}>
-                            Alpaca Account: <code style={{ fontSize: "10px" }}>{m.alpaca_account_id}</code>
+                            Broker Account: <code style={{ fontSize: "10px" }}>{m.broker_account_id}</code>
                           </div>
                         )}
                       </div>
