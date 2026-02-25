@@ -1,17 +1,21 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+get-payments.php
+
+
 # 1. Path to your PEM key
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
 # 2. Local file to upload
-$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\voice-assistant-ai.php"
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\get-payments.php"
 
 # 3. EC2 Host (rename variable so we avoid conflict with $Host)
 $EC2 = "ec2-user@3.150.49.91"
 
 # 4. Destination on remote server
-$DEST = "/home/ec2-user/voice-assistant-ai.php"
+$DEST = "/home/ec2-user/get-payments.php"
 
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
@@ -20,9 +24,9 @@ scp -i $KEY "$SRC" "${EC2}:${DEST}"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/voice-assistant-ai.php /var/www/html/api/voice-assistant-ai.php
-sudo chown apache:apache /var/www/html/api/voice-assistant-ai.php
-sudo chmod 644 /var/www/html/api/voice-assistant-ai.php
+sudo mv /home/ec2-user/get-payments.php /var/www/html/api/get-payments.php
+sudo chown apache:apache /var/www/html/api/get-payments.php
+sudo chmod 644 /var/www/html/api/get-payments.php
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 MySQL Commands in AWS EC2
