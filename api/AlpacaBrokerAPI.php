@@ -211,6 +211,61 @@ class AlpacaBrokerAPI {
         }, $agreements);
     }
 
+    /**
+     * Update an existing brokerage account (contact, identity, disclosures).
+     * Uses PATCH /v1/accounts/{account_id} — only sends non-empty sections.
+     *
+     * @param string $accountId  Alpaca broker account ID
+     * @param array  $kycData    Same keys as createAccount (only changed fields needed)
+     * @return array  ['success' => bool, 'data' => [...], 'error' => '...']
+     */
+    public function updateAccount(string $accountId, array $kycData): array {
+        $body = [];
+
+        // ── Contact ──
+        $contact = [];
+        if (!empty($kycData['email']))          $contact['email_address']  = $kycData['email'];
+        if (!empty($kycData['phone']))          $contact['phone_number']   = $kycData['phone'];
+        if (!empty($kycData['street_address'])) $contact['street_address'] = [$kycData['street_address']];
+        if (!empty($kycData['city']))           $contact['city']           = $kycData['city'];
+        if (!empty($kycData['state']))          $contact['state']          = $kycData['state'];
+        if (!empty($kycData['postal_code']))    $contact['postal_code']    = $kycData['postal_code'];
+        if (!empty($kycData['country']))        $contact['country']        = $kycData['country'];
+        if (!empty($contact)) $body['contact'] = $contact;
+
+        // ── Identity ──
+        $identity = [];
+        if (!empty($kycData['first_name']))     $identity['given_name']    = $kycData['first_name'];
+        if (!empty($kycData['middle_name']))    $identity['middle_name']   = $kycData['middle_name'];
+        if (!empty($kycData['last_name']))      $identity['family_name']   = $kycData['last_name'];
+        if (!empty($kycData['date_of_birth']))  $identity['date_of_birth'] = $kycData['date_of_birth'];
+        if (!empty($kycData['tax_id'])) {
+            $identity['tax_id']      = $kycData['tax_id'];
+            $identity['tax_id_type'] = $kycData['tax_id_type'] ?? 'USA_SSN';
+        }
+        if (!empty($kycData['tax_country']))    $identity['country_of_tax_residence'] = $kycData['tax_country'];
+        if (!empty($kycData['funding_source'])) $identity['funding_source'] = [$kycData['funding_source']];
+        if (!empty($identity)) $body['identity'] = $identity;
+
+        // ── Disclosures ──
+        $disclosures = [];
+        if (isset($kycData['is_control_person']))        $disclosures['is_control_person']              = (bool)$kycData['is_control_person'];
+        if (isset($kycData['is_affiliated']))            $disclosures['is_affiliated_exchange_or_finra'] = (bool)$kycData['is_affiliated'];
+        if (isset($kycData['is_politically_exposed']))   $disclosures['is_politically_exposed']         = (bool)$kycData['is_politically_exposed'];
+        if (isset($kycData['immediate_family_exposed'])) $disclosures['immediate_family_exposed']       = (bool)$kycData['immediate_family_exposed'];
+        if (!empty($disclosures)) $body['disclosures'] = $disclosures;
+
+        if (empty($body)) {
+            return [
+                'success'   => true,
+                'http_code' => 200,
+                'data'      => ['status' => 'UNCHANGED'],
+            ];
+        }
+
+        return $this->patch('/v1/accounts/' . urlencode($accountId), $body);
+    }
+
     // ─── Trading ────────────────────────────────────────────
 
     /**

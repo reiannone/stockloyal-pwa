@@ -361,12 +361,13 @@ export default function MemberOnboard() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // ╔═══════════════════════════════════════════════════════════╗
-  // ║  SUBMIT — Save to StockLoyal DB + Create Alpaca Account  ║
-  // ╚═══════════════════════════════════════════════════════════╝
+  // ╔═══════════════════════════════════════════════════════════════╗
+  // ║  SUBMIT — Save to StockLoyal DB + Create OR Update Alpaca   ║
+  // ╚═══════════════════════════════════════════════════════════════╝
   const handleSubmit = async () => {
     setError(""); setSubmitting(true);
     try {
+      // ── 1. Save profile to StockLoyal DB ──
       const walletPayload = {
         member_id: memberId, first_name: firstName.trim(), middle_name: middleName.trim(),
         last_name: lastName.trim(), member_email: email.trim(),
@@ -383,6 +384,7 @@ export default function MemberOnboard() {
       if (firstName) localStorage.setItem("userName", firstName.trim());
       if (memberId) { localStorage.setItem("memberId", memberId); window.dispatchEvent(new Event("member-updated")); }
 
+      // ── 2. Build Alpaca payload (shared by create & update) ──
       const alpacaPayload = {
         member_id: memberId, email: email.trim(), first_name: firstName.trim(),
         middle_name: middleName.trim(), last_name: lastName.trim(),
@@ -394,22 +396,45 @@ export default function MemberOnboard() {
         is_affiliated: isAffiliated, is_politically_exposed: isPep,
         immediate_family_exposed: familyExposed,
       };
-      const alpacaRes = await apiPost("alpaca-create-account.php", alpacaPayload);
 
-      if (alpacaRes?.already_exists) {
+      // ── 3. Route: UPDATE existing account or CREATE new one ──
+      const existingAccountId = localStorage.getItem("broker_account_id");
+
+      if (existingAccountId) {
+        // ── UPDATE path — sync profile changes to Alpaca ──
+        alpacaPayload.broker_account_id = existingAccountId;
+        const updateRes = await apiPost("alpaca-update-account.php", alpacaPayload);
+
+        if (!updateRes?.success) {
+          // Non-fatal: local DB already saved, warn but don't block
+          console.warn("[MemberOnboard] Alpaca update failed:", updateRes?.error);
+          setError(updateRes?.error || "Profile saved locally, but brokerage account update failed. Your broker profile may be out of sync.");
+          setSubmitting(false); return;
+        }
+        setSuccess({
+          broker_account_id: existingAccountId,
+          account_status: updateRes.account_status || "UPDATED",
+          message: updateRes.message || "Profile and brokerage account updated!",
+        });
+      } else {
+        // ── CREATE path — first-time brokerage account ──
+        const alpacaRes = await apiPost("alpaca-create-account.php", alpacaPayload);
+
+        if (alpacaRes?.already_exists) {
+          localStorage.setItem("broker_account_id", alpacaRes.broker_account_id);
+          localStorage.setItem("broker", passedBroker);
+          setSuccess({ broker_account_id: alpacaRes.broker_account_id, account_status: "EXISTING", message: "Your brokerage account is already set up!" });
+          return;
+        }
+        if (!alpacaRes?.success) {
+          setError(alpacaRes?.error || "Profile saved, but brokerage account creation failed. Please try again.");
+          setSubmitting(false); return;
+        }
         localStorage.setItem("broker_account_id", alpacaRes.broker_account_id);
+        localStorage.setItem("broker_account_number", alpacaRes.account_number || "");
         localStorage.setItem("broker", passedBroker);
-        setSuccess({ broker_account_id: alpacaRes.broker_account_id, account_status: "EXISTING", message: "Your brokerage account is already set up!" });
-        return;
+        setSuccess({ broker_account_id: alpacaRes.broker_account_id, account_number: alpacaRes.account_number, account_status: alpacaRes.account_status, message: alpacaRes.message });
       }
-      if (!alpacaRes?.success) {
-        setError(alpacaRes?.error || "Profile saved, but brokerage account creation failed. Please try again.");
-        setSubmitting(false); return;
-      }
-      localStorage.setItem("broker_account_id", alpacaRes.broker_account_id);
-      localStorage.setItem("broker_account_number", alpacaRes.account_number || "");
-      localStorage.setItem("broker", passedBroker);
-      setSuccess({ broker_account_id: alpacaRes.broker_account_id, account_number: alpacaRes.account_number, account_status: alpacaRes.account_status, message: alpacaRes.message });
     } catch (err) {
       console.error("[MemberOnboard] Submit error:", err);
       setError("Network error. Please check your connection and try again.");
