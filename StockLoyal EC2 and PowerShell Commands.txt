@@ -81,21 +81,6 @@ ls -la /var/www/html/api/delete-broker.php
 # Test the endpoint
 curl https://api.stockloyal.com/api/get-payments.php
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-AWS SES SMTP
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-SMTP credentials
-IAM user name: ses-smtp-user.20260128-183029
-SMTP user name: AKIAXJRZMKPYWVGU22NC
-SMTP password: BCkQs0EIDw1ilsHGAYhma/SyC6fY0TRMwrWy2R6Zn3Pi
-SMTP endpoint: email-smtp.us-east-2.amazonaws.com
-Group name: AWSSESSendingGroupDoNotRename
-
-SMTP credentials
-IAM user name: ses-smtp-user.20260128-183729
-SMTP user name: AKIAXJRZMKPYZOTO2DHA
-SMTP password: BBFBFD2WxeuQWmPvsBBwjmEtcw+FS2Ku88OrnqCHuC6w
-
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 RestFUL URL: from Merchant
