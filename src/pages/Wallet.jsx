@@ -52,6 +52,10 @@ export default function Wallet() {
   const [portfolioLastUpdated, setPortfolioLastUpdated] = useState(null);
   const [lastPointsSync, setLastPointsSync] = useState(null);
 
+  // Alpaca live account data
+  const [alpacaAccount, setAlpacaAccount] = useState(null);
+  const isAlpaca = (localStorage.getItem("broker") || "").toLowerCase() === "alpaca";
+
   // Merchant sync notification
   const [merchantSynced, setMerchantSynced] = useState(false);
   const [merchantSyncInfo, setMerchantSyncInfo] = useState(null);
@@ -315,34 +319,58 @@ export default function Wallet() {
           }
         })();
 
-        // ✅ Background: Update portfolio value with real-time prices
+        // ✅ Background: Update portfolio value
         (async () => {
           try {
-            const portfolioData = await apiPost("update-portfolio-value.php", { member_id: memberId });
-            if (portfolioData?.success && portfolioData.value_changed) {
-              // Value changed - show notification and update
-              setNewPortfolioValue(portfolioData.portfolio_value);
-              setPortfolioUpdated(true);
-              
-              // Update wallet state with new value
-              setWallet(prev => ({
-                ...prev,
-                portfolio_value: portfolioData.portfolio_value
-              }));
-              
-              // Update localStorage
-              localStorage.setItem("portfolio_value", Number(portfolioData.portfolio_value || 0).toFixed(2));
-              window.dispatchEvent(new Event("member-updated"));
-              
-              // Update last updated timestamp
-              setPortfolioLastUpdated(new Date().toISOString());
-              
-              // Auto-hide notification after 5 seconds
-              setTimeout(() => setPortfolioUpdated(false), 5000);
+            const brokerName = (w?.broker || localStorage.getItem("broker") || "").toLowerCase();
+
+            if (brokerName === "alpaca") {
+              // ── Alpaca: fetch live account + positions from broker API ──
+              const alpacaData = await apiPost("alpaca-get-portfolio.php", { member_id: memberId });
+              if (alpacaData?.success) {
+                setAlpacaAccount(alpacaData.account);
+
+                const liveValue = alpacaData.account?.equity || alpacaData.portfolio_value || 0;
+
+                // Update wallet state with live equity
+                setWallet(prev => ({
+                  ...prev,
+                  portfolio_value: liveValue
+                }));
+
+                // Show notification if value changed from DB
+                const dbValue = Number(w?.portfolio_value || 0);
+                if (Math.abs(liveValue - dbValue) > 0.01) {
+                  setNewPortfolioValue(liveValue);
+                  setPortfolioUpdated(true);
+                  setTimeout(() => setPortfolioUpdated(false), 5000);
+                }
+
+                localStorage.setItem("portfolio_value", Number(liveValue).toFixed(2));
+                window.dispatchEvent(new Event("member-updated"));
+                setPortfolioLastUpdated(new Date().toISOString());
+              }
+            } else {
+              // ── Non-Alpaca: use legacy portfolio value updater ──
+              const portfolioData = await apiPost("update-portfolio-value.php", { member_id: memberId });
+              if (portfolioData?.success && portfolioData.value_changed) {
+                setNewPortfolioValue(portfolioData.portfolio_value);
+                setPortfolioUpdated(true);
+
+                setWallet(prev => ({
+                  ...prev,
+                  portfolio_value: portfolioData.portfolio_value
+                }));
+
+                localStorage.setItem("portfolio_value", Number(portfolioData.portfolio_value || 0).toFixed(2));
+                window.dispatchEvent(new Event("member-updated"));
+                setPortfolioLastUpdated(new Date().toISOString());
+
+                setTimeout(() => setPortfolioUpdated(false), 5000);
+              }
             }
           } catch (err) {
             console.warn("[Wallet] Background portfolio update failed:", err);
-            // Silently fail - user still sees cached value
           }
         })();
 
@@ -483,6 +511,25 @@ export default function Wallet() {
             }
           }
         })();
+
+        // ✅ Alpaca: refresh live account data
+        if ((w?.broker || localStorage.getItem("broker") || "").toLowerCase() === "alpaca") {
+          (async () => {
+            try {
+              const alpacaData = await apiPost("alpaca-get-portfolio.php", { member_id: memberId });
+              if (alpacaData?.success) {
+                setAlpacaAccount(alpacaData.account);
+                const liveValue = alpacaData.account?.equity || alpacaData.portfolio_value || 0;
+                setWallet(prev => ({ ...prev, portfolio_value: liveValue }));
+                localStorage.setItem("portfolio_value", Number(liveValue).toFixed(2));
+                window.dispatchEvent(new Event("member-updated"));
+                setPortfolioLastUpdated(new Date().toISOString());
+              }
+            } catch (err) {
+              console.warn("[Wallet] Alpaca refresh failed:", err);
+            }
+          })();
+        }
       }
     } catch (e) {
       console.error("[Wallet] refresh failed", e);
@@ -862,6 +909,7 @@ export default function Wallet() {
         onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#3b82f6"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(59,130,246,0.12)"; }}
         onMouseLeave={(e) => { e.currentTarget.style.borderColor = ""; e.currentTarget.style.boxShadow = ""; }}
       >
+        {/* Top row: icon + title + total equity */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div
@@ -878,19 +926,31 @@ export default function Wallet() {
               <BarChart2 size={24} />
             </div>
             <div>
-              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>Portfolio Value</div>
-              <div className="caption">Market value of investments held at{" "}
-                <strong style={{ color: "#2563eb" }}>{wallet.broker || localStorage.getItem("broker") || "your broker"}</strong>.
-                <br />Purchased through StockLoyal.
+              <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>
+                {alpacaAccount ? "Brokerage Account" : "Portfolio Value"}
+              </div>
+              <div className="caption">
+                {alpacaAccount
+                  ? <>Live account at <strong style={{ color: "#2563eb" }}>Alpaca</strong></>
+                  : <>Market value of investments held at{" "}
+                      <strong style={{ color: "#2563eb" }}>{wallet.broker || localStorage.getItem("broker") || "your broker"}</strong>.
+                      <br />Purchased through StockLoyal.
+                    </>
+                }
               </div>
             </div>
           </div>
 
           <div style={{ textAlign: "right" }}>
             <div className="wallet-portfolio" style={{ margin: 0 }}>
-              {formatDollars(portfolioValue)}
+              {formatDollars(alpacaAccount ? alpacaAccount.equity : portfolioValue)}
             </div>
-            <div className="caption" style={{ marginTop: 6 }}>
+            {alpacaAccount && (
+              <div className="caption" style={{ marginTop: 2, fontWeight: 600 }}>
+                Total Equity
+              </div>
+            )}
+            <div className="caption" style={{ marginTop: 4 }}>
               {formatLastUpdated(portfolioLastUpdated)}
             </div>
             <div style={{ marginTop: 4, fontSize: "0.75rem", color: "#2563eb", fontWeight: 600 }}>
@@ -899,6 +959,65 @@ export default function Wallet() {
           </div>
         </div>
 
+        {/* Alpaca detail row: Cash | Positions | Buying Power | Day P&L */}
+        {alpacaAccount && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
+              gap: "10px",
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: "1px solid #e5e7eb",
+            }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
+                Cash
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
+                {formatDollars(alpacaAccount.cash)}
+              </div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
+                Positions
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
+                {formatDollars(alpacaAccount.portfolio_value)}
+              </div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
+                Buying Power
+              </div>
+              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
+                {formatDollars(alpacaAccount.buying_power)}
+              </div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
+                Today's P&L
+              </div>
+              <div style={{
+                fontSize: "1rem",
+                fontWeight: 700,
+                color: (alpacaAccount.day_pl || 0) >= 0 ? "#22c55e" : "#ef4444"
+              }}>
+                {(alpacaAccount.day_pl || 0) >= 0 ? "+" : ""}
+                {formatDollars(alpacaAccount.day_pl || 0)}
+              </div>
+              <div style={{
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                color: (alpacaAccount.day_pl_pct || 0) >= 0 ? "#22c55e" : "#ef4444"
+              }}>
+                {(alpacaAccount.day_pl_pct || 0) >= 0 ? "+" : ""}
+                {(alpacaAccount.day_pl_pct || 0).toFixed(2)}%
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- Quick Links Tile Grid --- */}
@@ -978,7 +1097,11 @@ export default function Wallet() {
 
 
       <p className="form-disclosure" style={{ marginTop: 12 }}>
-        Market prices are delayed 15 minutes. Investment portfolio reflects shares purchased through the StockLoyal app only.
+        {alpacaAccount
+          ? "Account data provided in real-time by Alpaca Securities LLC."
+          : "Market prices are delayed 15 minutes."
+        }
+        {" "}Investment portfolio reflects shares purchased through the StockLoyal app only.
         {lastPointsSync && (<> Points last synced: {formatLastUpdated(lastPointsSync).replace('Updated ', '')}.</>)}
         {" "}
         {wallet.broker && wallet.broker_url && (

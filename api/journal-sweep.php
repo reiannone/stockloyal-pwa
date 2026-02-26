@@ -156,7 +156,10 @@ function runJournal(PDO $conn, ?array $memberIds): array
         try {
             // 3a. Ensure Alpaca account exists
             $alpacaAccountId = $group['broker_account_id'];
-            if (empty($alpacaAccountId) || $group['broker_status'] !== 'ACTIVE') {
+            $validStatuses = ['ACTIVE', 'APPROVED', 'ACCOUNT_UPDATED', 'SUBMITTED', 'ACTION_REQUIRED'];
+            $hasValidAccount = !empty($alpacaAccountId) && in_array($group['broker_status'], $validStatuses, true);
+
+            if (!$hasValidAccount) {
                 // Try to provision account
                 $alpacaAccountId = ensureMemberAlpacaAccount($conn, $group);
                 if (!$alpacaAccountId) {
@@ -313,7 +316,8 @@ function postJournal(string $toAccountId, float $amount, string $memberName, str
 function ensureMemberAlpacaAccount(PDO $conn, array $member): ?string
 {
     // Check if already stored
-    if (!empty($member['broker_account_id']) && $member['broker_status'] === 'ACTIVE') {
+    $validStatuses = ['ACTIVE', 'APPROVED', 'ACCOUNT_UPDATED', 'SUBMITTED', 'ACTION_REQUIRED'];
+    if (!empty($member['broker_account_id']) && in_array($member['broker_status'], $validStatuses, true)) {
         return $member['broker_account_id'];
     }
 

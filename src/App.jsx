@@ -1,4 +1,4 @@
-// App.jsx
+// App.jsx.php
 import React, { useState, useEffect } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
@@ -12,7 +12,7 @@ import SplashScreen from "./pages/SplashScreen.jsx";
 import Promotions from "./pages/Promotions.jsx";
 import Login from "./pages/Login.jsx";
 import MemberOnboard from "./pages/MemberOnboard.jsx";
-import Onboard from "./pages/Onboard.jsx";
+import DocumentCenter from "./pages/DocumentCenter.jsx";
 import Terms from "./pages/Terms.jsx";
 import Goodbye from "./pages/Goodbye.jsx";
 import About from "./pages/About.jsx";
@@ -187,10 +187,10 @@ function App() {
                 }
               />
               <Route
-                path="/onboard"
+                path="/document-center"
                 element={
                   <PageWrapper>
-                    <Onboard />
+                    <DocumentCenter />
                   </PageWrapper>
                 }
               />

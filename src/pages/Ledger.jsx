@@ -1,5 +1,5 @@
 // src/pages/Ledger.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
@@ -46,6 +46,11 @@ export default function Ledger() {
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [expandedMonths, setExpandedMonths] = useState(new Set());
+
+  // ── Infinite scroll ──
+  const PAGE_SIZE = 10;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -170,16 +175,28 @@ export default function Ledger() {
     }
   }, [entries, filterField, filterValue]);
 
-  // ── Group entries by month ──
+  // Reset visible count when filter changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [filterField, filterValue]);
+
+  // ── Visible entries (infinite scroll) ──
+  const visibleEntries = useMemo(
+    () => filteredEntries.slice(0, visibleCount),
+    [filteredEntries, visibleCount]
+  );
+  const hasMore = visibleCount < filteredEntries.length;
+
+  // ── Group visible entries by month ──
   const monthlyEntries = useMemo(() => {
     const groups = new Map();
-    for (const e of filteredEntries) {
+    for (const e of visibleEntries) {
       const key = getMonthKey(e.created_at, effectiveTz);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(e);
     }
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [filteredEntries, effectiveTz]);
+  }, [visibleEntries, effectiveTz]);
 
   // Initialize expanded months — current month open by default
   useEffect(() => {
@@ -196,6 +213,19 @@ export default function Ledger() {
       return next;
     });
   };
+
+  // ── IntersectionObserver for infinite scroll ──
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisibleCount((c) => c + PAGE_SIZE);
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, visibleCount]);
 
   // Convert UTC/MySQL-ish timestamps to member's local time string
   const toLocalZonedString = (ts) => {
@@ -236,7 +266,9 @@ export default function Ledger() {
   };
 
   return (
-    <div className="transactions-container">
+    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden" }}>
+      {/* ── Scrollable content area ── */}
+      <div className="transactions-container" style={{ flex: 1, overflowY: "auto", paddingBottom: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         Transaction Ledger
       </h2>
@@ -348,7 +380,10 @@ export default function Ledger() {
               )}
 
               <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "auto", whiteSpace: "nowrap" }}>
-                Showing <strong>{filteredEntries.length}</strong> of <strong>{entries.length}</strong> entries
+                Showing <strong>{visibleEntries.length}</strong> of <strong>{filteredEntries.length}</strong> entries
+                {filteredEntries.length !== entries.length && (
+                  <> (filtered from {entries.length})</>
+                )}
               </span>
             </div>
 
@@ -475,6 +510,18 @@ export default function Ledger() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Infinite scroll sentinel */}
+      {hasMore && (
+        <div ref={sentinelRef} style={{ textAlign: "center", padding: "16px 0", color: "#9ca3af", fontSize: "0.85rem" }}>
+          Loading more entries…
+        </div>
+      )}
+      {!hasMore && filteredEntries.length > PAGE_SIZE && (
+        <div style={{ textAlign: "center", padding: "12px 0", color: "#9ca3af", fontSize: "0.8rem" }}>
+          All {filteredEntries.length} entries loaded
         </div>
       )}
 
@@ -610,15 +657,16 @@ export default function Ledger() {
         </div>
       )}
 
-      {/* --- Centered Action Buttons (Sticky) --- */}
+      {/* --- Action Buttons (always visible at bottom) --- */}
+      </div>{/* ── end scrollable content ── */}
+
       <div
         className="transactions-actions"
         style={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 10,
-          background: "linear-gradient(transparent, #f8fafc 12px)",
-          paddingTop: 16,
+          flexShrink: 0,
+          background: "#f8fafc",
+          borderTop: "1px solid #e2e8f0",
+          paddingTop: 12,
           paddingBottom: 12,
           display: "flex",
           flexDirection: "column",

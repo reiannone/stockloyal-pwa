@@ -17,7 +17,9 @@ import {
   ChevronRight,
   CheckCircle2,
   RefreshCw,
+  FileTextIcon,
   Landmark,
+  Handshake,
 } from "lucide-react";
 import { apiPost } from "../api.js";
 
@@ -196,7 +198,7 @@ export default function StockLoyalLanding() {
     {
       to: "/terms",
       label: "Terms & Conditions",
-      icon: <FileText size={32} />,
+      icon: <Handshake size={32} />,
       color: "#8b5cf6",
       bgColor: "#f5f3ff",
     },
@@ -208,9 +210,9 @@ export default function StockLoyalLanding() {
       bgColor: "#f7fee7",
     },
     {
-      to: "/onboard",
-      label: "Brokerage Account",
-      icon: <Landmark size={32} />,
+      to: "/document-center",
+      label: "Document Center",
+      icon: <FileTextIcon size={32} />,
       color: "#84cc16",
       bgColor: "#f7fee7",
     },

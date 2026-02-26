@@ -94,7 +94,7 @@ function getOverview(PDO $conn): array
     $stmt = $conn->query("
         SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS amt
         FROM   orders
-        WHERE  LOWER(status) IN ('pending','queued')
+        WHERE  LOWER(status) = 'funded'
     ");
     $pending = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -129,7 +129,7 @@ function getOverview(PDO $conn): array
                MIN(o.placed_at)     AS oldest_order
         FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
-        WHERE  LOWER(o.status) IN ('pending','queued')
+        WHERE  LOWER(o.status) = 'funded'
         GROUP  BY o.merchant_id, m.merchant_name, m.sweep_day
         ORDER  BY pending_orders DESC
     ");
@@ -270,7 +270,7 @@ function getPendingOrders(PDO $conn, ?string $merchantId): array
         FROM   orders o
         LEFT JOIN merchant m ON o.merchant_id = m.merchant_id
         LEFT JOIN broker_credentials bc ON bc.member_id = o.member_id AND LOWER(bc.broker) = LOWER(o.broker)
-        WHERE  LOWER(o.status) IN ('pending','queued')
+        WHERE  LOWER(o.status) = 'funded'
     ";
 
     $params = [];
@@ -310,7 +310,7 @@ function getMerchantSchedules(PDO $conn): array
                    COUNT(*)      AS pending_orders,
                    SUM(amount)   AS pending_amount
             FROM   orders
-            WHERE  LOWER(status) IN ('pending','queued')
+            WHERE  LOWER(status) = 'funded'
             GROUP  BY merchant_id
         ) p ON m.merchant_id = p.merchant_id
         ORDER  BY m.merchant_name ASC

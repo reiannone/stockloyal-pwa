@@ -88,6 +88,10 @@ class AlpacaBrokerAPI {
         return $this->request('PATCH', $endpoint, $body);
     }
 
+    private function delete(string $endpoint): array {
+        return $this->request('DELETE', $endpoint);
+    }
+
     // ─── Account Management ─────────────────────────────────
 
     /**
@@ -233,17 +237,11 @@ class AlpacaBrokerAPI {
         if (!empty($kycData['country']))        $contact['country']        = $kycData['country'];
         if (!empty($contact)) $body['contact'] = $contact;
 
-        // ── Identity ──
+        // ── Identity (exclude immutable fields: date_of_birth, tax_id, country_of_tax_residence) ──
         $identity = [];
         if (!empty($kycData['first_name']))     $identity['given_name']    = $kycData['first_name'];
         if (!empty($kycData['middle_name']))    $identity['middle_name']   = $kycData['middle_name'];
         if (!empty($kycData['last_name']))      $identity['family_name']   = $kycData['last_name'];
-        if (!empty($kycData['date_of_birth']))  $identity['date_of_birth'] = $kycData['date_of_birth'];
-        if (!empty($kycData['tax_id'])) {
-            $identity['tax_id']      = $kycData['tax_id'];
-            $identity['tax_id_type'] = $kycData['tax_id_type'] ?? 'USA_SSN';
-        }
-        if (!empty($kycData['tax_country']))    $identity['country_of_tax_residence'] = $kycData['tax_country'];
         if (!empty($kycData['funding_source'])) $identity['funding_source'] = [$kycData['funding_source']];
         if (!empty($identity)) $body['identity'] = $identity;
 
@@ -298,10 +296,47 @@ class AlpacaBrokerAPI {
     }
 
     /**
+     * Cancel an open order.
+     */
+    public function cancelOrder(string $accountId, string $orderId): array {
+        return $this->delete(
+            '/v1/trading/accounts/' . urlencode($accountId) . '/orders/' . urlencode($orderId)
+        );
+    }
+
+    /**
      * Get positions for an account.
      */
     public function getPositions(string $accountId): array {
         return $this->get(
+            '/v1/trading/accounts/' . urlencode($accountId) . '/positions'
+        );
+    }
+
+    /**
+     * Get a single position by symbol.
+     */
+    public function getPosition(string $accountId, string $symbol): array {
+        return $this->get(
+            '/v1/trading/accounts/' . urlencode($accountId) . '/positions/' . urlencode($symbol)
+        );
+    }
+
+    /**
+     * Close (sell) an entire position by symbol.
+     * Alpaca handles fractional shares cleanly via DELETE.
+     */
+    public function closePosition(string $accountId, string $symbol): array {
+        return $this->delete(
+            '/v1/trading/accounts/' . urlencode($accountId) . '/positions/' . urlencode($symbol)
+        );
+    }
+
+    /**
+     * Close all positions for an account.
+     */
+    public function closeAllPositions(string $accountId): array {
+        return $this->delete(
             '/v1/trading/accounts/' . urlencode($accountId) . '/positions'
         );
     }
@@ -353,6 +388,64 @@ class AlpacaBrokerAPI {
      * Returns: { id, symbol, name, status, tradable, fractionable, ... }
      * Use to validate symbols before order submission.
      */
+    // ─── Documents ───────────────────────────────────────────
+
+    /**
+     * List documents for an account.
+     * @param string $accountId
+     * @param array  $params  Optional filters: type, start, end
+     *   type: trade_confirmation | account_statement | tax_1099_b | tax_1099_div | tax_w8 | tax_1042_s
+     *   start: YYYY-MM-DD  end: YYYY-MM-DD
+     */
+    public function getDocuments(string $accountId, array $params = []): array {
+        $query = http_build_query($params);
+        $endpoint = '/v1/accounts/' . urlencode($accountId) . '/documents';
+        if ($query) $endpoint .= '?' . $query;
+        return $this->get($endpoint);
+    }
+
+    /**
+     * Get a pre-signed download URL for a document (PDF).
+     * Alpaca returns a 301 redirect to the actual URL.
+     * We follow the redirect and return the final URL.
+     */
+    public function getDocumentDownloadUrl(string $accountId, string $documentId): array {
+        $url = rtrim($this->baseUrl, '/') . '/v1/accounts/' . urlencode($accountId)
+            . '/documents/' . urlencode($documentId) . '/download';
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Basic ' . base64_encode($this->apiKey . ':' . $this->apiSecret),
+            'Accept: application/pdf',
+        ]);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);  // Don't follow — capture redirect
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $redirectUrl = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        curl_close($ch);
+
+        // Parse Location header from response
+        if ($httpCode === 301 || $httpCode === 302) {
+            if (preg_match('/^Location:\s*(.+)$/mi', $response, $matches)) {
+                return ['success' => true, 'url' => trim($matches[1])];
+            }
+            if ($redirectUrl) {
+                return ['success' => true, 'url' => $redirectUrl];
+            }
+        }
+
+        return [
+            'success' => false,
+            'error'   => "Document download failed (HTTP $httpCode)",
+        ];
+    }
+
+    // ─── Assets ────────────────────────────────────────────
+
     public function getAsset(string $symbol): array {
         return $this->get('/v1/assets/' . urlencode($symbol));
     }

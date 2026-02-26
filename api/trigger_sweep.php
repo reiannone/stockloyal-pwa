@@ -56,7 +56,7 @@ try {
                     WHERE  pb.status = 'approved'
                       AND  NOT EXISTS (
                            SELECT 1 FROM orders o
-                           WHERE  LOWER(o.status) = 'pending'
+                           WHERE  LOWER(o.status) = 'funded'
                              AND  (
                                 o.batch_id = pb.batch_id
                                 OR (o.batch_id IS NULL AND o.basket_id LIKE CONCAT(pb.batch_id, '-%'))
@@ -154,7 +154,7 @@ function previewSweep(PDO $conn, ?string $merchantId = null): array
                    GROUP_CONCAT(DISTINCT o.symbol) AS symbols
             FROM   orders o
             WHERE  o.merchant_id = :merchant_id
-              AND  LOWER(o.status) IN ('pending','queued')
+              AND  LOWER(o.status) = 'funded'
             GROUP  BY o.broker
         ");
         $stmt->execute([':merchant_id' => $merchant['merchant_id']]);

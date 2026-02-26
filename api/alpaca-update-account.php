@@ -129,7 +129,10 @@ try {
 
     // ── Success — update broker_credentials status if returned ──
     $acctData      = $result['data'];
-    $accountStatus = $acctData['status'] ?? 'ACTIVE';
+    // Alpaca returns 'ACCOUNT_UPDATED' from PATCH — normalize to actual account status.
+    // A successful update means the account is still active.
+    $rawStatus     = $acctData['status'] ?? 'ACTIVE';
+    $accountStatus = ($rawStatus === 'ACCOUNT_UPDATED') ? 'ACTIVE' : $rawStatus;
 
     $updateCredStmt = $conn->prepare("
         UPDATE broker_credentials

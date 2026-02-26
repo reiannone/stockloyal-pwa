@@ -214,7 +214,7 @@ class SweepProcess
             LEFT JOIN broker_credentials bc_alpaca
                    ON bc_alpaca.member_id = o.member_id AND LOWER(bc_alpaca.broker) = 'alpaca'
                    AND COALESCE(bm.broker_type, 'webhook') = 'alpaca'
-            WHERE  LOWER(o.status) IN ('pending','queued')
+            WHERE  LOWER(o.status) = 'funded'
         ";
 
         if ($merchantId) {
@@ -781,7 +781,7 @@ class SweepProcess
                 UPDATE orders
                 SET    status = 'placed', placed_at = NOW()
                 WHERE  order_id = ?
-                  AND  LOWER(status) IN ('pending','queued')
+                  AND  LOWER(status) = 'funded'
             ");
             $stmt->execute([$oid]);
             $count += $stmt->rowCount();

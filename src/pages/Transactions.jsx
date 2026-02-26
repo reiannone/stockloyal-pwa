@@ -1,5 +1,5 @@
 // src/pages/Transactions.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { LineageLink } from "../components/LineagePopup";
@@ -31,6 +31,11 @@ export default function Transactions() {
   const [viewMode, setViewMode] = useState("baskets");
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
   const [expandedMonths, setExpandedMonths] = useState(new Set());
+
+  // ── Infinite scroll ──
+  const PAGE_SIZE = 10;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
   // Browser-detected fallback
   const detectedTz = useMemo(() => {
@@ -183,6 +188,31 @@ export default function Transactions() {
     });
   }, [filteredOrders]);
 
+  // Reset visible count when filter or view mode changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [filterField, filterValue, viewMode]);
+
+  // ── Visible slices for infinite scroll ──
+  const visibleBaskets = useMemo(() => basketRollup.slice(0, visibleCount), [basketRollup, visibleCount]);
+  const visibleOrders  = useMemo(() => filteredOrders.slice(0, visibleCount), [filteredOrders, visibleCount]);
+  const totalItems     = viewMode === "baskets" ? basketRollup.length : filteredOrders.length;
+  const shownItems     = viewMode === "baskets" ? visibleBaskets.length : visibleOrders.length;
+  const hasMore        = visibleCount < totalItems;
+
+  // ── IntersectionObserver for infinite scroll ──
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setVisibleCount((c) => c + PAGE_SIZE);
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, visibleCount]);
+
   // ── Group baskets by month ──
   const getMonthKey = (dateStr) => {
     if (!dateStr) return "Unknown";
@@ -223,14 +253,14 @@ export default function Transactions() {
 
   const monthlyBaskets = useMemo(() => {
     const groups = new Map();
-    for (const b of basketRollup) {
+    for (const b of visibleBaskets) {
       const key = getMonthKey(b.placed_at);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(b);
     }
     // Sort month keys descending (newest first)
     return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [basketRollup, memberTimezone, detectedTz]);
+  }, [visibleBaskets, memberTimezone, detectedTz]);
 
   // Initialize expanded months — current month open by default
   useEffect(() => {
@@ -306,7 +336,9 @@ export default function Transactions() {
   };
 
   return (
-    <div className="transactions-container">
+    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden" }}>
+      {/* ── Scrollable content area ── */}
+      <div className="transactions-container" style={{ flex: 1, overflowY: "auto", paddingBottom: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         My Baskets and Buy Order Tracker
       </h2>
@@ -394,7 +426,7 @@ export default function Transactions() {
               )}
 
               <span style={{ fontSize: "0.85rem", color: "#6b7280", marginLeft: "auto", whiteSpace: "nowrap" }}>
-                Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> orders
+                Showing <strong>{shownItems}</strong> of <strong>{totalItems}</strong> {viewMode === "baskets" ? "baskets" : "orders"}
               </span>
             </div>
 
@@ -653,7 +685,7 @@ export default function Transactions() {
             </thead>
 
             <tbody>
-              {filteredOrders.map((order, idx) => {
+              {visibleOrders.map((order, idx) => {
                 // Calculate price per share
                 const shares = parseFloat(order.shares) || 0;
                 const amount = parseFloat(order.amount) || 0;
@@ -694,6 +726,18 @@ export default function Transactions() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Infinite scroll sentinel */}
+      {hasMore && (
+        <div ref={sentinelRef} style={{ textAlign: "center", padding: "16px 0", color: "#9ca3af", fontSize: "0.85rem" }}>
+          Loading more…
+        </div>
+      )}
+      {!hasMore && totalItems > PAGE_SIZE && (
+        <div style={{ textAlign: "center", padding: "12px 0", color: "#9ca3af", fontSize: "0.8rem" }}>
+          All {totalItems} {viewMode === "baskets" ? "baskets" : "orders"} loaded
         </div>
       )}
 
@@ -847,15 +891,16 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* --- Centered Action Buttons (Sticky) --- */}
+      {/* --- Action Buttons (always visible at bottom) --- */}
+      </div>{/* ── end scrollable content ── */}
+
       <div
         className="transactions-actions"
         style={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 10,
-          background: "linear-gradient(transparent, #f8fafc 12px)",
-          paddingTop: 16,
+          flexShrink: 0,
+          background: "#f8fafc",
+          borderTop: "1px solid #e2e8f0",
+          paddingTop: 12,
           paddingBottom: 12,
           display: "flex",
           flexDirection: "column",
@@ -863,7 +908,6 @@ export default function Transactions() {
           gap: "10px",
         }}
       >
-        {/* Row with the two secondary buttons: Portfolio (left) + Ledger (right) */}
         <div
           style={{
             display: "flex",
@@ -892,7 +936,6 @@ export default function Transactions() {
           </button>
         </div>
 
-        {/* Primary button stays centered below */}
         <button
           type="button"
           className="btn-primary"
