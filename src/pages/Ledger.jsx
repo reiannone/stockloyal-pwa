@@ -453,7 +453,7 @@ export default function Ledger() {
                       className="basket-table"
                       style={{
                         width: "100%",
-                        minWidth: "860px",
+                        minWidth: "760px",
                         borderCollapse: "collapse",
                       }}
                     >
@@ -466,7 +466,6 @@ export default function Ledger() {
                           <th>Status</th>
                           <th style={{ textAlign: "right" }}>Points</th>
                           <th style={{ textAlign: "right" }}>Cash</th>
-                          <th>Broker</th>
                           <th>Order ID</th>
                         </tr>
                       </thead>
@@ -499,7 +498,6 @@ export default function Ledger() {
                             <td style={{ textAlign: "right" }}>
                               {entry.amount_cash != null ? formatDollars(entry.amount_cash) : "-"}
                             </td>
-                            <td>{entry.broker || "-"}</td>
                             <td>{entry.order_id ?? "-"}</td>
                           </tr>
                         ))}
