@@ -165,6 +165,7 @@ export default function Portfolio() {
     if (!ts) return "";
     return ts.toLocaleString("en-US", {
       month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+      timeZoneName: "short",
     });
   };
 
@@ -309,10 +310,6 @@ export default function Portfolio() {
                 }}
               >
                 <div>
-                  <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Equity</div>
-                  <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(accountInfo.equity)}</div>
-                </div>
-                <div>
                   <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Positions Value</div>
                   <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(accountInfo.portfolio_value)}</div>
                 </div>
@@ -321,20 +318,10 @@ export default function Portfolio() {
                   <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(accountInfo.cash)}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Buying Power</div>
-                  <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(accountInfo.buying_power)}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Today's P&L</div>
+                  <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Today's Gain/Loss</div>
                   <div style={{ fontSize: "1.15rem", fontWeight: 600 }}>{fmtPL(accountInfo.day_pl)}</div>
                   <div style={{ fontSize: "0.85rem" }}>{fmtPct(accountInfo.day_pl_pct)}</div>
                 </div>
-                {totalUnrealizedPL !== 0 && (
-                  <div>
-                    <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Unrealized P&L</div>
-                    <div style={{ fontSize: "1.15rem", fontWeight: 600 }}>{fmtPL(totalUnrealizedPL)}</div>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -407,11 +394,13 @@ export default function Portfolio() {
                   <tr>
                     <th>Symbol</th>
                     <th style={{ textAlign: "right" }}>Shares</th>
-                    <th style={{ textAlign: "right" }}>Avg Cost</th>
-                    <th style={{ textAlign: "right" }}>Price</th>
+                    <th style={{ textAlign: "right" }}>
+                      Avg Cost
+                      <br /><small style={{ fontWeight: 400, color: "#666" }}>/ Price</small>
+                    </th>
                     <th style={{ textAlign: "right" }}>Market Value</th>
                     <th style={{ textAlign: "right" }}>
-                      P&L
+                      Gain/Loss
                       <br /><small style={{ fontWeight: 400, color: "#666" }}>(Total / Today)</small>
                     </th>
                     {isAlpaca && <th style={{ textAlign: "center" }}>Trade</th>}
@@ -437,16 +426,16 @@ export default function Portfolio() {
                         {o.total_shares?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
                       </td>
 
-                      {/* Avg Entry Price */}
-                      <td style={{ textAlign: "right" }}>{o.avg_entry_price ? fmt(o.avg_entry_price) : "—"}</td>
-
-                      {/* Current Price */}
-                      <td style={{ textAlign: "right" }}>{fmt(o.current_price)}</td>
+                      {/* Avg Cost / Price (stacked) */}
+                      <td style={{ textAlign: "right" }}>
+                        <div>{o.avg_entry_price ? fmt(o.avg_entry_price) : "—"}</div>
+                        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: 2 }}>{fmt(o.current_price)}</div>
+                      </td>
 
                       {/* Market Value */}
                       <td style={{ textAlign: "right" }}>{fmt(o.current_value)}</td>
 
-                      {/* P&L column */}
+                      {/* Gain/Loss column */}
                       <td style={{ textAlign: "right" }}>
                         {o.unrealized_pl !== undefined && o.unrealized_pl !== null ? (
                           <div>
@@ -497,7 +486,6 @@ export default function Portfolio() {
                   <tfoot>
                     <tr style={{ fontWeight: 700, borderTop: "2px solid #d1d5db" }}>
                       <td>TOTAL</td>
-                      <td></td>
                       <td></td>
                       <td></td>
                       <td style={{ textAlign: "right" }}>{fmt(portfolioValue)}</td>

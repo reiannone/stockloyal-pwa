@@ -959,65 +959,6 @@ export default function Wallet() {
           </div>
         </div>
 
-        {/* Alpaca detail row: Cash | Positions | Buying Power | Day P&L */}
-        {alpacaAccount && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))",
-              gap: "10px",
-              marginTop: 14,
-              paddingTop: 12,
-              borderTop: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
-                Cash
-              </div>
-              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
-                {formatDollars(alpacaAccount.cash)}
-              </div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
-                Positions
-              </div>
-              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
-                {formatDollars(alpacaAccount.portfolio_value)}
-              </div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
-                Buying Power
-              </div>
-              <div style={{ fontSize: "1rem", fontWeight: 700, color: "#0c4a6e" }}>
-                {formatDollars(alpacaAccount.buying_power)}
-              </div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.3px" }}>
-                Today's P&L
-              </div>
-              <div style={{
-                fontSize: "1rem",
-                fontWeight: 700,
-                color: (alpacaAccount.day_pl || 0) >= 0 ? "#22c55e" : "#ef4444"
-              }}>
-                {(alpacaAccount.day_pl || 0) >= 0 ? "+" : ""}
-                {formatDollars(alpacaAccount.day_pl || 0)}
-              </div>
-              <div style={{
-                fontSize: "0.75rem",
-                fontWeight: 500,
-                color: (alpacaAccount.day_pl_pct || 0) >= 0 ? "#22c55e" : "#ef4444"
-              }}>
-                {(alpacaAccount.day_pl_pct || 0) >= 0 ? "+" : ""}
-                {(alpacaAccount.day_pl_pct || 0).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* --- Quick Links Tile Grid --- */}

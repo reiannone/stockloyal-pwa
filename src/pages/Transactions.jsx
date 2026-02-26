@@ -1,5 +1,6 @@
 // src/pages/Transactions.jsx
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { LineageLink } from "../components/LineagePopup";
@@ -336,9 +337,7 @@ export default function Transactions() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", overflow: "hidden" }}>
-      {/* ── Scrollable content area ── */}
-      <div className="transactions-container" style={{ flex: 1, overflowY: "auto", paddingBottom: 16 }}>
+    <div className="transactions-container" style={{ paddingBottom: 160 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         My Baskets and Buy Order Tracker
       </h2>
@@ -891,60 +890,74 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* --- Action Buttons (always visible at bottom) --- */}
-      </div>{/* ── end scrollable content ── */}
-
-      <div
-        className="transactions-actions"
-        style={{
-          flexShrink: 0,
-          background: "#f8fafc",
-          borderTop: "1px solid #e2e8f0",
-          paddingTop: 12,
-          paddingBottom: 12,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "10px",
-        }}
-      >
+      {/* --- Fixed Action Buttons (portal to body) --- */}
+      {createPortal(
         <div
           style={{
+            position: "fixed",
+            bottom: "var(--footer-height, 56px)",
+            left: 0,
+            right: 0,
+            zIndex: 9999,
             display: "flex",
-            flexDirection: "row",
             justifyContent: "center",
-            gap: "10px",
-            width: "90%",
-            maxWidth: "480px",
           }}
         >
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => navigate("/portfolio")}
-            style={{ flex: 1 }}
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "var(--app-max-width, 600px)",
+              background: "rgba(248, 250, 252, 0.7)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+              paddingBottom: 12,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "10px",
+            }}
           >
-            View StockLoyal Portfolio
-          </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => navigate("/ledger")}
-            style={{ flex: 1 }}
-          >
-            View Transactions Ledger
-          </button>
-        </div>
-
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={() => navigate("/wallet")}
-          style={{ width: "90%", maxWidth: "320px" }}
-        >
-          Back to Wallet
-        </button>
-      </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: "10px",
+                width: "90%",
+                maxWidth: "480px",
+              }}
+            >
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigate("/portfolio")}
+                style={{ flex: 1 }}
+              >
+                View StockLoyal Portfolio
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigate("/ledger")}
+                style={{ flex: 1 }}
+              >
+                View Transactions Ledger
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigate("/wallet")}
+              style={{ width: "90%", maxWidth: "320px" }}
+            >
+              Back to Wallet
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
