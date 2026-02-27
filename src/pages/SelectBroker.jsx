@@ -291,14 +291,14 @@ export default function SelectBroker() {
       // ── Step 1: Validate credentials / check account ──
       const validationRes = await apiPost("validate-broker-credentials.php", payload);
 
-      // ── Handle Alpaca "no account found" → redirect to onboard ──
+      // ── Handle Alpaca "no account found" → redirect to member onboard ──
       if (isAlpacaBroker && validationRes?.no_account) {
         setSubmitting(false);
         // Store context for onboarding
         localStorage.setItem("broker", selected);
         localStorage.setItem("broker_url", broker?.url || "");
         localStorage.setItem("onboard_email", email);
-        navigate("/onboard", {
+        navigate("/member-onboard", {
           state: {
             broker: selected,
             email: email,
@@ -408,12 +408,12 @@ export default function SelectBroker() {
   const handleOpenBrokerAccount = () => {
     const b = getDefaultBrokerForOpenAccount();
 
-    // ✅ If Alpaca is selected, go to onboard instead of external redirect
+    // ✅ If Alpaca is selected, go to member-board instead of external redirect
     if (b?.brokerType === "alpaca") {
       localStorage.setItem("broker", b.id);
       localStorage.setItem("broker_url", b?.url || "");
       localStorage.setItem("onboard_email", email);
-      navigate("/onboard", {
+      navigate("/member-onboard", {
         state: { broker: b.id, email, fromSelectBroker: true },
       });
       return;
