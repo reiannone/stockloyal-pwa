@@ -138,6 +138,7 @@ export default function Header() {
     { to: "/portfolio", label: "StockLoyal Portfolio" },
     { to: "/transactions", label: "Order History" },
     { to: "/ledger", label: "Transaction Ledger" },
+    { to: "/document-center", label: "Document Center" },
     { to: "/promotions", label: "Promotions" },
     { to: "/social", label: "Community Feed" },
     { to: "/terms", label: "Terms & Conditions" },
