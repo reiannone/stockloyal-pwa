@@ -110,15 +110,6 @@ export default function StockLoyalLanding() {
       onAction: refreshPoints,
     },
     {
-      to: "/member-onboard",
-      label: "Member Profile",
-      subtitle: profileComplete ? "Profile complete" : "Complete your profile",
-      icon: <UserPlus size={20} />,
-      color: "#8b5cf6",
-      step: 2,
-      complete: profileComplete,
-    },
-    {
       to: "/select-broker",
       label: "Select Broker",
       subtitle: brokerComplete
@@ -128,6 +119,15 @@ export default function StockLoyalLanding() {
       color: "#3b82f6",
       step: 3,
       complete: brokerComplete,
+    },
+    {
+      to: "/member-onboard",
+      label: "Member Profile",
+      subtitle: profileComplete ? "Profile complete" : "Complete your profile",
+      icon: <UserPlus size={20} />,
+      color: "#8b5cf6",
+      step: 2,
+      complete: profileComplete,
     },
     {
       to: "/election",

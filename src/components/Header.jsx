@@ -130,8 +130,8 @@ export default function Header() {
 
   const allPages = [
     { to: "/login", label: "1. Login" },
-    { to: "/member-onboard", label: "2. Member Profile" },
     { to: "/select-broker", label: "3. Select Broker" },
+    { to: "/member-onboard", label: "2. Member Profile" },
     { to: "/election", label: "4. Investment Election" },
     { to: "/wallet", label: "5. Wallet" },
     { to: "/stock-picker", label: "6. Stock Picker" },
