@@ -5,7 +5,7 @@ import { apiGet, apiPost } from "../api.js";
 import {
   CheckCircle, AlertCircle, Loader2, CreditCard, Building2, Store,
   XCircle, History, RotateCcw, RefreshCw, ChevronUp, ChevronDown,
-  ShoppingBasket, FileSpreadsheet, Download, Clock, Info,
+  ShoppingBasket, FileSpreadsheet, Download, Clock, Info, Zap,
 } from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
@@ -61,6 +61,9 @@ export default function PaymentsProcessing() {
 
   // Pipeline queue counts
   const [queueCounts, setQueueCounts] = useState(null);
+
+  // ── Merchant funding methods (plaid vs manual_ach) ──
+  const [fundingMethods, setFundingMethods] = useState({}); // { merchant_id: 'plaid' | 'manual_ach' }
   useEffect(() => {
     (async () => {
       try {
@@ -82,6 +85,12 @@ export default function PaymentsProcessing() {
         if (!mounted) return;
         if (res?.success && Array.isArray(res.merchants)) setMerchants(res.merchants);
         else setMerchants([]);
+        // Build funding method lookup
+        const fm = {};
+        for (const m of res?.merchants || []) {
+          fm[m.merchant_id] = m.funding_method || "manual_ach";
+        }
+        setFundingMethods(fm);
       } catch (e) {
         if (mounted) setMerchants([]);
       } finally {
@@ -234,21 +243,46 @@ export default function PaymentsProcessing() {
 
   // ── Process functions ──
   const processBroker = async (mid, broker) => {
+    const method = fundingMethods[mid] || "manual_ach";
+
     try {
-      const res = await apiPost("export-payments-file.php", { merchant_id: mid, broker });
-      return {
-        merchant_id: mid, broker,
-        success: res?.success || false,
-        batch_id: res?.batch_id || null,
-        order_count: res?.order_count || 0,
-        total_amount: res?.total_amount || 0,
-        error: res?.error || null,
-        xlsx: res?.xlsx || null,
-        detail_csv: res?.detail_csv || null,
-        ach_csv: res?.ach_csv || null,
-      };
+      if (method === "plaid") {
+        // ── Plaid Transfer: ACH debit from merchant's linked bank ──
+        const res = await apiPost("plaid-initiate-funding.php", {
+          merchant_id: mid, broker,
+        });
+        return {
+          merchant_id: mid, broker, funding_method: "plaid",
+          success: res?.success || false,
+          transfer_id: res?.transfer_id || null,
+          authorization_id: res?.authorization_id || null,
+          batch_id: res?.batch_id || null,
+          order_count: res?.order_count || 0,
+          total_amount: res?.amount || 0,
+          status: res?.status || "pending",
+          network: res?.network || "ach",
+          expected_settlement: res?.expected_settlement || null,
+          institution: res?.institution || null,
+          account_mask: res?.account_mask || null,
+          error: res?.error || null,
+        };
+      } else {
+        // ── Manual ACH: Generate XLSX + CSV export files ──
+        const res = await apiPost("export-payments-file.php", { merchant_id: mid, broker });
+        return {
+          merchant_id: mid, broker, funding_method: "manual_ach",
+          success: res?.success || false,
+          batch_id: res?.batch_id || null,
+          order_count: res?.order_count || 0,
+          total_amount: res?.total_amount || 0,
+          error: res?.error || null,
+          xlsx: res?.xlsx || null,
+          detail_csv: res?.detail_csv || null,
+          ach_csv: res?.ach_csv || null,
+        };
+      }
     } catch (err) {
-      return { merchant_id: mid, broker, success: false, error: err.message };
+      return { merchant_id: mid, broker, funding_method: method, success: false, error: err.message };
     }
   };
 
@@ -332,12 +366,17 @@ export default function PaymentsProcessing() {
 
   // ── Confirm handlers ──
   const confirmProcessAll = () => {
+    const plaidCount = Object.values(fundingMethods).filter(m => m === "plaid").length;
+    const manualCount = Object.values(fundingMethods).filter(m => m !== "plaid").length;
     setModal({
       show: true, title: "Fund IB Sweep Account",
       message: `Process IB sweep funding for ${topTotals.merchants} merchant(s), ${topTotals.brokers} broker(s), funding ${topTotals.orders} approved orders totaling ${fmtMoney(topTotals.totalDue)}.`,
       details: (
         <div style={{ fontSize: "0.82rem", color: "#92400e", background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>
-          <strong>This will:</strong> Generate XLSX + CSV files, mark orders as funded, record merchant ACH transfer to StockLoyal IB sweep account.
+          <strong>This will:</strong>
+          {plaidCount > 0 && <div style={{ marginTop: 4 }}>⚡ Plaid merchants: Initiate ACH debit from linked bank accounts</div>}
+          {manualCount > 0 && <div style={{ marginTop: 4 }}>📄 Manual merchants: Generate XLSX + CSV export files</div>}
+          <div style={{ marginTop: 4 }}>Mark orders as funded, record transfers to StockLoyal IB sweep account.</div>
         </div>
       ),
       icon: <CreditCard size={20} color="#3b82f6" />,
@@ -347,20 +386,22 @@ export default function PaymentsProcessing() {
   };
 
   const confirmProcessMerchant = (mid, mName, count, amount) => {
+    const isPlaid = fundingMethods[mid] === "plaid";
     setModal({
-      show: true, title: "Fund Merchant to IB Sweep",
-      message: `Process IB sweep funding for ${mName || mid}: ${count} approved orders totaling ${fmtMoney(amount)}.`,
-      icon: <Store size={20} color="#8b5cf6" />,
+      show: true, title: isPlaid ? "Plaid ACH Debit" : "Fund Merchant to IB Sweep",
+      message: `Process IB sweep funding for ${mName || mid}: ${count} approved orders totaling ${fmtMoney(amount)}.${isPlaid ? " Funds will be debited from the merchant's linked bank account via Plaid." : ""}`,
+      icon: isPlaid ? <Zap size={20} color="#8b5cf6" /> : <Store size={20} color="#8b5cf6" />,
       confirmText: "Confirm & Process", confirmColor: "#10b981",
       data: { type: "merchant", merchantId: mid },
     });
   };
 
   const confirmProcessBroker = (mid, broker, count, amount) => {
+    const isPlaid = fundingMethods[mid] === "plaid";
     setModal({
-      show: true, title: "Fund Broker to IB Sweep",
-      message: `Process IB sweep funding for broker "${broker}": ${count} approved orders totaling ${fmtMoney(amount)}.`,
-      icon: <Building2 size={20} color="#f59e0b" />,
+      show: true, title: isPlaid ? "Plaid ACH Debit — Broker" : "Fund Broker to IB Sweep",
+      message: `Process IB sweep funding for broker "${broker}": ${count} approved orders totaling ${fmtMoney(amount)}.${isPlaid ? " ACH debit via Plaid Transfer." : ""}`,
+      icon: isPlaid ? <Zap size={20} color="#f59e0b" /> : <Building2 size={20} color="#f59e0b" />,
       confirmText: "Confirm & Process", confirmColor: "#f59e0b",
       data: { type: "broker", merchantId: mid, broker },
     });
@@ -409,8 +450,8 @@ export default function PaymentsProcessing() {
       </h1>
       <p className="page-deck">
         {merchantId
-          ? <>ACH funding for merchant <strong>{merchantName || merchantId}</strong>. Process approved orders, transfer funds to StockLoyal IB sweep account.</>
-          : <>Summary of <strong>approved</strong> orders awaiting merchant ACH funding to StockLoyal IB sweep account.</>
+          ? <>Funding for merchant <strong>{merchantName || merchantId}</strong>. Process approved orders, transfer funds to StockLoyal IB sweep account.</>
+          : <>Summary of <strong>approved</strong> orders awaiting merchant funding to StockLoyal IB sweep account. Plaid-linked merchants fund automatically via ACH debit.</>
         }
       </p>
 
@@ -554,6 +595,7 @@ export default function PaymentsProcessing() {
             <PaymentsHierarchy
               orders={orders}
               brokerDetailsMap={merchantId ? brokerDetailsMap : {}}
+              fundingMethods={fundingMethods}
               processing={processing}
               onProcessMerchant={confirmProcessMerchant}
               onProcessBroker={confirmProcessBroker}
@@ -604,9 +646,9 @@ export default function PaymentsProcessing() {
         marginTop: "1.5rem", padding: "1rem", background: "#eff6ff",
         border: "1px solid #93c5fd", borderRadius: 8, fontSize: "0.8rem", color: "#1e40af",
       }}>
-        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> IB Sweep Funding:</strong> Processes approved orders to collect ACH funding from merchants
-        into the StockLoyal IB sweep account. Each batch generates an XLSX workbook with ACH Summary + Order Detail sheets, plus individual CSV files.
-        Orders are marked as <code>settled</code> and ready for journal funding to member Alpaca accounts (Stage 3).
+        <strong><Info size={14} style={{ verticalAlign: "middle" }} /> IB Sweep Funding:</strong> Processes approved orders to collect funding from merchants
+        into the StockLoyal IB sweep account. <strong>Plaid merchants</strong> are debited automatically via ACH — no CSV needed.
+        <strong> Manual ACH merchants</strong> receive XLSX + CSV export files. Orders are marked as <code>funded</code> and ready for journal funding to member accounts (Stage 3).
       </div>
     </div>
   );
@@ -617,7 +659,7 @@ export default function PaymentsProcessing() {
 // PaymentsHierarchy — Merchant → Broker → Basket → Orders tree
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProcessMerchant, onProcessBroker, onNavigateMerchant }) {
+function PaymentsHierarchy({ orders, brokerDetailsMap = {}, fundingMethods = {}, processing, onProcessMerchant, onProcessBroker, onNavigateMerchant }) {
   const [expandedMerchants, setExpandedMerchants] = useState(new Set());
   const [expandedBrokers, setExpandedBrokers] = useState(new Set());
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
@@ -709,6 +751,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProces
             >
               <Store size={14} color="#8b5cf6" />
               <span style={{ color: "#1e293b" }}>{m.merchant_name}</span>
+              {fundingMethods[mId] === "plaid" && badge("⚡ Plaid", "#ede9fe", "#7c3aed")}
               {badge(`${Object.keys(m.brokers).length} broker(s)`, "#e0e7ff", "#3730a3")}
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                 {pills(m)}
@@ -1042,26 +1085,54 @@ function ResultsBanner({ results, onDismiss }) {
                 <span style={{ fontSize: "0.72rem", color: "#64748b" }}>
                   {r.order_count} orders · {fmtMoney(r.total_amount)}
                 </span>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                  {r.xlsx?.url && (
-                    <button onClick={() => handleDownload(r.xlsx)}
-                      style={{ ...dlBtnStyle, background: "#059669" }}>
-                      <FileSpreadsheet size={12} style={{ verticalAlign: "middle" }} /> XLSX
-                    </button>
-                  )}
-                  {r.detail_csv?.url && (
-                    <button onClick={() => handleDownload(r.detail_csv)}
-                      style={{ ...dlBtnStyle, background: "#64748b" }}>
-                      <Download size={12} style={{ verticalAlign: "middle" }} /> Detail
-                    </button>
-                  )}
-                  {r.ach_csv?.url && (
-                    <button onClick={() => handleDownload(r.ach_csv)}
-                      style={{ ...dlBtnStyle, background: "#64748b" }}>
-                      <Download size={12} style={{ verticalAlign: "middle" }} /> ACH
-                    </button>
-                  )}
-                </div>
+
+                {/* Plaid result */}
+                {r.funding_method === "plaid" && r.transfer_id && (
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#7c3aed" }}>
+                      ⚡ Plaid
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#475569" }}>
+                      ID: <code style={{ fontSize: "0.68rem" }}>{r.transfer_id.slice(0, 16)}…</code>
+                    </span>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 600, padding: "2px 8px", borderRadius: 4,
+                      background: r.status === "settled" ? "#dcfce7" : r.status === "posted" ? "#dbeafe" : "#fef3c7",
+                      color: r.status === "settled" ? "#166534" : r.status === "posted" ? "#1d4ed8" : "#92400e",
+                    }}>
+                      {r.status || "pending"}
+                    </span>
+                    {r.expected_settlement && (
+                      <span style={{ fontSize: "0.68rem", color: "#64748b" }}>
+                        <Clock size={10} style={{ verticalAlign: "middle" }} /> Est. {r.expected_settlement}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Manual ACH result — download buttons */}
+                {r.funding_method !== "plaid" && (
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    {r.xlsx?.url && (
+                      <button onClick={() => handleDownload(r.xlsx)}
+                        style={{ ...dlBtnStyle, background: "#059669" }}>
+                        <FileSpreadsheet size={12} style={{ verticalAlign: "middle" }} /> XLSX
+                      </button>
+                    )}
+                    {r.detail_csv?.url && (
+                      <button onClick={() => handleDownload(r.detail_csv)}
+                        style={{ ...dlBtnStyle, background: "#64748b" }}>
+                        <Download size={12} style={{ verticalAlign: "middle" }} /> Detail
+                      </button>
+                    )}
+                    {r.ach_csv?.url && (
+                      <button onClick={() => handleDownload(r.ach_csv)}
+                        style={{ ...dlBtnStyle, background: "#64748b" }}>
+                        <Download size={12} style={{ verticalAlign: "middle" }} /> ACH
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
 

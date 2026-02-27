@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { apiGet, apiPost } from "../api.js";
 import ConfirmModal from "../components/ConfirmModal";
+import MerchantBankLink from "../components/MerchantBankLink";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
 import ClassicEditor from "@ckeditor/ckeditor5-build-classic";
 import {
@@ -1050,6 +1051,17 @@ export default function Admin() {
                   Save Broker Assignments
                 </button>
               </div>
+            </div>
+
+            {/* ✅ Plaid Bank Connection */}
+            <div style={{ gridColumn: '1 / -1', marginTop: '1.5rem' }}>
+              <MerchantBankLink
+                merchantId={selected?.merchant_id}
+                onConnected={(result) => {
+                  console.log("Bank linked!", result);
+                  setSelected(prev => ({ ...prev, funding_method: 'plaid' }));
+                }}
+              />
             </div>
 
             {/* ✅ Tier Management Section */}

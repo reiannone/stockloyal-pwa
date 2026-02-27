@@ -54,7 +54,9 @@ try {
             tier5_conversion_rate,
             tier6_name,
             tier6_min_points,
-            tier6_conversion_rate
+            tier6_conversion_rate,
+            funding_method,
+            plaid_onboarded_at
         FROM `stockloyal`.`merchant`
         ORDER BY created_at DESC
     ";
