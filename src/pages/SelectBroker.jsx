@@ -294,10 +294,13 @@ export default function SelectBroker() {
       // ── Handle Alpaca "no account found" → redirect to member onboard ──
       if (isAlpacaBroker && validationRes?.no_account) {
         setSubmitting(false);
-        // Store context for onboarding
+        // Store context for onboarding — clear any stale broker account so
+        // MemberOnboard takes the CREATE path, not UPDATE
         localStorage.setItem("broker", selected);
         localStorage.setItem("broker_url", broker?.url || "");
         localStorage.setItem("onboard_email", email);
+        localStorage.removeItem("broker_account_id");
+        localStorage.removeItem("broker_account_number");
         navigate("/member-onboard", {
           state: {
             broker: selected,
@@ -413,6 +416,8 @@ export default function SelectBroker() {
       localStorage.setItem("broker", b.id);
       localStorage.setItem("broker_url", b?.url || "");
       localStorage.setItem("onboard_email", email);
+      localStorage.removeItem("broker_account_id");
+      localStorage.removeItem("broker_account_number");
       navigate("/member-onboard", {
         state: { broker: b.id, email, fromSelectBroker: true },
       });

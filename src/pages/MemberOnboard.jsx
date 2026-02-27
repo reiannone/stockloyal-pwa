@@ -217,7 +217,13 @@ export default function MemberOnboard() {
       localStorage.setItem("memberId", sid);
       window.dispatchEvent(new Event("member-updated"));
     }
-  }, [location.state?.memberId]);
+    // When arriving from SelectBroker to create a NEW brokerage account,
+    // clear any stale broker_account_id so handleSubmit takes the CREATE path.
+    if (location.state?.fromSelectBroker) {
+      localStorage.removeItem("broker_account_id");
+      localStorage.removeItem("broker_account_number");
+    }
+  }, [location.state?.memberId, location.state?.fromSelectBroker]);
 
   // ── Timezone ──
   const localTZ = useMemo(() => {

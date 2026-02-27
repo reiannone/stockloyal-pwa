@@ -292,6 +292,11 @@ export default function Login() {
       return;
     }
 
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
     try {
       const data = await apiPost("reset-password.php", {
         email: resetEmail.trim().toLowerCase(),
@@ -411,6 +416,11 @@ export default function Login() {
       return;
     }
 
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
     const u = normUsername(uRaw);
     const em = eRaw.toLowerCase();
 
@@ -441,7 +451,7 @@ export default function Login() {
       const effectiveMerchantId = data.merchant_id ?? merchantId;
       await hydrateMerchant(effectiveMerchantId);
 
-      navigate("/member-onboard", {
+      navigate("/select-broker", {
         state: { memberId: data.member_id, memberEmail: data.member_email },
       });
     } catch (err) {
