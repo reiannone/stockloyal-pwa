@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
-import { LineageLink } from "../components/LineagePopup";
+
 
 export default function Transactions() {
   const navigate = useNavigate();
@@ -555,7 +555,7 @@ export default function Transactions() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "#111827", fontFamily: "monospace" }}>
-                        <LineageLink id={b.basket_id} type="basket" memberId={memberId}>{b.basket_id}</LineageLink>
+                        {b.basket_id}
                       </span>
                       <span style={{
                         fontSize: "0.75rem",
@@ -754,10 +754,23 @@ export default function Transactions() {
               </div>
             </div>
 
-            <div className="stocklist-sheet-content">
+            <div className="stocklist-sheet-content" style={{ paddingBottom: 80 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {/* ORDER SECTION */}
                 <Section title="Order">
+                  <DetailField label="Order ID">
+                    {selectedTx.order_id
+                      ? selectedTx.order_id
+                      : "-"}
+                  </DetailField>
+                  <DetailField label="Basket ID">
+                    {selectedTx.basket_id
+                      ? selectedTx.basket_id
+                      : "-"}
+                  </DetailField>
+                  <DetailField label="Member ID">{selectedTx.member_id ?? "-"}</DetailField>
+                  <DetailField label="Merchant ID">{selectedTx.merchant_id ?? "-"}</DetailField>
+
                   <div
                     style={{
                       display: "grid",
@@ -765,19 +778,6 @@ export default function Transactions() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Order ID">
-                      {selectedTx.order_id
-                        ? <LineageLink id={String(selectedTx.order_id)} type="order" memberId={memberId}>{selectedTx.order_id}</LineageLink>
-                        : "-"}
-                    </DetailField>
-                    <DetailField label="Basket ID">
-                      {selectedTx.basket_id
-                        ? <LineageLink id={selectedTx.basket_id} type="basket" memberId={memberId}>{selectedTx.basket_id}</LineageLink>
-                        : "-"}
-                    </DetailField>
-                    <DetailField label="Member ID">{selectedTx.member_id ?? "-"}</DetailField>
-                    <DetailField label="Merchant ID">{selectedTx.merchant_id ?? "-"}</DetailField>
-
                     <DetailField label="Symbol">{selectedTx.symbol ?? "-"}</DetailField>
                     <DetailField label="Order Type">
                       {(selectedTx.order_type || "-").toUpperCase()}
@@ -843,26 +843,18 @@ export default function Transactions() {
                   </div>
                 </Section>
 
-                {/* PAYMENT SECTION */}
-                <Section title="Payment / Settlement">
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <DetailField label="Paid?">
-                      <span style={getPaidPillStyle(selectedTx.paid_flag)}>
-                        {selectedTx.paid_flag ? "Yes" : "No"}
-                      </span>
-                    </DetailField>
-                    <DetailField label="Paid Batch ID">
-                      {selectedTx.paid_batch_id ?? "-"}
-                    </DetailField>
-                  </div>
+                {/* FUNDING SECTION */}
+                <Section title="Funding / Settlement">
+                  <DetailField label="Funded Batch ID">
+                    {selectedTx.paid_batch_id ?? "-"}
+                  </DetailField>
+                  <DetailField label="Funded?">
+                    <span style={getPaidPillStyle(selectedTx.paid_flag)}>
+                      {selectedTx.paid_flag ? "Yes" : "No"}
+                    </span>
+                  </DetailField>
 
-                  <DetailField label="Paid At">
+                  <DetailField label="Funded At">
                     {selectedTx.paid_at ? toLocalZonedString(selectedTx.paid_at) : "-"}
                   </DetailField>
                 </Section>
@@ -898,7 +890,7 @@ export default function Transactions() {
             bottom: "var(--footer-height, 56px)",
             left: 0,
             right: 0,
-            zIndex: 9999,
+            zIndex: 1000,
             display: "flex",
             justifyContent: "center",
           }}

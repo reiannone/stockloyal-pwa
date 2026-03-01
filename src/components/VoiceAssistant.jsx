@@ -435,65 +435,87 @@ export default function VoiceAssistant() {
     <>
       <style>{pulseKeyframes}</style>
 
-      {/* ── Floating Mic Button ── */}
-      {!isOpen && (
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open voice assistant"
-          style={{
-            position: "fixed",
-            bottom: "calc(var(--footer-height, 60px) + 16px)",
-            right: 16,
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
-            color: "#fff",
-            border: "none",
-            boxShadow: "0 4px 20px rgba(37,99,235,0.35), 0 2px 8px rgba(0,0,0,0.12)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 8000,
-            transition: "transform 0.2s, box-shadow 0.2s",
-            animation: "va-float 3s ease-in-out infinite",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.08)";
-            e.currentTarget.style.boxShadow = "0 6px 24px rgba(37,99,235,0.45), 0 3px 10px rgba(0,0,0,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-            e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,0.35), 0 2px 8px rgba(0,0,0,0.12)";
-          }}
-        >
-          <Sparkles size={24} />
-        </button>
-      )}
-
-      {/* ── Panel ── */}
-      {isOpen && (
+      {/* ── Fixed container constrained to app max-width ── */}
+      <div
+        style={{
+          position: "fixed",
+          bottom: "var(--footer-height, 56px)",
+          left: 0,
+          right: 0,
+          top: 0,
+          zIndex: 8000,
+          display: "flex",
+          justifyContent: "center",
+          pointerEvents: "none",
+        }}
+      >
         <div
-          ref={panelRef}
           style={{
-            position: "fixed",
-            bottom: "calc(var(--footer-height, 60px) + 8px)",
-            right: 8,
-            width: "min(380px, calc(100vw - 16px))",
-            maxHeight: "min(520px, calc(100vh - var(--footer-height, 60px) - 70px))",
-            background: "#fff",
-            borderRadius: 20,
-            boxShadow: "0 12px 48px rgba(0,0,0,0.18), 0 2px 12px rgba(0,0,0,0.08)",
-            zIndex: 8000,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            animation: "va-slide-up 0.3s ease-out",
-            border: "1px solid rgba(0,0,0,0.06)",
+            width: "100%",
+            maxWidth: "var(--app-max-width, 600px)",
+            position: "relative",
+            pointerEvents: "none",
           }}
         >
+          {/* ── Floating Mic Button ── */}
+          {!isOpen && (
+            <button
+              type="button"
+              onClick={() => setIsOpen(true)}
+              aria-label="Open voice assistant"
+              style={{
+                position: "absolute",
+                bottom: 16,
+                right: 16,
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)",
+                color: "#fff",
+                border: "none",
+                boxShadow: "0 4px 20px rgba(37,99,235,0.35), 0 2px 8px rgba(0,0,0,0.12)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "auto",
+                transition: "transform 0.2s, box-shadow 0.2s",
+                animation: "va-float 3s ease-in-out infinite",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.08)";
+                e.currentTarget.style.boxShadow = "0 6px 24px rgba(37,99,235,0.45), 0 3px 10px rgba(0,0,0,0.15)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+                e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,0.35), 0 2px 8px rgba(0,0,0,0.12)";
+              }}
+            >
+              <Sparkles size={24} />
+            </button>
+          )}
+
+          {/* ── Panel ── */}
+          {isOpen && (
+            <div
+              ref={panelRef}
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 8,
+                width: "min(380px, calc(100% - 16px))",
+                maxHeight: "min(520px, calc(100% - 60px))",
+                background: "#fff",
+                borderRadius: 20,
+                boxShadow: "0 12px 48px rgba(0,0,0,0.18), 0 2px 12px rgba(0,0,0,0.08)",
+                pointerEvents: "auto",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                animation: "va-slide-up 0.3s ease-out",
+                border: "1px solid rgba(0,0,0,0.06)",
+              }}
+            >
           {/* ── Header ── */}
           <div
             style={{
@@ -816,6 +838,8 @@ export default function VoiceAssistant() {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </>
   );
 }

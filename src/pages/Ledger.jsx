@@ -536,10 +536,23 @@ export default function Ledger() {
               </div>
             </div>
 
-            <div className="stocklist-sheet-content">
+            <div className="stocklist-sheet-content" style={{ paddingBottom: 80 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {/* ENTRY SECTION */}
                 <Section title="Entry">
+                  <DetailField label="Ledger ID">
+                    {selectedEntry.tx_id ?? "-"}
+                  </DetailField>
+                  <DetailField label="Member ID">
+                    {selectedEntry.member_id ?? "-"}
+                  </DetailField>
+                  <DetailField label="Merchant ID">
+                    {selectedEntry.merchant_id ?? "-"}
+                  </DetailField>
+                  <DetailField label="Order ID">
+                    {selectedEntry.order_id ?? "-"}
+                  </DetailField>
+
                   <div
                     style={{
                       display: "grid",
@@ -547,19 +560,6 @@ export default function Ledger() {
                       gap: 12,
                     }}
                   >
-                    <DetailField label="Ledger ID">
-                      {selectedEntry.tx_id ?? "-"}
-                    </DetailField>
-                    <DetailField label="Member ID">
-                      {selectedEntry.member_id ?? "-"}
-                    </DetailField>
-                    <DetailField label="Merchant ID">
-                      {selectedEntry.merchant_id ?? "-"}
-                    </DetailField>
-                    <DetailField label="Order ID">
-                      {selectedEntry.order_id ?? "-"}
-                    </DetailField>
-
                     <DetailField label="Type">
                       {formatTxType(selectedEntry.tx_type)}
                     </DetailField>
@@ -608,20 +608,12 @@ export default function Ledger() {
 
                 {/* ROUTING / REFS SECTION */}
                 <Section title="Routing / References">
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                      gap: 12,
-                    }}
-                  >
-                    <DetailField label="Client Tx ID">
-                      {selectedEntry.client_tx_id ?? "-"}
-                    </DetailField>
-                    <DetailField label="External Ref">
-                      {selectedEntry.external_ref ?? "-"}
-                    </DetailField>
-                  </div>
+                  <DetailField label="Client Tx ID">
+                    {selectedEntry.client_tx_id ?? "-"}
+                  </DetailField>
+                  <DetailField label="External Ref">
+                    {selectedEntry.external_ref ?? "-"}
+                  </DetailField>
 
                   <DetailField label="Broker">
                     {selectedEntry.broker ?? "-"}
@@ -662,7 +654,7 @@ export default function Ledger() {
             bottom: "var(--footer-height, 56px)",
             left: 0,
             right: 0,
-            zIndex: 9999,
+            zIndex: 1000,
             display: "flex",
             justifyContent: "center",
           }}

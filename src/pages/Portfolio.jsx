@@ -1,5 +1,6 @@
 // src/pages/Portfolio.jsx
 import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
 
@@ -65,6 +66,7 @@ export default function Portfolio() {
   const [sellSubmitting, setSellSubmitting] = useState(false);
   const [sellResult, setSellResult] = useState(null);    // { success, message, order }
   const [sellError, setSellError] = useState("");
+  const [pendingSells, setPendingSells] = useState(new Set()); // symbols with pending sell orders
 
   // ---- Load data ----
   const loadPortfolio = useCallback(
@@ -96,6 +98,18 @@ export default function Portfolio() {
         setTotalCostBasis(data.total_cost_basis || 0);
         setTotalUnrealizedPL(data.total_unrealized_pl || 0);
         setError("");
+
+        // Clear pending sell flags for symbols no longer in portfolio (order filled)
+        if (data.orders) {
+          const currentSymbols = new Set((data.orders).map((o) => o.symbol));
+          setPendingSells((prev) => {
+            const next = new Set(prev);
+            for (const sym of prev) {
+              if (!currentSymbols.has(sym)) next.delete(sym);
+            }
+            return next.size !== prev.size ? next : prev;
+          });
+        }
 
         if (data.account) setAccountInfo(data.account);
 
@@ -232,11 +246,21 @@ export default function Portfolio() {
       const data = await apiPost("alpaca-sell-order.php", payload);
 
       if (data.success) {
+        const orderStatus = (data.order?.status || "submitted").toLowerCase();
+        const isPending = orderStatus !== "filled";
+
         setSellResult({
           success: true,
+          pending: isPending,
           message: `Sell order ${data.order?.status || "submitted"} for ${sellModal.symbol}`,
           order: data.order,
         });
+
+        // Track pending sells to block further actions on this symbol
+        if (isPending) {
+          setPendingSells((prev) => new Set(prev).add(sellModal.symbol));
+        }
+
         // Refresh portfolio after short delay to reflect changes
         setTimeout(() => loadPortfolio(true), 2000);
       } else {
@@ -260,7 +284,7 @@ export default function Portfolio() {
   // RENDER
   // ===========================================================================
   return (
-    <div className="portfolio-container">
+    <div className="portfolio-container" style={{ paddingBottom: 160 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         My StockLoyal Portfolio
       </h2>
@@ -457,25 +481,44 @@ export default function Portfolio() {
                       {/* Sell button (Alpaca only) */}
                       {isAlpaca && (
                         <td style={{ textAlign: "center" }}>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); openSellModal(o); }}
-                            style={{
-                              background: "#fef2f2",
-                              color: "#dc2626",
-                              border: "1px solid #fca5a5",
-                              borderRadius: "6px",
-                              padding: "4px 12px",
-                              fontSize: "0.8rem",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              transition: "all 0.15s",
-                            }}
-                            onMouseEnter={(e) => { e.target.style.background = "#dc2626"; e.target.style.color = "#fff"; }}
-                            onMouseLeave={(e) => { e.target.style.background = "#fef2f2"; e.target.style.color = "#dc2626"; }}
-                          >
-                            Sell
-                          </button>
+                          {pendingSells.has(o.symbol) ? (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                background: "#fffbeb",
+                                color: "#d97706",
+                                border: "1px solid #fde68a",
+                                borderRadius: "6px",
+                                padding: "4px 10px",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                              }}
+                            >
+                              ⏳ Pending
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openSellModal(o); }}
+                              style={{
+                                background: "#fef2f2",
+                                color: "#dc2626",
+                                border: "1px solid #fca5a5",
+                                borderRadius: "6px",
+                                padding: "4px 12px",
+                                fontSize: "0.8rem",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                transition: "all 0.15s",
+                              }}
+                              onMouseEnter={(e) => { e.target.style.background = "#dc2626"; e.target.style.color = "#fff"; }}
+                              onMouseLeave={(e) => { e.target.style.background = "#fef2f2"; e.target.style.color = "#dc2626"; }}
+                            >
+                              Sell
+                            </button>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -540,9 +583,16 @@ export default function Portfolio() {
             {/* ---- Success Result ---- */}
             {sellResult?.success ? (
               <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ fontSize: "2rem", marginBottom: 8 }}>✅</div>
-                <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#059669", marginBottom: 8 }}>
-                  Sell Order Submitted
+                <div style={{ fontSize: "2rem", marginBottom: 8 }}>
+                  {sellResult.pending ? "⏳" : "✅"}
+                </div>
+                <div style={{
+                  fontSize: "1.1rem",
+                  fontWeight: 700,
+                  color: sellResult.pending ? "#d97706" : "#059669",
+                  marginBottom: 8,
+                }}>
+                  {sellResult.pending ? "Sell Order Pending" : "Sell Order Submitted"}
                 </div>
                 <div style={{ fontSize: "0.9rem", color: "#374151", marginBottom: 4 }}>
                   <strong>{sellModal.symbol}</strong> — {sellResult.order?.status?.toUpperCase() || "SUBMITTED"}
@@ -550,6 +600,22 @@ export default function Portfolio() {
                 {sellResult.order?.qty && (
                   <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
                     Qty: {sellResult.order.qty} shares · Type: {sellResult.order.type}
+                  </div>
+                )}
+                {sellResult.pending && (
+                  <div style={{
+                    marginTop: 12,
+                    padding: "10px 14px",
+                    background: "#fffbeb",
+                    border: "1px solid #fde68a",
+                    borderRadius: 8,
+                    fontSize: "0.85rem",
+                    color: "#92400e",
+                    textAlign: "left",
+                  }}>
+                    <strong>Markets are currently closed.</strong> Your sell order has been queued
+                    and will execute when the market reopens. You cannot modify or place another
+                    sell order for <strong>{sellModal.symbol}</strong> until this order is processed.
                   </div>
                 )}
                 <button
@@ -697,18 +763,6 @@ export default function Portfolio() {
         </div>
       )}
 
-      {/* ==== Navigation Buttons ==== */}
-      <div
-        className="portfolio-actions"
-        style={{ display: "flex", justifyContent: "center", gap: "10px", marginTop: "20px" }}
-      >
-        <button type="button" className="btn-secondary" onClick={() => navigate("/ledger")}>View Transactions Ledger</button>
-        <button type="button" className="btn-secondary" onClick={() => navigate("/transactions")}>View Order History</button>
-      </div>
-      <div>
-        <button type="button" className="btn-primary" onClick={() => navigate("/wallet")}>Back to Wallet</button>
-      </div>
-
       {/* ==== Disclosure ==== */}
       <p className="form-disclosure">
         <strong>Disclosure:</strong> <em>StockLoyal Portfolio</em> displays
@@ -725,6 +779,75 @@ export default function Portfolio() {
         )}
         . To view your full investment portfolio, please visit your broker's website or app.
       </p>
+
+      {/* --- Fixed Action Buttons (portal to body) --- */}
+      {createPortal(
+        <div
+          style={{
+            position: "fixed",
+            bottom: "var(--footer-height, 56px)",
+            left: 0,
+            right: 0,
+            zIndex: 1000,
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "var(--app-max-width, 600px)",
+              background: "rgba(248, 250, 252, 0.7)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+              paddingBottom: 12,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: "10px",
+                width: "90%",
+                maxWidth: "480px",
+              }}
+            >
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigate("/ledger")}
+                style={{ flex: 1 }}
+              >
+                View Transactions Ledger
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigate("/transactions")}
+                style={{ flex: 1 }}
+              >
+                View Order History
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigate("/wallet")}
+              style={{ width: "90%", maxWidth: "320px" }}
+            >
+              Back to Wallet
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
