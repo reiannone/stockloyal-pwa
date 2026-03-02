@@ -46,6 +46,7 @@ $taxId     = trim((string)($input['tax_id'] ?? ''));
 $fundingSrc = trim((string)($input['funding_source'] ?? ''));
 
 $middleName    = trim((string)($input['middle_name'] ?? ''));
+$phoneType     = trim((string)($input['phone_type'] ?? 'mobile'));
 $taxCountry    = trim((string)($input['tax_country'] ?? 'USA'));
 $isControl     = (bool)($input['is_control_person'] ?? false);
 $isAffiliated  = (bool)($input['is_affiliated'] ?? false);

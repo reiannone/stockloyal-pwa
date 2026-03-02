@@ -52,29 +52,40 @@ if ($memberTimezone !== null) {
 }
 
 try {
+    $aesKey = getenv('AES_ENCRYPTION_KEY') ?: 'stockloyal-default-key';
+
+    // Build dynamic SET — only include tax_id if provided (non-empty)
+    $taxId = isset($input['tax_id']) ? preg_replace('/\D/', '', (string)$input['tax_id']) : '';
+
     $sql = "UPDATE wallet SET
                 member_email = :member_email,
                 first_name = :first_name,
                 middle_name = :middle_name,
                 last_name = :last_name,
                 member_avatar = :member_avatar,
+                member_phone = :member_phone,
+                phone_type = :phone_type,
+                date_of_birth = :date_of_birth,
                 member_address_line1 = :member_address_line1,
                 member_address_line2 = :member_address_line2,
                 member_town_city = :member_town_city,
                 member_state = :member_state,
                 member_zip = :member_zip,
                 member_country = :member_country,
-                member_timezone = :member_timezone,
-                updated_at = NOW()
+                member_timezone = :member_timezone,"
+            . ($taxId !== '' ? " tax_id_encrypted = AES_ENCRYPT(:tax_id, :aes_key)," : "")
+            . " updated_at = NOW()
             WHERE member_id = :member_id";
 
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([
+    $params = [
         ':member_email'         => $input['member_email'] ?? null,
         ':first_name'           => $input['first_name'] ?? null,
         ':middle_name'          => $input['middle_name'] ?? null,
         ':last_name'            => $input['last_name'] ?? null,
         ':member_avatar'        => $input['member_avatar'] ?? null,
+        ':member_phone'         => isset($input['member_phone']) ? preg_replace('/\D/', '', (string)$input['member_phone']) : null,
+        ':phone_type'           => $input['phone_type'] ?? 'mobile',
+        ':date_of_birth'        => $input['date_of_birth'] ?? null,
         ':member_address_line1' => $input['member_address_line1'] ?? null,
         ':member_address_line2' => $input['member_address_line2'] ?? null,
         ':member_town_city'     => $input['member_town_city'] ?? null,
@@ -83,7 +94,15 @@ try {
         ':member_country'       => $input['member_country'] ?? null,
         ':member_timezone'      => $memberTimezone,
         ':member_id'            => $input['member_id'],
-    ]);
+    ];
+
+    if ($taxId !== '') {
+        $params[':tax_id']  = $taxId;
+        $params[':aes_key'] = $aesKey;
+    }
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
 
     // 🔹 Log affected rows
     error_log("update_wallet.php: updated rows = " . $stmt->rowCount());

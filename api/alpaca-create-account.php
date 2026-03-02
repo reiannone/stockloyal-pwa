@@ -33,6 +33,7 @@ $fundingSrc = trim((string)($input['funding_source'] ?? 'employment_income'));
 
 // ── Optional fields ──
 $middleName    = trim((string)($input['middle_name'] ?? ''));
+$phoneType     = trim((string)($input['phone_type'] ?? 'mobile'));
 $taxCountry    = trim((string)($input['tax_country'] ?? 'USA'));
 $isControl     = (bool)($input['is_control_person'] ?? false);
 $isAffiliated  = (bool)($input['is_affiliated'] ?? false);
@@ -201,32 +202,48 @@ try {
     }
 
     // Update wallet with broker + personal info
-    $updateWalletStmt = $conn->prepare("
+    $aesKey = getenv('AES_ENCRYPTION_KEY') ?: 'stockloyal-default-key';
+
+    $walletSql = "
         UPDATE wallet 
         SET broker                = 'Alpaca',
             first_name            = COALESCE(NULLIF(:first_name, ''), first_name),
             middle_name           = COALESCE(NULLIF(:middle_name, ''), middle_name),
             last_name             = COALESCE(NULLIF(:last_name, ''), last_name),
             member_email          = COALESCE(NULLIF(:email, ''), member_email),
+            member_phone          = COALESCE(NULLIF(:phone, ''), member_phone),
+            phone_type            = :phone_type,
+            date_of_birth         = COALESCE(:dob, date_of_birth),
             member_address_line1  = COALESCE(NULLIF(:street, ''), member_address_line1),
             member_town_city      = COALESCE(NULLIF(:city, ''), member_town_city),
             member_state          = COALESCE(NULLIF(:state, ''), member_state),
             member_zip            = COALESCE(NULLIF(:zip, ''), member_zip),
-            member_country        = COALESCE(NULLIF(:country, ''), member_country)
-        WHERE member_id = :member_id
-    ");
-    $updateWalletStmt->execute([
+            member_country        = COALESCE(NULLIF(:country, ''), member_country)"
+        . ($taxId !== '' ? ", tax_id_encrypted = AES_ENCRYPT(:tax_id, :aes_key)" : "")
+        . " WHERE member_id = :member_id";
+
+    $walletParams = [
         ':first_name'    => $firstName,
         ':middle_name'   => $middleName,
         ':last_name'     => $lastName,
         ':email'         => $email,
+        ':phone'         => $phone,
+        ':phone_type'    => $phoneType,
+        ':dob'           => $dob ?: null,
         ':street'        => $street,
         ':city'          => $city,
         ':state'         => $state,
         ':zip'           => $zip,
         ':country'       => $country,
         ':member_id'     => $memberId,
-    ]);
+    ];
+    if ($taxId !== '') {
+        $walletParams[':tax_id']  = $taxId;
+        $walletParams[':aes_key'] = $aesKey;
+    }
+
+    $updateWalletStmt = $conn->prepare($walletSql);
+    $updateWalletStmt->execute($walletParams);
 
     // Log the event
     error_log("[alpaca-create-account] ✅ Created Alpaca account {$brokerAccountId} for member {$memberId}");

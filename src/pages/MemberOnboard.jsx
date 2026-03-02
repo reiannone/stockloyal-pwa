@@ -262,6 +262,7 @@ export default function MemberOnboard() {
   const [lastName, setLastName]   = useState("");
   const [email, setEmail]         = useState(location.state?.memberEmail || localStorage.getItem("memberEmail") || "");
   const [phone, setPhone]         = useState("");
+  const [phoneType, setPhoneType] = useState("mobile");
   const [dob, setDob]             = useState("");
 
   // ── Address (Step 1) ──
@@ -301,7 +302,9 @@ export default function MemberOnboard() {
           if (w.last_name)            setLastName(w.last_name);
           if (w.member_email)         setEmail(w.member_email);
           if (w.member_phone)         setPhone(w.member_phone);
+          if (w.phone_type)            setPhoneType(w.phone_type);
           if (w.date_of_birth)        setDob(w.date_of_birth);
+          if (w.tax_id_last4)         setTaxId("");  // Never load full SSN back; user re-enters if needed
           if (w.member_address_line1) setStreet(w.member_address_line1);
           if (w.member_address_line2) setStreet2(w.member_address_line2);
           if (w.member_town_city)     setCity(w.member_town_city);
@@ -377,7 +380,8 @@ export default function MemberOnboard() {
       const walletPayload = {
         member_id: memberId, first_name: firstName.trim(), middle_name: middleName.trim(),
         last_name: lastName.trim(), member_email: email.trim(),
-        member_phone: phone.replace(/\D/g, ""), date_of_birth: dob,
+        member_phone: phone.replace(/\D/g, ""), phone_type: phoneType, date_of_birth: dob,
+        tax_id: taxId.replace(/\D/g, ""),
         member_address_line1: street.trim(), member_address_line2: street2.trim(),
         member_town_city: city.trim(), member_state: state, member_zip: zip.trim(),
         member_country: country, member_timezone: timezone,
@@ -394,7 +398,7 @@ export default function MemberOnboard() {
       const alpacaPayload = {
         member_id: memberId, email: email.trim(), first_name: firstName.trim(),
         middle_name: middleName.trim(), last_name: lastName.trim(),
-        phone: phone.replace(/\D/g, ""), date_of_birth: dob,
+        phone: phone.replace(/\D/g, ""), phone_type: phoneType, date_of_birth: dob,
         street_address: street.trim(), city: city.trim(), state,
         postal_code: zip.trim(), country: country === "US" ? "USA" : country,
         tax_id: taxId.replace(/\D/g, ""), tax_country: "USA",
@@ -404,26 +408,48 @@ export default function MemberOnboard() {
       };
 
       // ── 3. Route: UPDATE existing account or CREATE new one ──
-      const existingAccountId = localStorage.getItem("broker_account_id");
+      let existingAccountId = localStorage.getItem("broker_account_id");
+      let needsCreate = !existingAccountId;
 
       if (existingAccountId) {
         // ── UPDATE path — sync profile changes to Alpaca ──
         alpacaPayload.broker_account_id = existingAccountId;
-        const updateRes = await apiPost("alpaca-update-account.php", alpacaPayload);
+        try {
+          const updateRes = await apiPost("alpaca-update-account.php", alpacaPayload);
 
-        if (!updateRes?.success) {
-          // Non-fatal: local DB already saved, warn but don't block
+          if (updateRes?.success) {
+            setSuccess({
+              broker_account_id: existingAccountId,
+              account_status: updateRes.account_status || "UPDATED",
+              message: updateRes.message || "Profile and brokerage account updated!",
+            });
+            return; // done
+          }
+
+          // Non-fatal update failure — warn but don't block
           console.warn("[MemberOnboard] Alpaca update failed:", updateRes?.error);
           setError(updateRes?.error || "Profile saved locally, but brokerage account update failed. Your broker profile may be out of sync.");
           setSubmitting(false); return;
+        } catch (updateErr) {
+          // 403 = stale broker_account_id (not found in broker_credentials)
+          // 404 = account deleted at Alpaca
+          // In both cases, clear stale ID and fall through to CREATE
+          const errMsg = updateErr?.message || "";
+          if (errMsg.includes("403") || errMsg.includes("404") || errMsg.includes("not found")) {
+            console.warn("[MemberOnboard] Stale broker_account_id — clearing and falling back to CREATE:", errMsg);
+            localStorage.removeItem("broker_account_id");
+            localStorage.removeItem("broker_account_number");
+            existingAccountId = null;
+            needsCreate = true;
+          } else {
+            throw updateErr; // re-throw unexpected errors
+          }
         }
-        setSuccess({
-          broker_account_id: existingAccountId,
-          account_status: updateRes.account_status || "UPDATED",
-          message: updateRes.message || "Profile and brokerage account updated!",
-        });
-      } else {
+      }
+
+      if (needsCreate) {
         // ── CREATE path — first-time brokerage account ──
+        delete alpacaPayload.broker_account_id;
         const alpacaRes = await apiPost("alpaca-create-account.php", alpacaPayload);
 
         if (alpacaRes?.already_exists) {
@@ -611,10 +637,20 @@ export default function MemberOnboard() {
             <label className="form-label">Email Address *</label>
             <input type="email" className="form-input" value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="you@example.com" required/>
           </div>
-          <div>
-            <label className="form-label">Phone Number *</label>
-            <input type="tel" className="form-input" value={formatPhone(phone)}
-              onChange={(e)=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))} placeholder="(555) 123-4567" required/>
+          <div style={twoCol}>
+            <div style={{ minWidth:0 }}>
+              <label className="form-label">Phone Number *</label>
+              <input type="tel" className="form-input" value={formatPhone(phone)}
+                onChange={(e)=>setPhone(e.target.value.replace(/\D/g,"").slice(0,10))} placeholder="(555) 123-4567" required/>
+            </div>
+            <div style={{ minWidth:0 }}>
+              <label className="form-label">Phone Type</label>
+              <select className="form-input" value={phoneType} onChange={(e)=>setPhoneType(e.target.value)}>
+                <option value="mobile">Mobile</option>
+                <option value="landline">Landline</option>
+                <option value="business">Business</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className="form-label">Date of Birth *</label>
@@ -757,6 +793,7 @@ export default function MemberOnboard() {
                 { label:"Name",     value:`${firstName} ${middleName?middleName+" ":""}${lastName}` },
                 { label:"Email",    value:email },
                 { label:"Phone",    value:formatPhone(phone) },
+                { label:"Phone Type", value:phoneType.charAt(0).toUpperCase()+phoneType.slice(1) },
                 { label:"DOB",      value:dob },
                 { label:"Address",  value:`${street}${street2?`, ${street2}`:""}, ${city}, ${state} ${zip}` },
                 { label:"Country",  value:COUNTRIES.find((c)=>c.code===country)?.name||country },

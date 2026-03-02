@@ -40,6 +40,11 @@ try {
     $stmt = $conn->prepare("
         SELECT
             w.*,
+            CASE
+                WHEN w.tax_id_encrypted IS NOT NULL
+                THEN RIGHT(AES_DECRYPT(w.tax_id_encrypted, :aes_key), 4)
+                ELSE NULL
+            END AS tax_id_last4,
             m.merchant_name,
             m.conversion_rate,
             m.tier1_name, m.tier1_conversion_rate,
@@ -59,7 +64,8 @@ try {
         WHERE w.member_id = :member_id
         LIMIT 1
     ");
-    $stmt->execute([":member_id" => $memberId]);
+    $aesKey = getenv('AES_ENCRYPTION_KEY') ?: 'stockloyal-default-key';
+    $stmt->execute([":member_id" => $memberId, ":aes_key" => $aesKey]);
     $wallet = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$wallet) {
@@ -102,6 +108,10 @@ try {
     for ($i = 1; $i <= 6; $i++) {
         unset($wallet["tier{$i}_name"], $wallet["tier{$i}_min_points"], $wallet["tier{$i}_conversion_rate"]);
     }
+
+    // Never expose encrypted SSN to frontend — only last4
+    unset($wallet['tax_id_encrypted']);
+    unset($wallet['member_password_hash']);
 
     // ✅ Normalize numeric fields
     foreach ([
