@@ -285,12 +285,46 @@ export default function PrepareOrders() {
       const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batchId });
       if (res.success) {
         const mp = res.missing_prices ? ` (Warning: ${res.missing_prices} orders had no price)` : "";
+        const skipped = res.orders_skipped || 0;
+        const flagged = res.orders_flagged || 0;
+        const hasDups = skipped > 0 || flagged > 0;
+
         setModal({
           show: true,
           type: "result",
           title: "Batch Approved",
           icon: <CheckCircle2 size={20} color="#10b981" />,
-          message: `${fmtN(res.orders_created)} orders created in ${res.duration_seconds}s.${mp}`,
+          message: (
+            <>
+              <strong>{fmtN(res.orders_created)}</strong> new orders created in {res.duration_seconds}s.{mp}
+              {hasDups && (
+                <div style={{ marginTop: "10px", padding: "8px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "6px", fontSize: "0.82rem" }}>
+                  <strong><AlertTriangle size={13} style={{ verticalAlign: "middle" }} /> Duplicate Detection:</strong>
+                  <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "6px" }}>
+                    <span>Skipped (existing active): <strong>{skipped}</strong></span>
+                    {flagged > 0 && (
+                      <span style={{ color: "#dc2626" }}>Flagged (balance issue): <strong>{flagged}</strong></span>
+                    )}
+                    <span>Reused: <strong>{res.orders_reused || 0}</strong></span>
+                  </div>
+                </div>
+              )}
+              {flagged > 0 && res.duplicates && (
+                <details style={{ marginTop: "8px", fontSize: "0.78rem" }}>
+                  <summary style={{ cursor: "pointer", color: "#dc2626", fontWeight: 600 }}>
+                    {flagged} order(s) flagged — existing orders may have insufficient points/balance
+                  </summary>
+                  <div style={{ marginTop: "6px", maxHeight: "200px", overflow: "auto" }}>
+                    {res.duplicates.filter(d => d.action === "flagged").map((d, i) => (
+                      <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid #f1f5f9", fontSize: "0.75rem" }}>
+                        Member <strong>{d.member_id}</strong> · {d.symbol} · Order #{d.existing_order_id} ({d.existing_status}) — {d.reason}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          ),
           confirmText: "OK",
           confirmColor: "#10b981",
           data: { resultOnly: true },
@@ -427,10 +461,11 @@ export default function PrepareOrders() {
   // ── Status badge ──
   const statusBadge = (status) => {
     const map = {
-      staged:    { bg: "#fef3c7", text: "#92400e" },
-      approved:  { bg: "#d1fae5", text: "#065f46" },
-      submitted: { bg: "#dbeafe", text: "#1e40af" },
-      discarded: { bg: "#f3f4f6", text: "#6b7280" },
+      staged:      { bg: "#fef3c7", text: "#92400e" },
+      approved:    { bg: "#d1fae5", text: "#065f46" },
+      submitted:   { bg: "#dbeafe", text: "#1e40af" },
+      discarded:   { bg: "#f3f4f6", text: "#6b7280" },
+      skipped_dup: { bg: "#fce7f3", text: "#9d174d" },
     };
     const c = map[status] || map.staged;
     return (
@@ -1196,8 +1231,14 @@ function BatchHierarchy({ batchId, merchants }) {
                                                               fontSize: "0.7rem",
                                                               padding: "1px 8px",
                                                               borderRadius: 4,
-                                                              background: o.status === "staged" ? "#fef3c7" : o.status === "pending" ? "#dbeafe" : "#f3f4f6",
-                                                              color: o.status === "staged" ? "#92400e" : o.status === "pending" ? "#1e40af" : "#374151",
+                                                              background: o.status === "staged" ? "#fef3c7"
+                                                                : o.status === "pending" ? "#dbeafe"
+                                                                : o.status === "skipped_dup" ? "#fce7f3"
+                                                                : "#f3f4f6",
+                                                              color: o.status === "staged" ? "#92400e"
+                                                                : o.status === "pending" ? "#1e40af"
+                                                                : o.status === "skipped_dup" ? "#9d174d"
+                                                                : "#374151",
                                                               fontWeight: 600,
                                                             }}>
                                                               {o.status || "—"}

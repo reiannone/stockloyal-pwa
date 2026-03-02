@@ -897,6 +897,14 @@ class PrepareOrdersProcess
     // PUBLIC — approve()
     // INSERT...SELECT from prepared_orders → orders, mark batch approved.
     // Now uses real shares from staging (calculated during prepare).
+    //
+    // DEDUP: Before creating orders, checks if the member already has an
+    // active order (pending/approved/funded/placed/submitted) for the same
+    // symbol + merchant. If so:
+    //   - Validates existing order's points/cash against current wallet
+    //   - Skips creating a duplicate → marks staged row 'skipped_dup'
+    //   - If points/balance insufficient → still skips (in-flight order
+    //     can't be quietly replaced) but flags for admin review
     // ====================================================================
 
     public function approve(string $batchId): array
@@ -931,9 +939,147 @@ class PrepareOrdersProcess
                 $this->log("WARNING: APPROVE with {$missingPrices} orders missing price (shares=0)");
             }
 
+            // ══════════════════════════════════════════════════════════════
+            // STEP 1: DEDUP — find staged rows where the member already has
+            //         an active order for the same symbol + merchant.
+            //
+            // NOTE: prepare() auto-cancels 'pending' orders, but orders in
+            // approved/funded/placed/submitted survive. This catches those.
+            // ══════════════════════════════════════════════════════════════
+
+            $this->log("DEDUP: Checking for existing active orders...");
+
+            $dupStmt = $this->conn->prepare("
+                SELECT
+                    po.id              AS staged_id,
+                    po.member_id,
+                    po.merchant_id,
+                    po.symbol,
+                    po.amount          AS staged_amount,
+                    po.points_used     AS staged_points,
+                    o.order_id         AS existing_order_id,
+                    o.status           AS existing_status,
+                    o.amount           AS existing_amount,
+                    o.points_used      AS existing_points,
+                    o.basket_id        AS existing_basket_id
+                FROM prepared_orders po
+                INNER JOIN orders o
+                    ON  o.member_id   = po.member_id
+                    AND o.symbol      = po.symbol
+                    AND o.merchant_id = po.merchant_id
+                    AND o.status IN ('pending','approved','funded','placed','submitted')
+                WHERE po.batch_id = ?
+                  AND po.status   = 'staged'
+            ");
+            $dupStmt->execute([$batchId]);
+            $duplicates = $dupStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $skippedIds     = [];   // staged row IDs to skip (has valid existing order)
+            $reusedOrders   = [];   // existing order_ids being reused
+            $invalidatedIds = [];   // staged row IDs where existing order has bad points
+            $dupDetails     = [];   // detail records for API response
+
+            if (!empty($duplicates)) {
+                $this->log("DEDUP: Found " . count($duplicates)
+                    . " staged rows with existing active orders");
+
+                // ── Get current wallet balances for affected members ──
+                $memberIds    = array_unique(array_column($duplicates, 'member_id'));
+                $placeholders = implode(',', array_fill(0, count($memberIds), '?'));
+
+                $walletStmt = $this->conn->prepare("
+                    SELECT member_id, merchant_id, points, cash_balance
+                    FROM wallet
+                    WHERE member_id IN ({$placeholders})
+                ");
+                $walletStmt->execute(array_values($memberIds));
+                $wallets = [];
+                foreach ($walletStmt->fetchAll(PDO::FETCH_ASSOC) as $w) {
+                    $key = $w['member_id'] . '|' . $w['merchant_id'];
+                    $wallets[$key] = $w;
+                }
+
+                // ── Evaluate each duplicate ──
+                foreach ($duplicates as $dup) {
+                    $walletKey      = $dup['member_id'] . '|' . $dup['merchant_id'];
+                    $wallet         = $wallets[$walletKey] ?? null;
+                    $existingPoints = (int)   ($dup['existing_points']  ?? 0);
+                    $walletPoints   = (int)   ($wallet['points']       ?? 0);
+                    $walletBalance  = (float) ($wallet['cash_balance'] ?? 0);
+                    $existingAmount = (float) ($dup['existing_amount'] ?? 0);
+
+                    $pointsValid = ($walletPoints >= $existingPoints);
+                    $cashValid   = ($walletBalance >= $existingAmount);
+
+                    if ($pointsValid && $cashValid) {
+                        // Existing order still valid — skip creating a new one
+                        $skippedIds[]   = $dup['staged_id'];
+                        $reusedOrders[] = $dup['existing_order_id'];
+
+                        $this->log("  SKIP: member={$dup['member_id']} {$dup['symbol']} "
+                            . "— order #{$dup['existing_order_id']} ({$dup['existing_status']}) "
+                            . "valid (pts={$walletPoints}/{$existingPoints} "
+                            . "bal=\${$walletBalance}/\${$existingAmount})");
+
+                        $dupDetails[] = [
+                            'member_id'         => $dup['member_id'],
+                            'symbol'            => $dup['symbol'],
+                            'merchant_id'       => $dup['merchant_id'],
+                            'action'            => 'skipped',
+                            'existing_order_id' => $dup['existing_order_id'],
+                            'existing_status'   => $dup['existing_status'],
+                            'reason'            => 'Existing active order is valid',
+                        ];
+                    } else {
+                        // Points/cash no longer sufficient — still skip (can't
+                        // replace an in-flight order) but flag for admin review
+                        $skippedIds[]     = $dup['staged_id'];
+                        $invalidatedIds[] = $dup['staged_id'];
+
+                        $reason = !$pointsValid
+                            ? "Points insufficient (wallet={$walletPoints} < order={$existingPoints})"
+                            : "Balance insufficient (wallet=\${$walletBalance} < order=\${$existingAmount})";
+
+                        $this->log("  FLAG: member={$dup['member_id']} {$dup['symbol']} "
+                            . "— order #{$dup['existing_order_id']} ({$dup['existing_status']}) "
+                            . "issue: {$reason}");
+
+                        $dupDetails[] = [
+                            'member_id'         => $dup['member_id'],
+                            'symbol'            => $dup['symbol'],
+                            'merchant_id'       => $dup['merchant_id'],
+                            'action'            => 'flagged',
+                            'existing_order_id' => $dup['existing_order_id'],
+                            'existing_status'   => $dup['existing_status'],
+                            'reason'            => $reason,
+                        ];
+                    }
+                }
+
+                // ── Mark skipped staged rows so INSERT...SELECT won't pick them up ──
+                if (!empty($skippedIds)) {
+                    $skipPh = implode(',', array_fill(0, count($skippedIds), '?'));
+                    $this->conn->prepare("
+                        UPDATE prepared_orders
+                        SET status = 'skipped_dup'
+                        WHERE id IN ({$skipPh})
+                    ")->execute($skippedIds);
+
+                    $this->log("DEDUP: Marked " . count($skippedIds) . " staged rows as skipped_dup");
+                }
+            } else {
+                $this->log("DEDUP: No duplicates found — all rows are new");
+            }
+
+
+            // ══════════════════════════════════════════════════════════════
+            // STEP 2: INSERT remaining staged rows into orders
+            // Only rows still with status = 'staged' (skipped ones are
+            // now 'skipped_dup' and won't be selected)
+            // ══════════════════════════════════════════════════════════════
+
             $this->conn->beginTransaction();
 
-            // ── INSERT...SELECT → orders (uses real shares from staging) ──
             $ins = $this->conn->prepare("
                 INSERT INTO orders
                     (member_id, merchant_id, basket_id, batch_id, symbol, shares, amount,
@@ -961,14 +1107,20 @@ class PrepareOrdersProcess
             $this->conn->commit();
 
             $dur = round(microtime(true) - $startTime, 2);
-            $this->log("APPROVE DONE: {$ordersCreated} orders created — {$dur}s");
+            $this->log("APPROVE DONE: {$ordersCreated} new orders, "
+                . count($skippedIds) . " skipped (existing), "
+                . count($invalidatedIds) . " flagged — {$dur}s");
 
             return [
                 'success'          => true,
                 'batch_id'         => $batchId,
                 'orders_created'   => $ordersCreated,
+                'orders_skipped'   => count($skippedIds),
+                'orders_reused'    => count($reusedOrders),
+                'orders_flagged'   => count($invalidatedIds),
                 'missing_prices'   => $missingPrices,
                 'duration_seconds' => $dur,
+                'duplicates'       => $dupDetails,
             ];
         } catch (\Exception $e) {
             if ($this->conn->inTransaction()) $this->conn->rollBack();
