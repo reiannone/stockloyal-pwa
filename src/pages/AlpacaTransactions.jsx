@@ -135,7 +135,7 @@ export default function AlpacaTransactions() {
   // RENDER
   // ===========================================================================
   return (
-    <div style={{ paddingBottom: 160, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
+    <div style={{ paddingBottom: 210, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         {storedBroker} Trade History
       </h2>
@@ -370,7 +370,7 @@ export default function AlpacaTransactions() {
         <div
           style={{
             position: "fixed",
-            bottom: "var(--footer-height, 56px)",
+            bottom: "112px",
             left: 0,
             right: 0,
             zIndex: 1000,
@@ -408,7 +408,7 @@ export default function AlpacaTransactions() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => navigate("/portfolio")}
-                style={{ flex: 1 }}
+                style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
               {storedBroker} Portfolio
               </button>
@@ -416,7 +416,7 @@ export default function AlpacaTransactions() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => navigate("/funding-history")}
-                style={{ flex: 1 }}
+                style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
                  {storedBroker} Funding
               </button>
@@ -425,7 +425,7 @@ export default function AlpacaTransactions() {
               type="button"
               className="btn-primary"
               onClick={() => navigate("/wallet")}
-              style={{ width: "90%", maxWidth: "320px" }}
+              style={{ width: "90%", maxWidth: "320px", fontSize: "0.9rem", fontWeight: 700 }}
             >
               Back to Wallet
             </button>

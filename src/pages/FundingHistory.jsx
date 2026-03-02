@@ -140,7 +140,7 @@ export default function FundingHistory() {
   });
 
   return (
-    <div style={{ paddingBottom: 160, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
+    <div style={{ paddingBottom: 210, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
          {storedBroker} Funding History
       </h2>
@@ -359,13 +359,13 @@ export default function FundingHistory() {
 
       {/* ── Fixed Action Buttons ── */}
       {createPortal(
-        <div style={{ position: "fixed", bottom: "var(--footer-height, 56px)", left: 0, right: 0, zIndex: 1000, display: "flex", justifyContent: "center" }}>
+        <div style={{ position: "fixed", bottom: "112px", left: 0, right: 0, zIndex: 1000, display: "flex", justifyContent: "center" }}>
           <div style={{ width: "100%", maxWidth: "var(--app-max-width, 600px)", background: "rgba(248, 250, 252, 0.7)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderTop: "1px solid #e2e8f0", paddingTop: 12, paddingBottom: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
             <div style={{ display: "flex", flexDirection: "row", justifyContent: "center", gap: "10px", width: "90%", maxWidth: "480px" }}>
-              <button type="button" className="btn-secondary" onClick={() => navigate("/portfolio")} style={{ flex: 1 }}>{storedBroker} Portfolio</button>
-              <button type="button" className="btn-secondary" onClick={() => navigate("/alpaca-transactions")} style={{ flex: 1 }}>{storedBroker} Trades</button>
+              <button type="button" className="btn-secondary" onClick={() => navigate("/portfolio")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{storedBroker} Portfolio</button>
+              <button type="button" className="btn-secondary" onClick={() => navigate("/alpaca-transactions")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{storedBroker} Trades</button>
             </div>
-            <button type="button" className="btn-primary" onClick={() => navigate("/wallet")} style={{ width: "90%", maxWidth: "320px" }}>Back to Wallet</button>
+            <button type="button" className="btn-primary" onClick={() => navigate("/wallet")} style={{ width: "90%", maxWidth: "320px", fontSize: "0.9rem", fontWeight: 700 }}>Back to Wallet</button>
           </div>
         </div>,
         document.body

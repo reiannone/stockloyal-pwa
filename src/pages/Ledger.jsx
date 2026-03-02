@@ -267,7 +267,7 @@ export default function Ledger() {
   };
 
   return (
-    <div className="transactions-container" style={{ paddingBottom: 160 }}>
+    <div className="transactions-container" style={{ paddingBottom: 210 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         Transaction Ledger
       </h2>
@@ -651,7 +651,7 @@ export default function Ledger() {
         <div
           style={{
             position: "fixed",
-            bottom: "var(--footer-height, 56px)",
+            bottom: "112px",
             left: 0,
             right: 0,
             zIndex: 1000,
@@ -689,7 +689,7 @@ export default function Ledger() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => navigate("/portfolio")}
-                style={{ flex: 1 }}
+                style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
                 View My Portfolio
               </button>
@@ -697,7 +697,7 @@ export default function Ledger() {
                 type="button"
                 className="btn-secondary"
                 onClick={() => navigate("/transactions")}
-                style={{ flex: 1 }}
+                style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
                 View Order History
               </button>
@@ -706,7 +706,7 @@ export default function Ledger() {
               type="button"
               className="btn-primary"
               onClick={() => navigate("/wallet")}
-              style={{ width: "90%", maxWidth: "320px" }}
+              style={{ width: "90%", maxWidth: "320px", fontSize: "0.9rem", fontWeight: 700 }}
             >
               Back to Wallet
             </button>

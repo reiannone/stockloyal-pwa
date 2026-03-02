@@ -410,7 +410,7 @@ export default function Portfolio() {
   // RENDER
   // ===========================================================================
   return (
-    <div className="portfolio-container" style={{ paddingBottom: 160 }}>
+    <div className="portfolio-container" style={{ paddingBottom: 210 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
         My {memberBroker} Portfolio
       </h2>
@@ -1235,7 +1235,7 @@ export default function Portfolio() {
         <div
           style={{
             position: "fixed",
-            bottom: "var(--footer-height, 56px)",
+            bottom: "112px",
             left: 0,
             right: 0,
             zIndex: 1000,
@@ -1274,7 +1274,7 @@ export default function Portfolio() {
                   type="button"
                   className="btn-secondary"
                   onClick={() => navigate("/alpaca-transactions")}
-                  style={{ flex: 1, fontSize: "0.9rem" }}
+                  style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
                 >
                   {memberBroker} Trades
                 </button>
@@ -1282,7 +1282,7 @@ export default function Portfolio() {
                   type="button"
                   className="btn-secondary"
                   onClick={() => navigate("/funding-history")}
-                  style={{ flex: 1, fontSize: "0.9rem" }}
+                  style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
                 >
                  {memberBroker} Funding
                 </button>
@@ -1292,7 +1292,7 @@ export default function Portfolio() {
               type="button"
               className="btn-primary"
               onClick={() => navigate("/wallet")}
-              style={{ width: "90%", maxWidth: "320px" }}
+              style={{ width: "90%", maxWidth: "320px", fontSize: "0.9rem", fontWeight: 700 }}
             >
               Back to Wallet
             </button>
