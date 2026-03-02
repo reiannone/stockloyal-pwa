@@ -373,6 +373,39 @@ class AlpacaBrokerAPI {
         return $this->get('/v1/accounts/' . urlencode($accountId) . '/transfers');
     }
 
+    /**
+     * Get account activities (trade fills, dividends, journals, etc.)
+     *
+     * @param string $accountId   Alpaca account UUID
+     * @param string $activityType  FILL | DIV | JNLS | CSD | CSW | ACATC | ACATS | etc.
+     * @param int    $days          How many days back to fetch (default 90)
+     * @return array  ['success' => bool, 'data' => [...activities]]
+     */
+    public function getAccountActivities(string $accountId, string $activityType = 'FILL', int $days = 90): array {
+        $after = date('Y-m-d\TH:i:s\Z', strtotime("-{$days} days"));
+        $endpoint = '/v1/accounts/activities/' . urlencode($activityType)
+            . '?account_id=' . urlencode($accountId)
+            . '&after=' . urlencode($after)
+            . '&direction=desc'
+            . '&page_size=100';
+        return $this->get($endpoint);
+    }
+
+    /**
+     * Get portfolio history for an account.
+     *
+     * @param string $accountId  Alpaca account UUID
+     * @param string $period     1D, 1W, 1M, 3M, 6M, 1A, all
+     * @param string $timeframe  1Min, 5Min, 15Min, 1H, 1D
+     * @return array
+     */
+    public function getPortfolioHistory(string $accountId, string $period = '1M', string $timeframe = '1D'): array {
+        return $this->get(
+            '/v1/trading/accounts/' . urlencode($accountId)
+            . '/account/portfolio/history?period=' . $period . '&timeframe=' . $timeframe
+        );
+    }
+
     // ─── Market / Assets ────────────────────────────────────
 
     /**

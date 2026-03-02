@@ -28,6 +28,7 @@ import PointsSlider from "./pages/PointsSlider.jsx";
 import FillBasket from "./pages/FillBasket.jsx";
 import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
+import AlpacaTransactions from "./pages/AlpacaTransactions.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import Ledger from "./pages/Ledger.jsx";
 import Admin from "./pages/Admin.jsx";
@@ -287,6 +288,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <Portfolio />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/alpaca-transactions"
+                element={
+                  <PageWrapper>
+                    <AlpacaTransactions />
                   </PageWrapper>
                 }
               />

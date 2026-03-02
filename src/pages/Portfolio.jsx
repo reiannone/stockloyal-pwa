@@ -838,6 +838,16 @@ export default function Portfolio() {
                 View Order History
               </button>
             </div>
+            {isAlpaca && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => navigate("/alpaca-transactions")}
+                style={{ width: "90%", maxWidth: "480px", fontSize: "0.9rem" }}
+              >
+                Alpaca Trade History
+              </button>
+            )}
             <button
               type="button"
               className="btn-primary"
