@@ -37,6 +37,8 @@ const INTENTS = [
   { id: "navigate_portfolio",patterns: [/\b(go to|open|show|take me to)\b.*\bportfolio/i] },
   { id: "navigate_orders",  patterns: [/\b(go to|open|show|take me to)\b.*\b(orders|order history|transactions)/i] },
   { id: "navigate_ledger",  patterns: [/\b(go to|open|show|take me to)\b.*\bledger/i] },
+  { id: "navigate_funding", patterns: [/\b(go to|open|show|take me to)\b.*\bfunding/i, /\b(funding history|where.*my money|money flow|journals|deposits)\b/i] },
+  { id: "navigate_trades",  patterns: [/\b(go to|open|show|take me to)\b.*\b(trade history|trades|alpaca.*trade)/i, /\b(trade history|my trades|recent trades|alpaca transactions)\b/i] },
   { id: "navigate_home",    patterns: [/\b(go to|open|take me to)\b.*\b(home|landing|dashboard)/i, /^(go home)$/i] },
   { id: "navigate_terms",   patterns: [/\b(go to|open|show|take me to)\b.*\bterms/i] },
   { id: "navigate_social",  patterns: [/\b(go to|open|show|take me to)\b.*\b(social|community|feed)/i] },
@@ -65,6 +67,8 @@ const NAV_MAP = {
   navigate_portfolio: { path: "/portfolio",          label: "Portfolio" },
   navigate_orders:    { path: "/transactions",       label: "Trade Orders" },
   navigate_ledger:    { path: "/ledger",             label: "Transaction Ledger" },
+  navigate_funding:   { path: "/funding-history",    label: "Brokerage Funding History" },
+  navigate_trades:    { path: "/alpaca-transactions",label: "Brokerage Trade History" },
   navigate_home:      { path: "/stockloyal-landing", label: "Home" },
   navigate_terms:     { path: "/terms",              label: "Terms & Conditions" },
   navigate_social:    { path: "/social",             label: "Community Feed" },
@@ -96,12 +100,16 @@ CRITICAL RULES:
   - "What are my pending orders?" → answer + [NAV:/transactions]
   - "Show my portfolio" → answer + [NAV:/portfolio]
   - "How do I set up my profile?" → answer + [NAV:/member-onboard]
+  - "Where did my money go?" → answer + [NAV:/funding-history]
+  - "Show my trade history" → answer + [NAV:/alpaca-transactions]
+  - "How do I buy stocks from my portfolio?" → answer briefly about the Buy button + [NAV:/portfolio]
   - "What's my balance?" → answer with numbers (no nav needed, data already spoken)
   - "What is a sweep?" → answer with explanation (no nav needed, it's informational)
   Use your judgment: navigate when SEEING the page helps, skip nav for pure knowledge questions.
   Valid routes: /stockloyal-landing, /login, /member-onboard, /select-broker, 
   /election, /terms, /wallet, /stock-picker, /fill-basket, /points-slider,
-  /portfolio, /transactions, /ledger, /promotions, /social, /about
+  /portfolio, /transactions, /ledger, /funding-history, /alpaca-transactions,
+  /promotions, /social, /about
 - If the member asks you to close or says goodbye, respond with [CLOSE]
 
 MEMBER CONTEXT (live data from their account):
