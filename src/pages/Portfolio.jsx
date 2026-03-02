@@ -68,6 +68,18 @@ export default function Portfolio() {
   const [sellError, setSellError] = useState("");
   const [pendingSells, setPendingSells] = useState(new Set()); // symbols with pending sell orders
 
+  // ── Buy modal state ──
+  const [buyModal, setBuyModal] = useState(null);          // position object, or { symbol: "", isNew: true }
+  const [buySymbol, setBuySymbol] = useState("");           // for new stock search
+  const [buyAmountMode, setBuyAmountMode] = useState("dollars"); // "dollars" | "shares"
+  const [buyAmount, setBuyAmount] = useState("");
+  const [buyOrderType, setBuyOrderType] = useState("market");
+  const [buyLimitPrice, setBuyLimitPrice] = useState("");
+  const [buySubmitting, setBuySubmitting] = useState(false);
+  const [buyResult, setBuyResult] = useState(null);
+  const [buyError, setBuyError] = useState("");
+  const [pendingBuys, setPendingBuys] = useState(new Set());
+
   // ---- Load data ----
   const loadPortfolio = useCallback(
     async (isRefresh = false) => {
@@ -280,13 +292,127 @@ export default function Portfolio() {
       (sellOrderType === "limit" ? (parseFloat(sellLimitPrice) || 0) : sellModal.current_price)
     : 0;
 
+  // ── Buy handlers ──
+  const openBuyModal = (position = null) => {
+    if (position) {
+      setBuyModal(position);
+      setBuySymbol(position.symbol);
+    } else {
+      setBuyModal({ symbol: "", isNew: true });
+      setBuySymbol("");
+    }
+    setBuyAmountMode("dollars");
+    setBuyAmount("");
+    setBuyOrderType("market");
+    setBuyLimitPrice("");
+    setBuySubmitting(false);
+    setBuyResult(null);
+    setBuyError("");
+  };
+
+  const closeBuyModal = () => {
+    setBuyModal(null);
+    setBuyResult(null);
+    setBuyError("");
+  };
+
+  const handleBuySubmit = async () => {
+    if (!buyModal) return;
+
+    const symbol = buyModal.isNew ? buySymbol.toUpperCase().trim() : buyModal.symbol;
+    if (!symbol) {
+      setBuyError("Enter a stock symbol.");
+      return;
+    }
+
+    const amt = parseFloat(buyAmount);
+    if (!amt || amt <= 0) {
+      setBuyError(buyAmountMode === "dollars" ? "Enter a valid dollar amount." : "Enter a valid share quantity.");
+      return;
+    }
+
+    // Check buying power
+    const cash = parseFloat(accountInfo?.cash || 0);
+    if (buyAmountMode === "dollars" && amt > cash) {
+      setBuyError(`Insufficient buying power. Available: $${cash.toFixed(2)}`);
+      return;
+    }
+
+    if (buyOrderType === "limit" && (!buyLimitPrice || parseFloat(buyLimitPrice) <= 0)) {
+      setBuyError("Enter a valid limit price.");
+      return;
+    }
+
+    setBuySubmitting(true);
+    setBuyError("");
+
+    try {
+      const payload = {
+        member_id: memberId,
+        symbol,
+        order_type: buyOrderType,
+        time_in_force: "day",
+      };
+
+      if (buyAmountMode === "dollars") {
+        payload.notional = amt;
+      } else {
+        payload.qty = amt;
+      }
+
+      if (buyOrderType === "limit") {
+        payload.limit_price = parseFloat(buyLimitPrice);
+        // Limit orders must use qty, not notional
+        if (buyAmountMode === "dollars") {
+          setBuyError("Limit orders require share quantity, not dollar amount. Switch to 'Shares'.");
+          setBuySubmitting(false);
+          return;
+        }
+      }
+
+      const data = await apiPost("alpaca-buy-order.php", payload);
+
+      if (data.success) {
+        const orderStatus = (data.order?.status || "submitted").toLowerCase();
+        const isPending = orderStatus !== "filled";
+
+        setBuyResult({
+          success: true,
+          pending: isPending,
+          message: `Buy order ${data.order?.status || "submitted"} for ${symbol}`,
+          order: data.order,
+        });
+
+        if (isPending) {
+          setPendingBuys((prev) => new Set(prev).add(symbol));
+        }
+
+        setTimeout(() => loadPortfolio(true), 2000);
+      } else {
+        setBuyError(data.error || "Buy order failed.");
+      }
+    } catch (err) {
+      console.error("Buy order error:", err);
+      setBuyError("Network error submitting buy order.");
+    } finally {
+      setBuySubmitting(false);
+    }
+  };
+
+  // Estimated buy cost
+  const estimatedBuyCost = buyModal
+    ? (buyAmountMode === "dollars"
+      ? (parseFloat(buyAmount) || 0)
+      : (parseFloat(buyAmount) || 0) * (buyOrderType === "limit" ? (parseFloat(buyLimitPrice) || 0) : (buyModal.current_price || 0)))
+    : 0;
+
   // ===========================================================================
   // RENDER
   // ===========================================================================
   return (
     <div className="portfolio-container" style={{ paddingBottom: 160 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        My StockLoyal Portfolio
+        My {memberBroker} Portfolio
       </h2>
 
       {/* ---- Timestamp ---- */}
@@ -358,11 +484,32 @@ export default function Portfolio() {
             </div>
           )}
 
-          {/* Refresh button */}
+          {/* Refresh + Buy button */}
           <div style={{ textAlign: "center", marginBottom: "16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
-            <button type="button" className="btn-secondary" onClick={() => loadPortfolio(true)} disabled={refreshing} style={{ minWidth: "160px" }}>
-              {refreshing ? "Updating…" : "🔄 Refresh Prices"}
-            </button>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button type="button" className="btn-secondary" onClick={() => loadPortfolio(true)} disabled={refreshing} style={{ minWidth: "160px" }}>
+                {refreshing ? "Updating…" : "🔄 Refresh Prices"}
+              </button>
+              {isAlpaca && (
+                <button
+                  type="button"
+                  onClick={() => openBuyModal()}
+                  style={{
+                    background: "#059669",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 20px",
+                    fontWeight: 700,
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                    minWidth: "160px",
+                  }}
+                >
+                  + Buy Stock
+                </button>
+              )}
+            </div>
             {priceUpdateMsg && (
               <span style={{ fontSize: "0.85rem", color: "#22c55e", fontWeight: 500 }}>{priceUpdateMsg}</span>
             )}
@@ -478,10 +625,10 @@ export default function Portfolio() {
                         </div>
                       </td>
 
-                      {/* Sell button (Alpaca only) */}
+                      {/* Trade buttons (Alpaca only) */}
                       {isAlpaca && (
                         <td style={{ textAlign: "center" }}>
-                          {pendingSells.has(o.symbol) ? (
+                          {pendingSells.has(o.symbol) || pendingBuys.has(o.symbol) ? (
                             <span
                               style={{
                                 display: "inline-flex",
@@ -499,25 +646,46 @@ export default function Portfolio() {
                               ⏳ Pending
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); openSellModal(o); }}
-                              style={{
-                                background: "#fef2f2",
-                                color: "#dc2626",
-                                border: "1px solid #fca5a5",
-                                borderRadius: "6px",
-                                padding: "4px 12px",
-                                fontSize: "0.8rem",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                                transition: "all 0.15s",
-                              }}
-                              onMouseEnter={(e) => { e.target.style.background = "#dc2626"; e.target.style.color = "#fff"; }}
-                              onMouseLeave={(e) => { e.target.style.background = "#fef2f2"; e.target.style.color = "#dc2626"; }}
-                            >
-                              Sell
-                            </button>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openBuyModal(o); }}
+                                style={{
+                                  background: "#ecfdf5",
+                                  color: "#059669",
+                                  border: "1px solid #6ee7b7",
+                                  borderRadius: "6px",
+                                  padding: "4px 10px",
+                                  fontSize: "0.8rem",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s",
+                                }}
+                                onMouseEnter={(e) => { e.target.style.background = "#059669"; e.target.style.color = "#fff"; }}
+                                onMouseLeave={(e) => { e.target.style.background = "#ecfdf5"; e.target.style.color = "#059669"; }}
+                              >
+                                Buy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openSellModal(o); }}
+                                style={{
+                                  background: "#fef2f2",
+                                  color: "#dc2626",
+                                  border: "1px solid #fca5a5",
+                                  borderRadius: "6px",
+                                  padding: "4px 10px",
+                                  fontSize: "0.8rem",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s",
+                                }}
+                                onMouseEnter={(e) => { e.target.style.background = "#dc2626"; e.target.style.color = "#fff"; }}
+                                onMouseLeave={(e) => { e.target.style.background = "#fef2f2"; e.target.style.color = "#dc2626"; }}
+                              >
+                                Sell
+                              </button>
+                            </div>
                           )}
                         </td>
                       )}
@@ -544,12 +712,12 @@ export default function Portfolio() {
       )}
 
       {/* ==== SELL MODAL ==== */}
-      {sellModal && (
+      {sellModal && createPortal(
         <div
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 9999, padding: "16px",
+            zIndex: 10000, padding: "16px",
           }}
           onClick={closeSellModal}
         >
@@ -762,12 +930,292 @@ export default function Portfolio() {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ==== BUY MODAL ==== */}
+      {buyModal && createPortal(
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 10000, padding: "16px",
+          }}
+          onClick={closeBuyModal}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 460, width: "100%",
+              border: "2px solid #6ee7b7", background: "#fff",
+              padding: "1.5rem", position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close X */}
+            <button
+              onClick={closeBuyModal}
+              style={{
+                position: "absolute", top: 10, right: 14,
+                background: "none", border: "none", fontSize: "1.3rem",
+                cursor: "pointer", color: "#6b7280",
+              }}
+            >✕</button>
+
+            <h3 style={{ margin: "0 0 4px 0", color: "#059669" }}>
+              {buyModal.isNew ? "Buy Stock" : `Buy More ${buyModal.symbol}`}
+            </h3>
+
+            {/* Buying power */}
+            {accountInfo && (
+              <div style={{
+                background: "#f0f9ff", border: "1px solid #bae6fd",
+                borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+                fontSize: "0.85rem", color: "#0369a1",
+              }}>
+                Buying Power: <strong>${parseFloat(accountInfo.cash || 0).toFixed(2)}</strong>
+              </div>
+            )}
+
+            {/* Existing position info */}
+            {!buyModal.isNew && (
+              <p style={{ margin: "0 0 14px 0", fontSize: "0.85rem", color: "#6b7280" }}>
+                Current position: <strong>{buyModal.total_shares?.toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong> shares
+                @ <strong>{fmt(buyModal.current_price)}</strong>
+              </p>
+            )}
+
+            {/* ---- Success Result ---- */}
+            {buyResult?.success ? (
+              <div style={{ textAlign: "center", padding: "20px 0" }}>
+                <div style={{ fontSize: "2rem", marginBottom: 8 }}>
+                  {buyResult.pending ? "⏳" : "✅"}
+                </div>
+                <div style={{
+                  fontSize: "1.1rem",
+                  fontWeight: 700,
+                  color: buyResult.pending ? "#d97706" : "#059669",
+                  marginBottom: 8,
+                }}>
+                  {buyResult.pending ? "Buy Order Pending" : "Buy Order Filled"}
+                </div>
+                <div style={{ fontSize: "0.9rem", color: "#374151", marginBottom: 4 }}>
+                  <strong>{buyResult.order?.symbol}</strong> — {buyResult.order?.status?.toUpperCase() || "SUBMITTED"}
+                </div>
+                {(buyResult.order?.qty || buyResult.order?.notional) && (
+                  <div style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+                    {buyResult.order.notional
+                      ? `$${parseFloat(buyResult.order.notional).toFixed(2)} · Type: ${buyResult.order.type}`
+                      : `Qty: ${buyResult.order.qty} shares · Type: ${buyResult.order.type}`}
+                  </div>
+                )}
+                {buyResult.pending && (
+                  <div style={{
+                    marginTop: 12,
+                    padding: "10px 14px",
+                    background: "#ecfdf5",
+                    border: "1px solid #6ee7b7",
+                    borderRadius: 8,
+                    fontSize: "0.85rem",
+                    color: "#065f46",
+                    textAlign: "left",
+                  }}>
+                    <strong>Order is being processed.</strong> Your buy order is currently{" "}
+                    <strong>{(buyResult.order?.status || "pending").replace(/_/g, " ")}</strong>.
+                    It should fill shortly during market hours.
+                  </div>
+                )}
+                <button
+                  type="button" className="btn-primary"
+                  onClick={closeBuyModal}
+                  style={{ marginTop: 16 }}
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* ---- Symbol input (new stock only) ---- */}
+                {buyModal.isNew && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                      Stock Symbol
+                    </label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      value={buySymbol}
+                      onChange={(e) => setBuySymbol(e.target.value.toUpperCase())}
+                      placeholder="e.g. AAPL, TSLA, MSFT"
+                      style={{ width: "100%", textTransform: "uppercase" }}
+                      autoFocus
+                    />
+                  </div>
+                )}
+
+                {/* ---- Amount Mode Toggle ---- */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                    Buy By
+                  </label>
+                  <div style={{ display: "flex", gap: 0, borderRadius: 8, overflow: "hidden", border: "1px solid #d1d5db" }}>
+                    <button
+                      type="button"
+                      onClick={() => { setBuyAmountMode("dollars"); setBuyAmount(""); }}
+                      style={{
+                        flex: 1, padding: "8px 0", border: "none", fontWeight: 600, fontSize: "0.85rem",
+                        cursor: "pointer",
+                        background: buyAmountMode === "dollars" ? "#059669" : "#f9fafb",
+                        color: buyAmountMode === "dollars" ? "#fff" : "#374151",
+                      }}
+                    >
+                      Dollar Amount
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setBuyAmountMode("shares"); setBuyAmount(""); }}
+                      style={{
+                        flex: 1, padding: "8px 0", border: "none", fontWeight: 600, fontSize: "0.85rem",
+                        cursor: "pointer",
+                        background: buyAmountMode === "shares" ? "#059669" : "#f9fafb",
+                        color: buyAmountMode === "shares" ? "#fff" : "#374151",
+                      }}
+                    >
+                      Shares
+                    </button>
+                  </div>
+                </div>
+
+                {/* ---- Amount Input ---- */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                    {buyAmountMode === "dollars" ? "Amount ($)" : "Quantity (shares)"}
+                  </label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    step={buyAmountMode === "dollars" ? "0.01" : "0.000001"}
+                    min="0"
+                    value={buyAmount}
+                    onChange={(e) => setBuyAmount(e.target.value)}
+                    placeholder={buyAmountMode === "dollars" ? "e.g. 50.00" : "e.g. 1.5"}
+                    style={{ width: "100%" }}
+                  />
+                  {buyAmountMode === "dollars" && accountInfo && (
+                    <button
+                      type="button" className="btn-secondary"
+                      onClick={() => setBuyAmount(String(parseFloat(accountInfo.cash || 0).toFixed(2)))}
+                      style={{ fontSize: "0.8rem", marginTop: 6 }}
+                    >
+                      Use Max (${parseFloat(accountInfo.cash || 0).toFixed(2)})
+                    </button>
+                  )}
+                </div>
+
+                {/* ---- Order Type ---- */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: 4 }}>Order Type</label>
+                  <select
+                    className="form-input"
+                    value={buyOrderType}
+                    onChange={(e) => setBuyOrderType(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="market">Market Order (buy now at best price)</option>
+                    <option value="limit">Limit Order (set max price per share)</option>
+                  </select>
+                </div>
+
+                {/* ---- Limit Price ---- */}
+                {buyOrderType === "limit" && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
+                      Limit Price (max per share)
+                    </label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={buyLimitPrice}
+                      onChange={(e) => setBuyLimitPrice(e.target.value)}
+                      placeholder={buyModal.current_price?.toFixed(2) || "0.00"}
+                      style={{ width: "100%" }}
+                    />
+                    {buyAmountMode === "dollars" && (
+                      <p style={{ fontSize: "0.75rem", color: "#d97706", margin: "4px 0 0 0" }}>
+                        Note: Limit orders require share quantity. Switch to "Shares" mode.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ---- Estimated Cost ---- */}
+                {estimatedBuyCost > 0 && (
+                  <div style={{
+                    background: "#f0f9ff", borderRadius: 8, padding: "10px 14px",
+                    marginBottom: 14, border: "1px solid #bae6fd",
+                  }}>
+                    <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>Estimated Cost</div>
+                    <div style={{ fontSize: "1.15rem", fontWeight: 700, color: "#059669" }}>
+                      {fmt(estimatedBuyCost)}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
+                      {buyAmountMode === "dollars"
+                        ? "Fractional shares will be calculated at market price"
+                        : buyOrderType === "market" ? "Based on current market price" : "If limit price is met"}
+                    </div>
+                  </div>
+                )}
+
+                {/* ---- Error ---- */}
+                {buyError && (
+                  <div style={{
+                    background: "#fef2f2", border: "1px solid #fca5a5",
+                    borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+                    color: "#dc2626", fontSize: "0.85rem", fontWeight: 500,
+                  }}>
+                    {buyError}
+                  </div>
+                )}
+
+                {/* ---- Confirm / Cancel buttons ---- */}
+                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                  <button type="button" className="btn-secondary" onClick={closeBuyModal} disabled={buySubmitting}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBuySubmit}
+                    disabled={buySubmitting}
+                    style={{
+                      background: buySubmitting ? "#34d399" : "#059669",
+                      color: "#fff", border: "none", borderRadius: 8,
+                      padding: "10px 24px", fontWeight: 700, fontSize: "0.95rem",
+                      cursor: buySubmitting ? "not-allowed" : "pointer",
+                      opacity: buySubmitting ? 0.7 : 1,
+                    }}
+                  >
+                    {buySubmitting ? "Submitting…" : `Buy ${buyModal.isNew ? (buySymbol || "Stock") : buyModal.symbol}`}
+                  </button>
+                </div>
+
+                {/* ---- Disclosure ---- */}
+                <p style={{ fontSize: "0.7rem", color: "#9ca3af", marginTop: 12, marginBottom: 0 }}>
+                  Market orders execute at the next available price. Limit orders execute only at your specified price or better.
+                  Fractional shares are supported. All trades are executed by Alpaca Securities LLC.
+                </p>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ==== Disclosure ==== */}
       <p className="form-disclosure">
-        <strong>Disclosure:</strong> <em>StockLoyal Portfolio</em> displays
+        <strong>Disclosure:</strong> <em>My Portfolio</em> displays
         only the securities purchased through the <strong>StockLoyal app</strong>.
         These holdings are maintained directly with your brokerage firm,{" "}
         {brokerUrl ? (
@@ -811,42 +1259,34 @@ export default function Portfolio() {
               gap: "10px",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                justifyContent: "center",
-                gap: "10px",
-                width: "90%",
-                maxWidth: "480px",
-              }}
-            >
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => navigate("/ledger")}
-                style={{ flex: 1 }}
-              >
-                View Transactions Ledger
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => navigate("/transactions")}
-                style={{ flex: 1 }}
-              >
-                View Order History
-              </button>
-            </div>
             {isAlpaca && (
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => navigate("/alpaca-transactions")}
-                style={{ width: "90%", maxWidth: "480px", fontSize: "0.9rem" }}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: "10px",
+                  width: "90%",
+                  maxWidth: "480px",
+                }}
               >
-                Alpaca Trade History
-              </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => navigate("/alpaca-transactions")}
+                  style={{ flex: 1, fontSize: "0.9rem" }}
+                >
+                  {memberBroker} Trades
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => navigate("/funding-history")}
+                  style={{ flex: 1, fontSize: "0.9rem" }}
+                >
+                 {memberBroker} Funding
+                </button>
+              </div>
             )}
             <button
               type="button"

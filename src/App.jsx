@@ -29,6 +29,7 @@ import FillBasket from "./pages/FillBasket.jsx";
 import Basket from "./pages/Basket.jsx";
 import Portfolio from "./pages/Portfolio.jsx";
 import AlpacaTransactions from "./pages/AlpacaTransactions.jsx";
+import FundingHistory from "./pages/FundingHistory.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import Ledger from "./pages/Ledger.jsx";
 import Admin from "./pages/Admin.jsx";
@@ -296,6 +297,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <AlpacaTransactions />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/funding-history"
+                element={
+                  <PageWrapper>
+                    <FundingHistory />
                   </PageWrapper>
                 }
               />

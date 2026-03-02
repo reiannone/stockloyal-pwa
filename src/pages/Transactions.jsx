@@ -927,7 +927,7 @@ export default function Transactions() {
                 onClick={() => navigate("/portfolio")}
                 style={{ flex: 1 }}
               >
-                View StockLoyal Portfolio
+                View My Portfolio
               </button>
               <button
                 type="button"

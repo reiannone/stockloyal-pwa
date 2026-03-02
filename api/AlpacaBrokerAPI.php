@@ -374,6 +374,24 @@ class AlpacaBrokerAPI {
     }
 
     /**
+     * Get journals (cash/securities movements between accounts).
+     *
+     * @param int    $days       How many days back (default 90)
+     * @param string $entryType  JNLC (cash) | JNLS (securities)
+     * @param string $toAccount  Optional: filter by receiving account
+     * @return array
+     */
+    public function getJournals(int $days = 90, string $entryType = 'JNLC', ?string $toAccount = null): array {
+        $after = date('Y-m-d', strtotime("-{$days} days"));
+        $endpoint = '/v1/journals?after=' . urlencode($after)
+            . '&entry_type=' . urlencode($entryType);
+        if ($toAccount) {
+            $endpoint .= '&to_account=' . urlencode($toAccount);
+        }
+        return $this->get($endpoint);
+    }
+
+    /**
      * Get account activities (trade fills, dividends, journals, etc.)
      *
      * @param string $accountId   Alpaca account UUID

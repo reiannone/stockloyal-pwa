@@ -691,7 +691,7 @@ export default function Ledger() {
                 onClick={() => navigate("/portfolio")}
                 style={{ flex: 1 }}
               >
-                View StockLoyal Portfolio
+                View My Portfolio
               </button>
               <button
                 type="button"
