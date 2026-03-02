@@ -613,8 +613,10 @@ export default function Portfolio() {
                     color: "#92400e",
                     textAlign: "left",
                   }}>
-                    <strong>Markets are currently closed.</strong> Your sell order has been queued
-                    and will execute when the market reopens. You cannot modify or place another
+                    <strong>Order is being processed.</strong> Your sell order for{" "}
+                    <strong>{sellModal.symbol}</strong> is currently{" "}
+                    <strong>{(sellResult.order?.status || "pending").replace(/_/g, " ")}</strong>.
+                    It should fill shortly during market hours. You cannot place another
                     sell order for <strong>{sellModal.symbol}</strong> until this order is processed.
                   </div>
                 )}
