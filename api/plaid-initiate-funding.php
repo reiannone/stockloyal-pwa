@@ -133,15 +133,8 @@ try {
         'authorization_id' => $authorization['id'],
         'access_token'     => $access_token,
         'account_id'       => $mp['account_id'],
-        'type'             => 'debit',
-        'network'          => $network,
         'amount'           => number_format($total_amount, 2, '.', ''),
-        'description'      => "StockLoyal sweep {$merchant_id}" . ($broker !== '' ? " [{$broker}]" : ""),
-        'ach_class'        => 'ccd',
-        'user'             => [
-            'legal_name' => $mp['merchant_name'] ?: $merchant_id,
-        ],
-        'idempotency_key'  => $idempotency_key,
+        'description'      => "SL Sweep",
     ]);
 
     $transfer = $transfer_response['transfer'];

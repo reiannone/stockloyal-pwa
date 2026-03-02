@@ -1087,7 +1087,7 @@ class PrepareOrdersProcess
                 SELECT
                     po.member_id, po.merchant_id, po.basket_id, po.batch_id, po.symbol,
                     po.shares, po.amount, po.points_used,
-                    'pending', 'sweep', po.broker, po.member_timezone
+                    'approved', 'sweep', po.broker, po.member_timezone
                 FROM prepared_orders po
                 WHERE po.batch_id = ? AND po.status = 'staged'
             ");

@@ -78,7 +78,8 @@ try {
             COUNT(*) AS order_count,
             SUM(o.amount) AS total_amount
         FROM orders o
-        LEFT JOIN broker_master b ON o.broker = b.broker_name
+        LEFT JOIN broker_master b
+            ON o.broker COLLATE utf8mb4_unicode_ci = b.broker_name COLLATE utf8mb4_unicode_ci
         WHERE o.merchant_id = ?
           AND LOWER(o.status) = 'approved'
           AND (o.paid_flag = 0 OR o.paid_flag IS NULL)
