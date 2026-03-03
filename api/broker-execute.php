@@ -26,7 +26,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/_loadenv.php';
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/AlpacaBrokerAPI.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 header("Content-Type: application/json");
 
@@ -400,10 +400,13 @@ function executeBasketOrders(
 
 function executeAlpacaOrders(PDO $conn, array $orders, string $logFile): array
 {
+    // Determine merchant from first order for per-merchant credentials
+    $merchantId = $orders[0]['merchant_id'] ?? '';
     try {
-        $alpaca = new AlpacaBrokerAPI();
+        $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+        $alpaca  = $adapter->getApi();
     } catch (\Exception $e) {
-        logMsg($logFile, "❌ AlpacaBrokerAPI init failed: " . $e->getMessage());
+        logMsg($logFile, "❌ BrokerAdapter init failed for {$merchantId}: " . $e->getMessage());
         return ['executed' => 0, 'failed' => count($orders), 'pending' => 0, 'fills' => []];
     }
 

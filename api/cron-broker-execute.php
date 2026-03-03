@@ -8,23 +8,37 @@
  * submits them to Alpaca's Broker API for execution.
  *
  * PIPELINE POSITION:
- *   Prepare → Settlement → Journal → Order Sweep → [THIS CRON] → Broker Fills
+ *   Prepare -> Settlement -> Journal -> Order Sweep -> [THIS CRON] -> Broker Fills
  *
  * CRONTAB (runs every 5 min during market hours, M-F):
  *   */5 9-16 * * 1-5 /usr/bin/php /var/www/api/cron-broker-execute.php >> /var/log/stockloyal/cron-broker-exec.log 2>&1
  *
- * ALTERNATE: trigger immediately after sweep via CLI:
+ "C:\xampp\htdocs\stockloyal-pwa\api\alpaca-broker-config.php"
+
+# 3. EC2 Host (rename variable so we avoid conflict with $Host)
+$EC2 = "ec2-user@3.150.49.91"
+
+# 4. Destination on remote server
+$DEST = "/home/ec2-user/alpaca-broker-config.php"
+
+# 5. Upload using scp — THIS WORKS IN POWERSHELL
+scp -i $KEY "$SRC" "${EC2}:${DEST}" * ALTERNATE: trigger immediately after sweep via CLI:
  *   php cron-broker-execute.php --trigger=sweep
  *
- * ENV VARS (from .env or EC2 environment):
- *   ALPACA_BROKER_API_KEY    - Broker API key
- *   ALPACA_BROKER_API_SECRET - Broker API secret
- *   ALPACA_ENV               - "paper" or "live"
- *   DB_HOST, DB_NAME, DB_USER, DB_PASS
+ * CREDENTIALS:
+ *   Per-merchant credentials loaded from SecretManager via merchant_broker_config.
+ *   Falls back to ENV vars during migration:
+ *     ALPACA_BROKER_API_KEY, ALPACA_BROKER_API_SECRET, ALPACA_ENV
+ *   DB: DB_HOST, DB_NAME, DB_USER, DB_PASS
+ *
+ * TODO (Phase 3 - BrokerAdapter):
+ *   - Group placed orders by merchant_id + broker_id
+ *   - Load per-merchant credentials from merchant_broker_config + SecretManager
+ *   - Use BrokerAdapterFactory::forMerchantBroker() instead of alpaca_api_call()
  * ============================================================================
  */
 
-// ── Bootstrap ────────────────────────────────────────────────────────────────
+// -- Bootstrap ----------------------------------------------------------------
 
 // Prevent web access
 if (php_sapi_name() !== 'cli' && !defined('CRON_INTERNAL_TRIGGER')) {
@@ -32,7 +46,7 @@ if (php_sapi_name() !== 'cli' && !defined('CRON_INTERNAL_TRIGGER')) {
     die("CLI or internal trigger only.\n");
 }
 
-require_once __DIR__ . '/db.php';        // PDO connection → $pdo
+require_once __DIR__ . '/db.php';        // PDO connection -> $pdo
 require_once __DIR__ . '/env.php';       // loads .env vars
 
 date_default_timezone_set('America/New_York');
@@ -45,14 +59,28 @@ foreach ($argv ?? [] as $arg) {
     }
 }
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// -- Config -------------------------------------------------------------------
+// During migration: try SecretManager, fall back to getenv().
+// Once BrokerAdapter is built, this global config block goes away entirely --
+// each merchant-broker pair gets its own credentials from the adapter factory.
 
-$ALPACA_ENV       = getenv('ALPACA_ENV') ?: 'paper';
-$ALPACA_BASE_URL  = $ALPACA_ENV === 'live'
+$ALPACA_ENV = getenv('ALPACA_ENV') ?: 'paper';
+$ALPACA_BASE_URL = $ALPACA_ENV === 'live'
     ? 'https://broker-api.alpaca.markets'
     : 'https://broker-api.sandbox.alpaca.markets';
-$ALPACA_API_KEY   = getenv('ALPACA_BROKER_API_KEY');
-$ALPACA_API_SECRET= getenv('ALPACA_BROKER_API_SECRET');
+
+// Try SecretManager with fallback to getenv()
+$_smAvailable = file_exists(__DIR__ . '/SecretManager.php');
+if ($_smAvailable) {
+    require_once __DIR__ . '/SecretManager.php';
+    $ALPACA_API_KEY    = SecretManager::getWithFallback('stockloyal/global/alpaca/broker_api_key', 'ALPACA_BROKER_API_KEY')
+                         ?? getenv('ALPACA_BROKER_API_KEY');
+    $ALPACA_API_SECRET = SecretManager::getWithFallback('stockloyal/global/alpaca/broker_api_secret', 'ALPACA_BROKER_API_SECRET')
+                         ?? getenv('ALPACA_BROKER_API_SECRET');
+} else {
+    $ALPACA_API_KEY    = getenv('ALPACA_BROKER_API_KEY');
+    $ALPACA_API_SECRET = getenv('ALPACA_BROKER_API_SECRET');
+}
 
 $RUN_ID   = gen_uuid();
 $HOSTNAME = gethostname() ?: 'unknown';
@@ -60,41 +88,25 @@ $START_TS = microtime(true);
 
 log_msg("=== CRON BROKER EXECUTE START === run_id={$RUN_ID} trigger={$triggerType} env={$ALPACA_ENV}");
 
-// ── Step 0: Check Alpaca Market Calendar + Clock ─────────────────────────────
-//
-// Two-step verification:
-//   1. Calendar API — Is today a trading day? What are the open/close times?
-//      Handles: weekends, holidays, early closes (day before Thanksgiving, etc.)
-//      Endpoint: GET /v1/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD
-//      Response: [{ "date":"2024-11-29", "open":"09:30", "close":"13:00", ... }]
-//
-//   2. Clock API — Real-time market status confirmation.
-//      Endpoint: GET /v1/clock
-//      Response: { "is_open":true, "next_open":"...", "next_close":"..." }
-//
-// The cron runs every 5 min via crontab, but these checks gate execution so
-// orders are only submitted during actual market hours.
+// -- Step 0: Check Alpaca Market Calendar + Clock -----------------------------
 
-$todayET = date('Y-m-d'); // Server must be set to America/New_York
+$todayET = date('Y-m-d');
 $nowET   = date('H:i');
 
-// Defaults — overridden by Calendar API if available
 $marketOpen  = '09:30';
 $marketClose = '16:00';
 
-// ── Step 0a: Alpaca Calendar — check if today is a trading day ──
+// -- Step 0a: Alpaca Calendar -- check if today is a trading day --
 
 $calendarData = get_market_calendar($todayET);
 
 if ($calendarData === null) {
-    // Calendar API failed — fall back to Clock API only
     log_msg("WARNING: Calendar API unavailable, falling back to Clock check");
     $marketStatus = 'calendar_error';
     $marketOpen   = '09:30';
     $marketClose  = '16:00';
-    $isTradingDay = true; // assume yes, Clock will catch it
+    $isTradingDay = true;
 } elseif (empty($calendarData)) {
-    // Today is NOT a trading day (weekend, holiday)
     $marketStatus = 'holiday';
     log_msg("Today ({$todayET}) is not a trading day per Alpaca Calendar (holiday/weekend).");
 
@@ -103,20 +115,18 @@ if ($calendarData === null) {
                    "Not a trading day ({$todayET})", $HOSTNAME);
         exit(0);
     }
-    log_msg("Manual trigger — proceeding despite non-trading day.");
+    log_msg("Manual trigger -- proceeding despite non-trading day.");
     $isTradingDay = false;
     $marketOpen   = '09:30';
     $marketClose  = '16:00';
 } else {
-    // Today IS a trading day — extract open/close times
     $isTradingDay = true;
-    $marketOpen   = $calendarData['open']  ?? '09:30';  // e.g. "09:30"
-    $marketClose  = $calendarData['close'] ?? '16:00';  // e.g. "13:00" for early close
+    $marketOpen   = $calendarData['open']  ?? '09:30';
+    $marketClose  = $calendarData['close'] ?? '16:00';
     $marketStatus = 'trading_day';
 
     log_msg("Trading day confirmed: open={$marketOpen} close={$marketClose}");
 
-    // Check if we're within the trading window
     if ($nowET < $marketOpen) {
         $marketStatus = 'pre_market';
         log_msg("Market not yet open (now={$nowET}, open={$marketOpen})");
@@ -139,21 +149,18 @@ if ($calendarData === null) {
         }
     }
 
-    // Flag early close for logging
     if ($marketClose !== '16:00') {
         $marketStatus = 'early_close';
-        log_msg("*** EARLY CLOSE today — market closes at {$marketClose} ET ***");
+        log_msg("*** EARLY CLOSE today -- market closes at {$marketClose} ET ***");
     }
 }
 
-// ── Step 0b: Alpaca Clock — real-time confirmation ──
+// -- Step 0b: Alpaca Clock -- real-time confirmation --
 
 $clockData = get_market_clock();
 $clockIsOpen = $clockData['is_open'] ?? null;
 
 if ($clockIsOpen === false && $triggerType === 'cron') {
-    // Calendar said trading day, but Clock says closed (could be a gap between
-    // calendar open time and actual order acceptance). Trust the Clock.
     $marketStatus = 'closed_clock';
     log_msg("Clock API reports market closed. Skipping.");
     record_run($RUN_ID, $triggerType, 'no_orders', 0, 0, 0, 0, 0, 0, $marketStatus,
@@ -170,7 +177,7 @@ if ($clockIsOpen === true) {
 log_msg("Market check passed: status={$marketStatus} today={$todayET} now={$nowET} " .
         "open={$marketOpen} close={$marketClose}");
 
-// ── Step 1: Find placed orders ───────────────────────────────────────────────
+// -- Step 1: Find placed orders -----------------------------------------------
 
 $stmt = $pdo->prepare("
     SELECT o.order_id, o.member_id, o.merchant_id, o.basket_id, o.broker,
@@ -195,7 +202,7 @@ if ($orderCount === 0) {
     exit(0);
 }
 
-// ── Step 2: Record run start ─────────────────────────────────────────────────
+// -- Step 2: Record run start -------------------------------------------------
 
 $pdo->prepare("
     INSERT INTO cron_exec_log
@@ -205,7 +212,7 @@ $pdo->prepare("
 ")->execute([$RUN_ID, $triggerType, $orderCount, $marketStatus,
              $marketOpen ?? null, $marketClose ?? null, $ALPACA_ENV, $HOSTNAME]);
 
-// ── Step 3: Group by member's Alpaca account & submit ────────────────────────
+// -- Step 3: Group by member's Alpaca account & submit ------------------------
 
 $submitted  = 0;
 $failed     = 0;
@@ -224,7 +231,6 @@ foreach ($placedOrders as $order) {
     $basketSet[$basketId] = true;
     $brokerSet[$broker]   = true;
 
-    // Validate: member must have an Alpaca account
     if (empty($alpacaAcctId)) {
         log_msg("  SKIP order #{$orderId}: member {$order['member_id']} has no alpaca_account_id");
         record_order_result($RUN_ID, $order, null, 'error',
@@ -234,16 +240,15 @@ foreach ($placedOrders as $order) {
         continue;
     }
 
-    // ── Submit to Alpaca Broker API ──
     $alpacaPayload = [
         'symbol'      => $symbol,
-        'notional'    => number_format($notional, 2, '.', ''),  // fractional $ amount
+        'notional'    => number_format($notional, 2, '.', ''),
         'side'        => 'buy',
         'type'        => 'market',
         'time_in_force' => 'day',
     ];
 
-    log_msg("  Submitting order #{$orderId}: {$symbol} \${$notional} → account {$alpacaAcctId}");
+    log_msg("  Submitting order #{$orderId}: {$symbol} \${$notional} -> account {$alpacaAcctId}");
 
     $result = alpaca_api_call(
         "POST",
@@ -255,9 +260,8 @@ foreach ($placedOrders as $order) {
         $alpacaOrderId = $result['data']['id'] ?? null;
         $alpacaStatus  = $result['data']['status'] ?? 'unknown';
 
-        log_msg("    ✓ Alpaca order created: {$alpacaOrderId} status={$alpacaStatus}");
+        log_msg("    OK Alpaca order created: {$alpacaOrderId} status={$alpacaStatus}");
 
-        // Update order in our DB
         $pdo->prepare("
             UPDATE orders
             SET status = 'submitted',
@@ -273,18 +277,17 @@ foreach ($placedOrders as $order) {
         $totalAmt += $notional;
     } else {
         $errMsg = $result['error'] ?? 'Unknown Alpaca error';
-        log_msg("    ✗ FAILED order #{$orderId}: {$errMsg}");
+        log_msg("    FAIL order #{$orderId}: {$errMsg}");
 
         record_order_result($RUN_ID, $order, null, 'rejected', $errMsg);
         mark_order_failed($orderId, $errMsg);
         $failed++;
     }
 
-    // Small delay to avoid rate limiting
-    usleep(100000); // 100ms
+    usleep(100000); // 100ms rate limit delay
 }
 
-// ── Step 4: Finalize run ─────────────────────────────────────────────────────
+// -- Step 4: Finalize run -----------------------------------------------------
 
 $durationMs = round((microtime(true) - $START_TS) * 1000);
 $finalStatus = ($failed > 0 && $submitted === 0) ? 'failed' : 'completed';
@@ -309,9 +312,9 @@ $pdo->prepare("
 log_msg("=== CRON COMPLETE === submitted={$submitted} failed={$failed} duration={$durationMs}ms status={$finalStatus}");
 
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// =============================================================================
 // HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// =============================================================================
 
 /**
  * Call Alpaca Broker API
@@ -358,19 +361,6 @@ function alpaca_api_call(string $method, string $endpoint, array $body = []): ar
 
 /**
  * Get today's market calendar from Alpaca.
- *
- * GET /v1/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD
- *
- * Returns:
- *   - Assoc array with keys: date, open, close, session_open, session_close
- *     if today IS a trading day.
- *   - Empty array [] if today is NOT a trading day (weekend/holiday).
- *   - null if the API call failed.
- *
- * Example responses:
- *   Trading day:    {"date":"2024-11-27","open":"09:30","close":"13:00",...}  ← early close
- *   Normal day:     {"date":"2024-11-25","open":"09:30","close":"16:00",...}
- *   Holiday:        [] (empty — no entry for that date)
  */
 function get_market_calendar(string $date): ?array {
     $result = alpaca_api_call('GET', "/v1/calendar?start={$date}&end={$date}");
@@ -382,24 +372,16 @@ function get_market_calendar(string $date): ?array {
 
     $days = $result['data'] ?? [];
 
-    // API returns an array of calendar days. For a single-day query:
-    // - Trading day → array with 1 element
-    // - Non-trading day → empty array
     if (is_array($days) && count($days) > 0) {
-        return $days[0]; // { date, open, close, session_open, session_close }
+        return $days[0];
     }
 
-    return []; // not a trading day
+    return [];
 }
 
 
 /**
  * Get real-time market clock from Alpaca.
- *
- * GET /v1/clock
- *
- * Returns: { timestamp, is_open, next_open, next_close }
- *   or empty array on failure.
  */
 function get_market_clock(): array {
     $result = alpaca_api_call('GET', '/v1/clock');

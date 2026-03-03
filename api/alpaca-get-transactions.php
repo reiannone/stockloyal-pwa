@@ -15,7 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/AlpacaBrokerAPI.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 header('Content-Type: application/json');
 
@@ -39,9 +39,10 @@ try {
 
     // ── 1. Look up Alpaca account ID for this member ──
     $stmt = $conn->prepare("
-        SELECT broker_account_id
-        FROM broker_credentials
-        WHERE member_id = ? AND broker = 'Alpaca' AND broker_account_id IS NOT NULL
+        SELECT bc.broker_account_id, m.merchant_id
+        FROM broker_credentials bc
+        JOIN members m ON m.member_id = bc.member_id
+        WHERE bc.member_id = ? AND bc.broker = 'Alpaca' AND bc.broker_account_id IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$memberId]);
@@ -53,7 +54,9 @@ try {
     }
 
     $accountId = $row['broker_account_id'];
-    $alpaca = new AlpacaBrokerAPI();
+    $merchantId = $row['merchant_id'] ?? '';
+    $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+    $alpaca  = $adapter->getApi();
 
     // ── 2. Fetch orders from Alpaca ──
     $afterDate = date('Y-m-d\TH:i:s\Z', strtotime("-{$days} days"));

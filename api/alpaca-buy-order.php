@@ -4,24 +4,23 @@ declare(strict_types=1);
 /**
  * alpaca-buy-order.php
  *
- * Places a buy order via Alpaca Broker API for a member's account.
+ * Places a buy order via the BrokerAdapter for a member's account.
+ * Uses BrokerAdapterFactory to resolve per-merchant credentials.
  *
  * Input: {
  *   member_id,          // required
- *   symbol,             // required — e.g. "AAPL"
+ *   symbol,             // required
  *   order_type,         // "market" (default) | "limit"
  *   time_in_force,      // "day" (default) | "gtc" | "ioc"
  *   qty,                // shares to buy (required if no notional)
  *   notional,           // dollar amount to buy (required if no qty)
  *   limit_price         // required if order_type = "limit"
  * }
- *
- * Output: { success, order: { ... } }
  */
 
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/AlpacaBrokerAPI.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 header('Content-Type: application/json');
 
@@ -40,7 +39,7 @@ $qty         = isset($input['qty']) ? (string)$input['qty'] : '';
 $notional    = isset($input['notional']) ? (string)$input['notional'] : '';
 $limitPrice  = isset($input['limit_price']) ? (string)$input['limit_price'] : '';
 
-// ── Validation ──
+// -- Validation --
 if (empty($memberId)) {
     http_response_code(400);
     echo json_encode(["success" => false, "error" => "member_id is required."]);
@@ -89,11 +88,12 @@ if (!empty($notional) && ($orderType !== 'market' || $timeInForce !== 'day')) {
 }
 
 try {
-    // ── 1. Look up Alpaca account ID ──
+    // -- 1. Look up Alpaca account ID + merchant context --
     $stmt = $conn->prepare("
-        SELECT broker_account_id
-        FROM broker_credentials
-        WHERE member_id = ? AND broker = 'Alpaca' AND broker_account_id IS NOT NULL
+        SELECT bc.broker_account_id, m.merchant_id
+        FROM broker_credentials bc
+        JOIN members m ON m.member_id = bc.member_id
+        WHERE bc.member_id = ? AND bc.broker = 'Alpaca' AND bc.broker_account_id IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$memberId]);
@@ -105,35 +105,35 @@ try {
         exit;
     }
 
-    $accountId = $row['broker_account_id'];
-    $alpaca = new AlpacaBrokerAPI();
+    $accountId  = $row['broker_account_id'];
+    $merchantId = $row['merchant_id'];
 
-    // ── 2. Build order payload ──
-    $orderPayload = [
+    // -- 2. Build adapter via factory (per-merchant credentials) --
+    $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+
+    // -- 3. Build order payload --
+    $orderData = [
         'symbol'        => $symbol,
         'side'          => 'buy',
         'type'          => $orderType,
         'time_in_force' => $timeInForce,
     ];
 
-    // Quantity: shares or dollar amount
     if (!empty($notional)) {
-        $orderPayload['notional'] = number_format((float)$notional, 2, '.', '');
+        $orderData['notional'] = $notional;
     } else {
-        $orderPayload['qty'] = $qty;
+        $orderData['qty'] = $qty;
     }
 
-    // Limit price
     if ($orderType === 'limit') {
-        $orderPayload['limit_price'] = number_format((float)$limitPrice, 2, '.', '');
+        $orderData['limit_price'] = number_format((float)$limitPrice, 2, '.', '');
     }
 
-    // ── 3. Submit order to Alpaca ──
-    $result = $alpaca->createOrder($accountId, $orderPayload);
+    // -- 4. Submit order via adapter --
+    $result = $adapter->submitOrder($accountId, $orderData);
 
     if (!$result['success']) {
         $errorMsg = $result['error'] ?? 'Order submission failed';
-        // Check for specific Alpaca errors
         if (isset($result['data']['message'])) {
             $errorMsg = $result['data']['message'];
         }
@@ -147,11 +147,11 @@ try {
 
     $order = $result['data'];
 
-    // ── 4. Return success ──
+    // -- 5. Return success --
     echo json_encode([
         "success" => true,
         "order"   => [
-            "id"              => $order['id'] ?? '',
+            "id"              => $order['id'] ?? $order['order_id'] ?? '',
             "client_order_id" => $order['client_order_id'] ?? '',
             "symbol"          => $order['symbol'] ?? $symbol,
             "side"            => $order['side'] ?? 'buy',

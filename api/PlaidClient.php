@@ -18,8 +18,8 @@ class PlaidClient {
     private string $clientId;
     private string $secret;
 
-    public function __construct() {
-        $env = $_ENV['PLAID_ENV'] ?? 'sandbox';
+    public function __construct(?array $credentials = null) {
+        $env = $credentials['env'] ?? $_ENV['PLAID_ENV'] ?? 'sandbox';
 
         $this->baseUrl = match ($env) {
             'production'  => 'https://production.plaid.com',
@@ -27,11 +27,18 @@ class PlaidClient {
             default       => 'https://sandbox.plaid.com',
         };
 
-        $this->clientId = $_ENV['PLAID_CLIENT_ID'] ?? '';
-        $this->secret   = $_ENV['PLAID_SECRET']    ?? '';
+        if ($credentials !== null) {
+            // Config-driven: credentials passed explicitly
+            $this->clientId = $credentials['client_id'] ?? '';
+            $this->secret   = $credentials['secret']    ?? '';
+        } else {
+            // Legacy: read from $_ENV (backward compatible)
+            $this->clientId = $_ENV['PLAID_CLIENT_ID'] ?? '';
+            $this->secret   = $_ENV['PLAID_SECRET']    ?? '';
+        }
 
         if ($this->clientId === '' || $this->secret === '') {
-            throw new RuntimeException('Plaid credentials missing. Check PLAID_CLIENT_ID and PLAID_SECRET in .env.production');
+            throw new RuntimeException('Plaid credentials missing. Check PLAID_CLIENT_ID and PLAID_SECRET.');
         }
     }
 

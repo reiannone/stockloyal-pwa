@@ -39,21 +39,42 @@ class AlpacaMarketData
         'ARM','SMCI','MSTR','RDDT','IONQ','RGTI','LUNR',
     ];
 
-    public function __construct()
+    /**
+     * Construct with optional credentials array.
+     *
+     * Config-driven (new way):
+     *   $md = new AlpacaMarketData([
+     *       'data_api_key'      => '...',
+     *       'data_api_secret'   => '...',
+     *       'broker_api_key'    => '...',
+     *       'broker_api_secret' => '...',
+     *   ]);
+     *
+     * Legacy (still works - reads from $_ENV):
+     *   $md = new AlpacaMarketData();
+     */
+    public function __construct(?array $credentials = null)
     {
         require_once __DIR__ . '/_loadenv.php';
 
-        // Trading/Data API keys (PK...) — for data.alpaca.markets (snapshots, quotes)
-        $this->dataKey      = $_ENV['ALPACA_DATA_API_KEY']      ?? '';
-        $this->dataSecret   = $_ENV['ALPACA_DATA_API_SECRET']   ?? '';
+        if ($credentials !== null) {
+            // Config-driven: credentials passed explicitly
+            $this->dataKey      = $credentials['data_api_key']      ?? $_ENV['ALPACA_DATA_API_KEY']      ?? '';
+            $this->dataSecret   = $credentials['data_api_secret']   ?? $_ENV['ALPACA_DATA_API_SECRET']   ?? '';
+            $this->brokerKey    = $credentials['broker_api_key']    ?? $_ENV['ALPACA_BROKER_API_KEY']    ?? '';
+            $this->brokerSecret = $credentials['broker_api_secret'] ?? $_ENV['ALPACA_BROKER_API_SECRET'] ?? '';
+            $this->brokerUrl    = $credentials['broker_base_url']   ?? $_ENV['ALPACA_BROKER_BASE_URL']   ?? 'https://broker-api.sandbox.alpaca.markets';
+        } else {
+            // Legacy: read from $_ENV (backward compatible)
+            $this->dataKey      = $_ENV['ALPACA_DATA_API_KEY']      ?? '';
+            $this->dataSecret   = $_ENV['ALPACA_DATA_API_SECRET']   ?? '';
+            $this->brokerKey    = $_ENV['ALPACA_BROKER_API_KEY']    ?? '';
+            $this->brokerSecret = $_ENV['ALPACA_BROKER_API_SECRET'] ?? '';
+            $this->brokerUrl    = $_ENV['ALPACA_BROKER_BASE_URL']   ?? 'https://broker-api.sandbox.alpaca.markets';
+        }
 
-        // Broker API keys (CK...) — for broker-api (assets, accounts, orders)
-        $this->brokerKey    = $_ENV['ALPACA_BROKER_API_KEY']    ?? '';
-        $this->brokerSecret = $_ENV['ALPACA_BROKER_API_SECRET'] ?? '';
-        $this->brokerUrl    = $_ENV['ALPACA_BROKER_BASE_URL']   ?? 'https://broker-api.sandbox.alpaca.markets';
-
-        // Data API — same URL for sandbox and live
-        $this->dataUrl = $_ENV['ALPACA_DATA_BASE_URL'] ?? 'https://data.alpaca.markets';
+        // Data API - same URL for sandbox and live
+        $this->dataUrl = $credentials['data_base_url'] ?? $_ENV['ALPACA_DATA_BASE_URL'] ?? 'https://data.alpaca.markets';
 
         if (empty($this->dataKey) || empty($this->dataSecret)) {
             throw new \RuntimeException('Alpaca Data API credentials not configured (ALPACA_DATA_API_KEY / ALPACA_DATA_API_SECRET)');
@@ -63,9 +84,9 @@ class AlpacaMarketData
         }
     }
 
-    // ─── HTTP ────────────────────────────────────────────────
+    // --- HTTP --------------------------------------------------------
 
-    /** Data API request — uses Trading API keys (APCA headers) for data.alpaca.markets */
+    /** Data API request - uses Trading API keys (APCA headers) for data.alpaca.markets */
     private function dataRequest(string $endpoint, array $params = []): array
     {
         $url = rtrim($this->dataUrl, '/') . $endpoint;
@@ -79,7 +100,7 @@ class AlpacaMarketData
         ]);
     }
 
-    /** Broker API request — uses Broker API keys (Basic auth) for broker-api.*.alpaca.markets */
+    /** Broker API request - uses Broker API keys (Basic auth) for broker-api.*.alpaca.markets */
     private function brokerRequest(string $endpoint, array $params = []): array
     {
         $url = rtrim($this->brokerUrl, '/') . $endpoint;
@@ -125,7 +146,7 @@ class AlpacaMarketData
         ];
     }
 
-    // ─── Snapshots / Quotes ──────────────────────────────────
+    // --- Snapshots / Quotes ------------------------------------------
 
     /**
      * Get stock snapshots for multiple symbols (auto-batched if >180).
@@ -169,7 +190,7 @@ class AlpacaMarketData
         ]);
     }
 
-    // ─── Universe-based categories (replaces screener) ───────
+    // --- Universe-based categories (replaces screener) ---------------
 
     /**
      * Fetch snapshots for the full stock universe and return sorted results.
@@ -228,7 +249,7 @@ class AlpacaMarketData
         ];
     }
 
-    // ─── Assets ──────────────────────────────────────────────
+    // --- Assets ------------------------------------------------------
 
     public function getAssets(string $assetClass = 'us_equity', ?string $exchange = null): array
     {
@@ -316,10 +337,10 @@ class AlpacaMarketData
         return ['success' => true, 'data' => $matches];
     }
 
-    // ─── Helpers ─────────────────────────────────────────────
+    // --- Helpers ------------------------------------------------------
 
     /**
-     * Cached asset name map (symbol → name). Built from full asset list, 6-hour TTL.
+     * Cached asset name map (symbol -> name). Built from full asset list, 6-hour TTL.
      */
     private function getCachedAssetNames(): array
     {

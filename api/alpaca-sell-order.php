@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/AlpacaBrokerAPI.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
 
@@ -75,10 +75,11 @@ if (!in_array($timeInForce, ['day', 'gtc', 'ioc'])) {
 try {
     // ── 1. Look up Alpaca account ──
     $stmt = $conn->prepare("
-        SELECT broker_account_id
-        FROM broker_credentials
-        WHERE member_id = :mid AND LOWER(broker) = 'alpaca'
-          AND broker_account_id IS NOT NULL
+        SELECT bc.broker_account_id, m.merchant_id
+        FROM broker_credentials bc
+        JOIN members m ON m.member_id = bc.member_id
+        WHERE bc.member_id = :mid AND LOWER(bc.broker) = 'alpaca'
+          AND bc.broker_account_id IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([':mid' => $memberId]);
@@ -89,8 +90,10 @@ try {
         exit;
     }
 
-    $accountId = $cred['broker_account_id'];
-    $alpaca    = new AlpacaBrokerAPI();
+    $accountId  = $cred['broker_account_id'];
+    $merchantId = $cred['merchant_id'] ?? '';
+    $adapter    = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+    $alpaca     = $adapter->getApi();
 
     // ── 2. If sell_all, use close position endpoint (handles fractional cleanly) ──
     if ($sellAll) {

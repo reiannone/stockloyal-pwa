@@ -59,6 +59,10 @@ export default function PaymentsProcessing() {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [cancelResults, setCancelResults] = useState(null);
 
+  // ── Simulate funding (sandbox) ──
+  const [simulateLoading, setSimulateLoading] = useState(false);
+  const [simulateResult, setSimulateResult] = useState(null);
+
   // Pipeline queue counts
   const [queueCounts, setQueueCounts] = useState(null);
 
@@ -364,6 +368,82 @@ export default function PaymentsProcessing() {
     }
   };
 
+  // ── Simulate merchant funding (sandbox) ──
+  const handleSimulateFunding = async () => {
+    closeModal();
+    setSimulateLoading(true);
+    setSimulateResult(null);
+    try {
+      const payload = { action: "fund" };
+      if (merchantId) payload.merchant_id = merchantId;
+      const res = await apiPost("simulate-merchant-funding.php", payload);
+      setSimulateResult(res);
+
+      // Refresh data
+      if (merchantId) await loadSingleMerchant(merchantId);
+      else await loadAllMerchants();
+
+      // Refresh queue counts
+      try {
+        const qc = await apiPost("admin-queue-counts.php");
+        if (qc?.success) setQueueCounts(qc.counts);
+      } catch (_) {}
+    } catch (err) {
+      setSimulateResult({ success: false, error: err.message });
+    } finally {
+      setSimulateLoading(false);
+    }
+  };
+
+  const confirmSimulateFunding = async () => {
+    // Get preview first
+    try {
+      const payload = { action: "preview" };
+      if (merchantId) payload.merchant_id = merchantId;
+      const preview = await apiPost("simulate-merchant-funding.php", payload);
+
+      const orderCount = preview?.orders_pending || 0;
+      const totalDue = safeNum(preview?.total_due).toFixed(2);
+      const sweepBal = preview?.sweep_balance != null ? `$${safeNum(preview.sweep_balance).toFixed(2)}` : "unknown";
+      const merchantList = (preview?.by_merchant || [])
+        .map(m => `${m.merchant_name}: ${m.order_count} orders ($${m.total_amount.toFixed(2)})`)
+        .join("\n");
+
+      setModal({
+        show: true,
+        title: "Simulate Merchant Funding",
+        icon: <Zap size={20} color="#f59e0b" />,
+        message: (
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              This will <strong>deposit ${totalDue}</strong> into the Alpaca firm sweep account
+              and mark <strong>{orderCount} order(s)</strong> as paid.
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#6b7280", marginBottom: 8 }}>
+              Current sweep balance: <strong>{sweepBal}</strong>
+            </div>
+            {merchantList && (
+              <div style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6,
+                padding: "8px 12px", fontSize: "0.82rem", whiteSpace: "pre-line",
+              }}>
+                {merchantList}
+              </div>
+            )}
+            <div style={{ marginTop: 8, fontSize: "0.78rem", color: "#9ca3af" }}>
+              ⚠️ Sandbox only — simulates ACH settlement from merchant.
+            </div>
+          </div>
+        ),
+        confirmText: "Simulate Funding",
+        confirmColor: "#f59e0b",
+        data: { type: "simulate" },
+      });
+    } catch (err) {
+      setSimulateResult({ success: false, error: "Preview failed: " + err.message });
+    }
+  };
+
   // ── Confirm handlers ──
   const confirmProcessAll = () => {
     const plaidCount = Object.values(fundingMethods).filter(m => m === "plaid").length;
@@ -429,6 +509,7 @@ export default function PaymentsProcessing() {
     else if (d.type === "merchant") handleBatchProcess("merchant", d);
     else if (d.type === "broker") handleBatchProcess("broker", d);
     else if (d.type === "cancel") handleCancelFunding(d.batchId);
+    else if (d.type === "simulate") handleSimulateFunding();
   };
 
   const loading = merchantId ? mLoading : allLoading;
@@ -502,6 +583,17 @@ export default function PaymentsProcessing() {
               <CreditCard size={14} style={{ verticalAlign: "middle" }} /> Fund IB Account
             </button>
           )}
+          {activeTab === "unpaid" && topTotals.orders > 0 && (
+            <button onClick={confirmSimulateFunding} disabled={processing || simulateLoading}
+              style={{
+                padding: "0.625rem 1.25rem",
+                background: (processing || simulateLoading) ? "#94a3b8" : "#f59e0b",
+                color: "#fff", border: "none", borderRadius: 6, fontSize: "0.875rem", fontWeight: 600,
+                cursor: (processing || simulateLoading) ? "not-allowed" : "pointer",
+              }}>
+              <Zap size={14} style={{ verticalAlign: "middle" }} /> Simulate Funding
+            </button>
+          )}
         </div>
       </div>
 
@@ -566,6 +658,40 @@ export default function PaymentsProcessing() {
             <div style={{ color: "#991b1b" }}>{cancelResults.error}</div>
           )}
           <button onClick={() => setCancelResults(null)}
+            style={{ marginTop: 8, padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: "0.8rem" }}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Simulate Funding Result */}
+      {simulateResult && (
+        <div style={{
+          background: simulateResult.success ? "#fef9c3" : "#fef2f2",
+          border: `2px solid ${simulateResult.success ? "#f59e0b" : "#ef4444"}`,
+          borderRadius: 8, padding: 16, marginBottom: 16,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            {simulateResult.success ? <Zap size={20} color="#f59e0b" /> : <AlertCircle size={20} color="#ef4444" />}
+            <strong style={{ color: simulateResult.success ? "#92400e" : "#991b1b" }}>
+              {simulateResult.success ? "Sandbox Funding Simulated" : "Simulation Failed"}
+            </strong>
+          </div>
+          {simulateResult.success ? (
+            <div style={{ fontSize: "0.85rem", color: "#78350f" }}>
+              Deposited <strong>${safeNum(simulateResult.funded_amount).toFixed(2)}</strong> to firm sweep account ·
+              Marked <strong>{simulateResult.orders_marked}</strong> order(s) as paid
+              {simulateResult.transfer?.transfer_id && (
+                <> · Transfer: <code style={{ fontSize: "0.78rem" }}>{simulateResult.transfer.transfer_id}</code></>
+              )}
+              {simulateResult.sweep_balance != null && (
+                <> · New balance: <strong>${safeNum(simulateResult.sweep_balance).toFixed(2)}</strong></>
+              )}
+            </div>
+          ) : (
+            <div style={{ color: "#991b1b" }}>{simulateResult.error}</div>
+          )}
+          <button onClick={() => setSimulateResult(null)}
             style={{ marginTop: 8, padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, background: "white", cursor: "pointer", fontSize: "0.8rem" }}>
             Dismiss
           </button>

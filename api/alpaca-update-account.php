@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 header("Content-Type: application/json");
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/AlpacaBrokerAPI.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 $input = json_decode(file_get_contents("php://input"), true) ?? [];
 
@@ -104,7 +104,9 @@ try {
     ];
 
     // ── Call Alpaca Broker API PATCH ──
-    $alpaca = new AlpacaBrokerAPI();
+    $merchantId = $row['merchant_id'] ?? '';
+    $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+    $alpaca  = $adapter->getApi();
     $result = $alpaca->updateAccount($brokerAccountId, $kycData);
 
     if (!$result['success']) {

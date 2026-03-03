@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Returns counts of open items for each IB processing stage:
  *
  *   Stage 1 - prepare:    Members eligible for order preparation
- *                          (active picks + points > 0 + sweep configured + no pending/approved orders)
+ *                          (active picks + points > 0 + no in-flight orders for those symbols)
  *   Stage 2 - settlement: Orders approved but not yet paid by merchant (paid_flag=0)
  *   Stage 3 - journal:    Orders approved + paid by merchant, awaiting journal to member accounts
  *   Stage 4 - sweep:      Orders funded (journaled) and ready to submit to broker
@@ -27,8 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 try {
     // ── Stage 1: Prepare ─────────────────────────────────────────────
     // Members with active stock picks, points > 0, sweep configured,
-    // and no pending/approved orders already in the pipeline.
-    // This mirrors the WHERE clause in prepare_orders_process.php → prepare()
+    // and no in-flight orders (pending through submitted) for the same
+    // symbol+merchant already in the pipeline.
     $prepareStmt = $conn->prepare("
         SELECT COUNT(DISTINCT w.member_id) AS cnt
         FROM wallet w
@@ -39,8 +39,10 @@ try {
           AND w.sweep_percentage > 0
           AND NOT EXISTS (
               SELECT 1 FROM orders o
-              WHERE o.member_id = w.member_id
-                AND o.status IN ('pending', 'approved')
+              WHERE o.member_id   = w.member_id
+                AND o.symbol      = msp.symbol
+                AND o.merchant_id = w.merchant_id
+                AND o.status IN ('pending', 'approved', 'funded', 'placed', 'submitted')
           )
     ");
     $prepareStmt->execute();

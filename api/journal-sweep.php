@@ -30,6 +30,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/alpaca-broker-config.php';
+require_once __DIR__ . '/BrokerAdapterFactory.php';
 
 header('Content-Type: application/json');
 
@@ -133,6 +134,7 @@ function runJournal(PDO $conn, ?array $memberIds): array
             $memberGroups[$mid] = [
                 'member_id'          => $mid,
                 'broker'             => $o['broker'],
+                'merchant_id'        => $o['merchant_id'],
                 'broker_account_id'  => $o['broker_account_id'],
                 'broker_status'      => $o['broker_account_status'],
                 'name'               => trim(($o['first_name'] ?? '') . ' ' . ($o['last_name'] ?? '')),
@@ -176,7 +178,7 @@ function runJournal(PDO $conn, ?array $memberIds): array
                 continue;
             }
 
-            $journalResult = postJournal($alpacaAccountId, $amount, $group['name'], $mid);
+            $journalResult = postJournal($alpacaAccountId, $amount, $group['name'], $mid, $group['merchant_id'] ?? '');
 
             if (!$journalResult['success']) {
                 throw new Exception("Alpaca journal failed: " . ($journalResult['error'] ?? 'Unknown'));
@@ -256,8 +258,36 @@ function runJournal(PDO $conn, ?array $memberIds): array
    ALPACA JOURNAL API CALL
    ═══════════════════════════════════════════════════════════════════════ */
 
-function postJournal(string $toAccountId, float $amount, string $memberName, string $memberId): array
+function postJournal(string $toAccountId, float $amount, string $memberName, string $memberId, string $merchantId = ''): array
 {
+    // Try adapter-based journal (per-merchant credentials from SecretManager)
+    if (!empty($merchantId)) {
+        try {
+            global $conn;
+            $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
+            $result = $adapter->fundAccount($toAccountId, number_format($amount, 2, '.', ''));
+
+            if ($result['success']) {
+                $data = $result['data'] ?? [];
+                brokerLog("JOURNAL-OK (adapter): journal_id=" . ($data['id'] ?? 'n/a'));
+                return [
+                    'success'    => true,
+                    'journal_id' => $data['id'] ?? null,
+                    'status'     => $data['status'] ?? 'executed',
+                    'data'       => $data,
+                ];
+            } else {
+                brokerLog("JOURNAL-FAIL (adapter): " . ($result['error'] ?? 'unknown'));
+                return ['success' => false, 'error' => $result['error'] ?? 'Journal failed'];
+            }
+        } catch (Exception $e) {
+            brokerLog("JOURNAL-ADAPTER-ERROR: " . $e->getMessage() . " -- falling back to legacy");
+            // Fall through to legacy cURL below
+        }
+    }
+
+    // Legacy fallback: raw cURL with constants from alpaca-broker-config.php
+
     $url = BROKER_BASE_URL . '/v1/journals';
 
     $payload = [

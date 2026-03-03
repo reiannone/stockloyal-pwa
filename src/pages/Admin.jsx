@@ -67,9 +67,9 @@ export default function Admin() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Broker management state
-  const [allBrokers, setAllBrokers] = useState([]);
-  const [assignedBrokers, setAssignedBrokers] = useState([]);
+  // ✅ Broker configuration state (from merchant_broker_config)
+  const [brokerConfigs, setBrokerConfigs] = useState([]);
+  const [availableBrokers, setAvailableBrokers] = useState([]);
   const [brokersLoading, setBrokersLoading] = useState(false);
 
   // Track the original (pre-edit) conversion rate to detect changes on save
@@ -117,92 +117,65 @@ export default function Admin() {
     }
   };
 
-  // ✅ Load all available brokers (once on mount)
-  const fetchAllBrokers = async () => {
-    try {
-      const data = await apiGet("get-brokers.php");
-      if (data?.success) {
-        setAllBrokers(data.brokers || []);
-      }
-    } catch (e) {
-      console.error("[Admin] get-brokers failed:", e);
-    }
-  };
-
-  // ✅ Load brokers assigned to selected merchant
-  const fetchMerchantBrokers = async (merchantId) => {
+  // ✅ Load broker configs for selected merchant (from merchant_broker_config)
+  const fetchBrokerConfigs = async (merchantId) => {
     if (!merchantId) {
-      setAssignedBrokers([]);
+      setBrokerConfigs([]);
+      setAvailableBrokers([]);
       return;
     }
     setBrokersLoading(true);
     try {
-      const data = await apiPost("get-merchant-brokers.php", { merchant_id: merchantId });
+      const data = await apiPost("get-merchant-broker-config.php", { merchant_id: merchantId });
       if (data?.success) {
-        setAssignedBrokers(data.broker_ids || []);
+        setBrokerConfigs(data.configs || []);
+        setAvailableBrokers(data.available_brokers || []);
       } else {
-        setAssignedBrokers([]);
+        setBrokerConfigs([]);
+        setAvailableBrokers([]);
       }
     } catch (e) {
-      console.error("[Admin] get-merchant-brokers failed:", e);
-      setAssignedBrokers([]);
+      console.error("[Admin] get-merchant-broker-config failed:", e);
+      setBrokerConfigs([]);
     } finally {
       setBrokersLoading(false);
     }
   };
 
-  // ✅ Save broker assignments for merchant
-  const saveMerchantBrokers = async () => {
-    if (!selected?.merchant_id) return;
-    
+  // ✅ Toggle a broker config active/inactive
+  const toggleBrokerConfig = async (configId, currentActive) => {
+    const newActive = !currentActive;
     try {
-      const res = await apiPost("save-merchant-brokers.php", {
-        merchant_id: selected.merchant_id,
-        broker_ids: assignedBrokers,
+      const res = await apiPost("toggle-merchant-broker-config.php", {
+        config_id: configId,
+        is_active: newActive,
       });
       if (res?.success) {
-        alert(`Broker assignments saved for ${selected.merchant_name}!`);
+        setBrokerConfigs((prev) =>
+          prev.map((c) =>
+            c.config_id === configId ? { ...c, is_active: newActive } : c
+          )
+        );
       } else {
-        alert("Failed to save broker assignments: " + (res?.error || "Unknown error"));
+        alert("Failed to toggle broker: " + (res?.error || "Unknown error"));
       }
     } catch (e) {
-      console.error("[Admin] save-merchant-brokers failed:", e);
-      alert("Failed to save broker assignments: network error");
+      console.error("[Admin] toggle-merchant-broker-config failed:", e);
+      alert("Failed to toggle broker: network error");
     }
-  };
-
-  // ✅ Toggle broker assignment
-  const toggleBroker = (brokerId) => {
-    setAssignedBrokers((prev) => {
-      if (prev.includes(brokerId)) {
-        return prev.filter((id) => id !== brokerId);
-      } else {
-        return [...prev, brokerId];
-      }
-    });
-  };
-
-  // ✅ Select/deselect all brokers
-  const selectAllBrokers = () => {
-    setAssignedBrokers(allBrokers.map((b) => b.broker_id));
-  };
-
-  const deselectAllBrokers = () => {
-    setAssignedBrokers([]);
   };
 
   useEffect(() => {
     fetchMerchants();
-    fetchAllBrokers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Load broker assignments when merchant selection changes
+  // ✅ Load broker configs when merchant selection changes
   useEffect(() => {
     if (selected?.merchant_id) {
-      fetchMerchantBrokers(selected.merchant_id);
+      fetchBrokerConfigs(selected.merchant_id);
     } else {
-      setAssignedBrokers([]);
+      setBrokerConfigs([]);
     }
   }, [selected?.merchant_id]);
 
@@ -892,165 +865,193 @@ export default function Admin() {
               />
             </FormRow>
 
-            {/* ✅ Broker Relationships Section */}
-            <div style={{ 
-              gridColumn: '1 / -1', 
-              marginTop: '1.5rem', 
+            {/* ✅ Broker Configuration Section */}
+            <div style={{
+              gridColumn: '1 / -1',
+              marginTop: '1.5rem',
               marginBottom: '1rem',
               padding: '1rem',
               background: '#f0fdf4',
               borderRadius: '8px',
               border: '1px solid #22c55e'
             }}>
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '0.75rem'
               }}>
-                <h3 style={{ 
-                  fontSize: '1.1rem', 
-                  fontWeight: '600', 
+                <h3 style={{
+                  fontSize: '1.1rem',
+                  fontWeight: '600',
                   margin: 0,
                   color: '#166534',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.5rem'
                 }}>
-                  <Briefcase /> Broker Relationships
+                  <Briefcase /> Broker Configuration
                 </h3>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    onClick={selectAllBrokers}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '0.75rem',
-                      background: '#dcfce7',
-                      border: '1px solid #22c55e',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      color: '#166534'
-                    }}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={deselectAllBrokers}
-                    style={{
-                      padding: '4px 8px',
-                      fontSize: '0.75rem',
-                      background: '#fee2e2',
-                      border: '1px solid #ef4444',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      color: '#991b1b'
-                    }}
-                  >
-                    Clear All
-                  </button>
-                </div>
+                <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                  {brokerConfigs.filter(c => c.is_active).length} of {brokerConfigs.length} active
+                </span>
               </div>
-              
-              <p style={{ 
-                fontSize: '0.875rem', 
-                color: '#15803d', 
-                marginBottom: '1rem' 
+
+              <p style={{
+                fontSize: '0.875rem',
+                color: '#15803d',
+                marginBottom: '1rem'
               }}>
-                Select which brokers are available to members of this merchant. Only selected brokers will appear in the broker selection screen.
+                Broker integrations for this merchant. Toggle active status and view credential/sweep configuration.
               </p>
 
               {brokersLoading ? (
-                <p style={{ color: '#6b7280', fontStyle: 'italic' }}>Loading brokers...</p>
-              ) : allBrokers.length === 0 ? (
-                <p style={{ color: '#9ca3af' }}>No brokers configured in the system.</p>
+                <p style={{ color: '#6b7280', fontStyle: 'italic' }}>Loading broker config...</p>
+              ) : brokerConfigs.length === 0 ? (
+                <p style={{ color: '#9ca3af' }}>No broker configurations found for this merchant.</p>
               ) : (
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                  gap: '0.5rem'
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                  gap: '0.75rem'
                 }}>
-                  {allBrokers.map((broker) => {
-                    const isAssigned = assignedBrokers.includes(broker.broker_id);
-                    return (
-                      <label
-                        key={broker.broker_id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: '0.5rem 0.75rem',
-                          background: isAssigned ? '#dcfce7' : 'white',
-                          border: `1px solid ${isAssigned ? '#22c55e' : '#e5e7eb'}`,
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isAssigned}
-                          onChange={() => toggleBroker(broker.broker_id)}
-                          style={{ 
-                            width: '16px', 
-                            height: '16px',
-                            accentColor: '#22c55e'
-                          }}
-                        />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ 
-                            fontWeight: '500', 
-                            fontSize: '0.875rem',
-                            color: '#111827',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
+                  {brokerConfigs.map((cfg) => (
+                    <div
+                      key={cfg.config_id}
+                      style={{
+                        background: cfg.is_active ? 'white' : '#f9fafb',
+                        border: `1px solid ${cfg.is_active ? '#22c55e' : '#d1d5db'}`,
+                        borderRadius: '8px',
+                        padding: '1rem',
+                        opacity: cfg.is_active ? 1 : 0.7,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {/* Card Header */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '0.75rem'
+                      }}>
+                        <div>
+                          <div style={{
+                            fontWeight: '600',
+                            fontSize: '1rem',
+                            color: '#111827'
                           }}>
-                            {broker.broker_name}
+                            {cfg.broker_name}
                           </div>
-                          <div style={{ 
-                            fontSize: '0.7rem', 
+                          <div style={{
+                            fontSize: '0.7rem',
                             color: '#6b7280',
                             fontFamily: 'monospace'
                           }}>
-                            {broker.broker_id}
+                            {cfg.broker_type} &middot; config #{cfg.config_id}
                           </div>
                         </div>
-                      </label>
-                    );
-                  })}
+                        <button
+                          onClick={() => toggleBrokerConfig(cfg.config_id, cfg.is_active)}
+                          style={{
+                            padding: '4px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            background: cfg.is_active ? '#dcfce7' : '#fee2e2',
+                            color: cfg.is_active ? '#166534' : '#991b1b',
+                            border: `1px solid ${cfg.is_active ? '#22c55e' : '#ef4444'}`,
+                            borderRadius: '12px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {cfg.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                      </div>
+
+                      {/* Status Rows */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '0.5rem',
+                        fontSize: '0.8rem'
+                      }}>
+                        {/* API Credentials */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          color: cfg.has_api_key && cfg.has_api_secret ? '#166534' : '#dc2626'
+                        }}>
+                          {cfg.has_api_key && cfg.has_api_secret ? (
+                            <CircleCheckBig size={14} />
+                          ) : (
+                            <XCircle size={14} />
+                          )}
+                          API Credentials
+                        </div>
+
+                        {/* Sweep Account */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          color: cfg.sweep_account_id ? '#166534' : '#dc2626'
+                        }}>
+                          {cfg.sweep_account_id ? (
+                            <CircleCheckBig size={14} />
+                          ) : (
+                            <XCircle size={14} />
+                          )}
+                          Sweep Account
+                        </div>
+
+                        {/* Plaid Token */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          color: cfg.has_plaid_token ? '#166534' : '#9ca3af'
+                        }}>
+                          {cfg.has_plaid_token ? (
+                            <CircleCheckBig size={14} />
+                          ) : (
+                            <AlertTriangle size={14} />
+                          )}
+                          Plaid Token
+                        </div>
+
+                        {/* Sweep Status */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          color: cfg.sweep_account_status === 'active' ? '#166534' : '#9ca3af'
+                        }}>
+                          {cfg.sweep_account_status === 'active' ? (
+                            <CircleCheckBig size={14} />
+                          ) : (
+                            <AlertTriangle size={14} />
+                          )}
+                          Sweep: {cfg.sweep_account_status || 'not set'}
+                        </div>
+                      </div>
+
+                      {/* Sweep Account ID (truncated) */}
+                      {cfg.sweep_account_id && (
+                        <div style={{
+                          marginTop: '0.5rem',
+                          paddingTop: '0.5rem',
+                          borderTop: '1px solid #e5e7eb',
+                          fontSize: '0.7rem',
+                          color: '#9ca3af',
+                          fontFamily: 'monospace'
+                        }}>
+                          Sweep: {cfg.sweep_account_id.substring(0, 8)}...{cfg.sweep_account_id.slice(-4)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
-
-              <div style={{ 
-                marginTop: '1rem', 
-                paddingTop: '1rem', 
-                borderTop: '1px solid #bbf7d0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span style={{ fontSize: '0.875rem', color: '#166534' }}>
-                  {assignedBrokers.length} of {allBrokers.length} brokers selected
-                </span>
-                <button
-                  type="button"
-                  onClick={saveMerchantBrokers}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#22c55e',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem'
-                  }}
-                >
-                  Save Broker Assignments
-                </button>
-              </div>
             </div>
 
             {/* ✅ Plaid Bank Connection */}

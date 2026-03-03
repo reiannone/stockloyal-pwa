@@ -252,6 +252,13 @@ class PrepareOrdersProcess
                 JOIN {$pcSub} pc       ON pc.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1
                   AND w.points > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM orders o
+                      WHERE o.member_id   = msp.member_id
+                        AND o.symbol      = msp.symbol
+                        AND o.merchant_id = w.merchant_id
+                        AND o.status IN ('pending','approved','funded','placed','submitted')
+                  )
                   {$merchantW}
             ";
             $stmt = $this->conn->prepare($sql);
@@ -462,6 +469,13 @@ class PrepareOrdersProcess
                 LEFT JOIN merchant m   ON w.merchant_id COLLATE utf8mb4_unicode_ci = m.merchant_id COLLATE utf8mb4_unicode_ci
                 JOIN {$pcSub} pc       ON pc.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE {$where}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM orders o
+                      WHERE o.member_id   = msp.member_id
+                        AND o.symbol      = msp.symbol
+                        AND o.merchant_id = w.merchant_id
+                        AND o.status IN ('pending','approved','funded','placed','submitted')
+                  )
             ";
 
             array_unshift($params, $batchId, $basketPrefix);

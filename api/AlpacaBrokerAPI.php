@@ -8,11 +8,36 @@ class AlpacaBrokerAPI {
     private string $baseUrl;
     private string $apiKey;
     private string $apiSecret;
+    private string $firmAccountId;
 
-    public function __construct() {
-        $this->baseUrl   = $_ENV['ALPACA_BROKER_BASE_URL'] ?? 'https://broker-api.sandbox.alpaca.markets';
-        $this->apiKey    = $_ENV['ALPACA_BROKER_API_KEY']    ?? '';
-        $this->apiSecret = $_ENV['ALPACA_BROKER_API_SECRET'] ?? '';
+    /**
+     * Construct with optional credentials array.
+     *
+     * Config-driven (new way — from BrokerAdapterFactory / merchant_broker_config):
+     *   $alpaca = new AlpacaBrokerAPI([
+     *       'api_key'          => '...',
+     *       'api_secret'       => '...',
+     *       'firm_account_id'  => '...',
+     *       'base_url'         => '...',  // optional
+     *   ]);
+     *
+     * Legacy (still works — reads from $_ENV):
+     *   $alpaca = new AlpacaBrokerAPI();
+     */
+    public function __construct(?array $credentials = null) {
+        if ($credentials !== null) {
+            // Config-driven: credentials passed explicitly
+            $this->baseUrl       = $credentials['base_url']        ?? $_ENV['ALPACA_BROKER_BASE_URL'] ?? 'https://broker-api.sandbox.alpaca.markets';
+            $this->apiKey        = $credentials['api_key']         ?? '';
+            $this->apiSecret     = $credentials['api_secret']      ?? '';
+            $this->firmAccountId = $credentials['firm_account_id'] ?? '';
+        } else {
+            // Legacy: read from $_ENV (backward compatible)
+            $this->baseUrl       = $_ENV['ALPACA_BROKER_BASE_URL']  ?? 'https://broker-api.sandbox.alpaca.markets';
+            $this->apiKey        = $_ENV['ALPACA_BROKER_API_KEY']   ?? '';
+            $this->apiSecret     = $_ENV['ALPACA_BROKER_API_SECRET'] ?? '';
+            $this->firmAccountId = $_ENV['ALPACA_FIRM_ACCOUNT_ID']  ?? '';
+        }
 
         if (empty($this->apiKey) || empty($this->apiSecret)) {
             throw new \RuntimeException('Alpaca Broker API credentials not configured');
@@ -345,12 +370,10 @@ class AlpacaBrokerAPI {
 
     /**
      * Journal cash from firm sweep account to a member's account (instant funding).
-     * The firm_account_id can be set via ALPACA_FIRM_ACCOUNT_ID env var,
-     * or passed explicitly.
+     * Uses firm_account_id from constructor credentials, or accepts explicit override.
      */
     public function journalCashToAccount(string $toAccountId, string $amount, ?string $fromAccountId = null): array {
-        $firmId = $fromAccountId 
-            ?? ($_ENV['ALPACA_FIRM_ACCOUNT_ID'] ?? '');
+        $firmId = $fromAccountId ?? $this->firmAccountId;
 
         $payload = [
             'entry_type'  => 'JNLC',
@@ -508,5 +531,12 @@ class AlpacaBrokerAPI {
      */
     public function testConnection(): array {
         return $this->get('/v1/accounts?limit=1');
+    }
+
+    /**
+     * Get the firm/sweep account ID this instance is configured with.
+     */
+    public function getFirmAccountId(): string {
+        return $this->firmAccountId;
     }
 }

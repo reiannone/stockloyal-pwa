@@ -271,6 +271,8 @@ class SweepProcess
      */
     private function checkMarketOpen(): array
     {
+        // Market clock is broker-global; uses legacy AlpacaBrokerAPI (ENV credentials)
+        // TODO: migrate to adapter when clock check moves to a shared service
         require_once __DIR__ . '/AlpacaBrokerAPI.php';
         try {
             $alpaca = new AlpacaBrokerAPI();
@@ -440,13 +442,15 @@ class SweepProcess
 
     private function processAlpacaGroup(array $group, array $brokerInfo): array
     {
-        require_once __DIR__ . '/AlpacaBrokerAPI.php';
+        require_once __DIR__ . '/BrokerAdapterFactory.php';
 
         $merchId   = $group['merchant_id'];
         $merchName = $group['merchant_name'];
         $allOrders = $group['orders'];
 
-        $alpaca = new AlpacaBrokerAPI();
+        // Build per-merchant adapter (resolves credentials from SecretManager)
+        $adapter = BrokerAdapterFactory::forMerchant($this->conn, $merchId, 'Alpaca');
+        $alpaca  = $adapter->getApi();  // unwrap for Alpaca-specific calls
 
         // Sub-group orders by member
         $byMember = [];
