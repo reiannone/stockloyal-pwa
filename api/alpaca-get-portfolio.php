@@ -35,9 +35,9 @@ if (!$memberId) {
 try {
     // ── 1. Look up Alpaca account from broker_credentials ──
     $stmt = $conn->prepare("
-        SELECT bc.broker_account_id, bc.broker_account_status, m.merchant_id
+        SELECT bc.broker_account_id, bc.broker_account_status, w.merchant_id
         FROM broker_credentials bc
-        JOIN members m ON m.member_id = bc.member_id
+        LEFT JOIN wallet w ON w.member_id = bc.member_id
         WHERE bc.member_id = :mid AND LOWER(bc.broker) = 'alpaca'
           AND bc.broker_account_id IS NOT NULL
         LIMIT 1

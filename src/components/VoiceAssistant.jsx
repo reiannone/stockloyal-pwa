@@ -447,14 +447,16 @@ export default function VoiceAssistant() {
       <div
         style={{
           position: "fixed",
-          bottom: "var(--footer-height, 56px)",
+          bottom: "112px",
           left: 0,
           right: 0,
           top: 0,
-          zIndex: 8000,
+          zIndex: 9900,
           display: "flex",
           justifyContent: "center",
           pointerEvents: "none",
+          transform: "translateZ(0)",
+          WebkitTransform: "translateZ(0)",
         }}
       >
         <div

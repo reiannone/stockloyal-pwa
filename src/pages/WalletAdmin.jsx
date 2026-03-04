@@ -25,6 +25,7 @@ import {
   Unlock,
   ArrowRight,
 } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function WalletAdmin() {
   const location = useLocation();
@@ -287,7 +288,7 @@ export default function WalletAdmin() {
 
     if (newPassword.trim()) {
       if (newPassword.trim() !== confirmPassword.trim()) {
-        alert("Passwords do not match.");
+        showAlert("Validation Error", "Passwords do not match.", <XCircle size={20} color="#ef4444" />, "#ef4444");
         return;
       }
       updated.new_password = newPassword.trim();
@@ -316,23 +317,43 @@ export default function WalletAdmin() {
     try {
       const res = await apiPost("save-wallet.php", updated);
       if (res?.success) {
-        alert("Wallet saved!");
         setNewPassword("");
         setConfirmPassword("");
         setShowPw(false);
-        window.location.reload();
+        showAlert("Wallet Saved", "All changes have been saved successfully.", <CircleCheckBig size={20} color="#10b981" />, "#10b981", () => window.location.reload());
       } else {
-        alert("Save failed: " + (res?.error || "Unknown error"));
+        showAlert("Save Failed", res?.error || "Unknown error", <XCircle size={20} color="#ef4444" />, "#ef4444");
       }
     } catch (e) {
       console.error("[WalletAdmin] save failed", e);
-      alert("Save failed: network/server error");
+      showAlert("Save Failed", "Network or server error — please try again.", <XCircle size={20} color="#ef4444" />, "#ef4444");
     }
   };
 
   // --- Custom confirmation state ---
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteData, setDeleteData] = useState(null);
+
+  // ── Shared ConfirmModal state ──
+  const [modal, setModal] = useState({
+    show: false, title: "", message: "", details: null,
+    icon: null,
+    confirmText: "OK", confirmColor: "#3b82f6",
+    cancelText: null, // null = hide cancel button (alert mode)
+    data: null,
+  });
+  const closeModal = () => {
+    const d = modal.data;
+    setModal(prev => ({ ...prev, show: false }));
+    if (d?.type === "alert" && d?.onDismiss) d.onDismiss();
+  };
+  const showAlert = (title, message, icon, color, onDismiss) => {
+    setModal({
+      show: true, title, message, details: null,
+      icon: icon || <CircleCheckBig size={20} color={color || "#3b82f6"} />,
+      confirmText: "OK", confirmColor: color || "#3b82f6",
+      cancelText: null, data: { type: "alert", onDismiss: onDismiss || null },
+    });
+  };
 
   // ── Broker credential lockout state ──
   const [lockoutInfo, setLockoutInfo] = useState(null);
@@ -343,7 +364,7 @@ export default function WalletAdmin() {
   // --- delete wallet ---
   const deleteWallet = async (record_id) => {
     if (!selected?.member_id) {
-      alert("Cannot determine member ID for deletion.");
+      showAlert("Delete Error", "Cannot determine member ID for deletion.", <XCircle size={20} color="#ef4444" />, "#ef4444");
       return;
     }
 
@@ -363,14 +384,20 @@ export default function WalletAdmin() {
 
       // If endpoint doesn't exist or returns error, proceed with simple delete confirmation
       if (!checkRes || !checkRes.success) {
-        // Simple delete without cascade
         setDeleteData({
           record_id,
           member_id: memberId,
           has_references: false,
           reference_counts: {}
         });
-        setShowDeleteConfirm(true);
+        setModal({
+          show: true, title: "Confirm Delete",
+          message: <p>Delete wallet for member <strong>{memberId}</strong>?</p>,
+          details: null,
+          icon: <AlertTriangle size={20} color="#ef4444" />,
+          confirmText: "Delete", confirmColor: "#dc2626",
+          cancelText: "Cancel", data: { type: "delete" },
+        });
         return;
       }
 
@@ -384,7 +411,33 @@ export default function WalletAdmin() {
         has_references: hasReferences,
         reference_counts: referenceCounts
       });
-      setShowDeleteConfirm(true);
+
+      const refDetails = hasReferences ? (
+        <div>
+          <p style={{ marginBottom: 8, fontWeight: 600, color: "#dc2626", display: "flex", alignItems: "center", gap: 6 }}>
+            <AlertTriangle size={16} color="#dc2626" /> This member has related data:
+          </p>
+          <ul style={{ marginBottom: 8, paddingLeft: 24, fontSize: "0.85rem" }}>
+            {referenceCounts.orders > 0 && <li>Orders: <strong>{referenceCounts.orders}</strong></li>}
+            {referenceCounts.transactions > 0 && <li>Transactions/Ledger: <strong>{referenceCounts.transactions}</strong></li>}
+            {referenceCounts.portfolios > 0 && <li>Portfolio Holdings: <strong>{referenceCounts.portfolios}</strong></li>}
+            {referenceCounts.social > 0 && <li>Social Posts: <strong>{referenceCounts.social}</strong></li>}
+            {referenceCounts.other > 0 && <li>Other Records: <strong>{referenceCounts.other}</strong></li>}
+          </ul>
+          <div style={{ padding: 10, background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, color: "#991b1b", fontSize: "0.85rem", fontWeight: 600 }}>
+            WARNING: This will permanently delete ALL of this member's data.
+          </div>
+        </div>
+      ) : null;
+
+      setModal({
+        show: true, title: "Confirm Delete",
+        message: <p>Delete wallet for member <strong>{memberId}</strong>?</p>,
+        details: refDetails,
+        icon: <AlertTriangle size={20} color="#ef4444" />,
+        confirmText: "Delete", confirmColor: "#dc2626",
+        cancelText: "Cancel", data: { type: "delete" },
+      });
 
     } catch (e) {
       console.error("[WalletAdmin] delete check failed", e);
@@ -395,7 +448,14 @@ export default function WalletAdmin() {
         has_references: false,
         reference_counts: {}
       });
-      setShowDeleteConfirm(true);
+      setModal({
+        show: true, title: "Confirm Delete",
+        message: <p>Delete wallet for member <strong>{memberId}</strong>?</p>,
+        details: null,
+        icon: <AlertTriangle size={20} color="#ef4444" />,
+        confirmText: "Delete", confirmColor: "#dc2626",
+        cancelText: "Cancel", data: { type: "delete" },
+      });
     }
   };
 
@@ -413,9 +473,9 @@ export default function WalletAdmin() {
       if (deleteRes?.success) {
         const deletedCount = deleteRes.deleted_count || 1;
         if (deleteData.has_references) {
-          alert(`Successfully deleted member "${deleteData.member_id}" and ${deletedCount} related records.`);
+          showAlert("Member Deleted", `Successfully deleted member "${deleteData.member_id}" and ${deletedCount} related records.`, <CircleCheckBig size={20} color="#10b981" />, "#10b981");
         } else {
-          alert("Wallet deleted successfully.");
+          showAlert("Wallet Deleted", "Wallet deleted successfully.", <CircleCheckBig size={20} color="#10b981" />, "#10b981");
         }
         
         // Remove from local state
@@ -424,19 +484,19 @@ export default function WalletAdmin() {
           setSelected(null);
         }
       } else {
-        alert("Delete failed: " + (deleteRes?.error || "Unknown error"));
+        showAlert("Delete Failed", deleteRes?.error || "Unknown error", <XCircle size={20} color="#ef4444" />, "#ef4444");
       }
     } catch (e) {
       console.error("[WalletAdmin] delete failed", e);
-      alert("Delete failed: network/server error");
+      showAlert("Delete Failed", "Network or server error — please try again.", <XCircle size={20} color="#ef4444" />, "#ef4444");
     } finally {
-      setShowDeleteConfirm(false);
+      closeModal();
       setDeleteData(null);
     }
   };
 
   const cancelDelete = () => {
-    setShowDeleteConfirm(false);
+    closeModal();
     setDeleteData(null);
   };
 
@@ -643,8 +703,24 @@ export default function WalletAdmin() {
 
 
   
+  // ── Modal confirm dispatcher ──
+  const handleModalConfirm = () => {
+    const d = modal.data;
+    if (!d) { setModal(prev => ({ ...prev, show: false })); return; }
+    if (d.type === "delete") { confirmDelete(); return; }
+    // alert mode — dismiss handled by closeModal which runs onDismiss
+    closeModal();
+  };
+
   return (
     <div className="app-container app-content">
+      <ConfirmModal
+        show={modal.show} title={modal.title} message={modal.message}
+        details={modal.details} icon={modal.icon}
+        confirmText={modal.confirmText} confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm} onCancel={closeModal}
+      />
+
       <h1 className="page-title">Member Wallet Administration</h1>
       <p className="page-deck">
         This administration page is to manage member wallet information to correct or originate
@@ -1432,105 +1508,6 @@ export default function WalletAdmin() {
         </div>
       )}
 
-      {/* Custom Delete Confirmation Dialog */}
-      {showDeleteConfirm && deleteData && (
-        <div 
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-          }}
-          onClick={cancelDelete}
-        >
-          <div 
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '500px',
-              width: '90%',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ marginTop: 0, marginBottom: '16px', fontSize: '1.5rem', fontWeight: '600' }}>
-              Confirm Delete
-            </h2>
-            
-            <div style={{ marginBottom: '20px' }}>
-              <p style={{ marginBottom: '12px' }}>
-                Delete wallet for member <strong>{deleteData.member_id}</strong>?
-              </p>
-
-              {deleteData.has_references && (
-                <>
-                  <p style={{ marginBottom: '12px', fontWeight: '600', color: '#dc2626', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <AlertTriangle size={16} color="#dc2626" /> This member has related data in the following tables:
-                  </p>
-                  <ul style={{ marginBottom: '12px', paddingLeft: '24px' }}>
-                    {deleteData.reference_counts.orders > 0 && (
-                      <li>Orders: <strong>{deleteData.reference_counts.orders}</strong></li>
-                    )}
-                    {deleteData.reference_counts.transactions > 0 && (
-                      <li>Transactions/Ledger: <strong>{deleteData.reference_counts.transactions}</strong></li>
-                    )}
-                    {deleteData.reference_counts.portfolios > 0 && (
-                      <li>Portfolio Holdings: <strong>{deleteData.reference_counts.portfolios}</strong></li>
-                    )}
-                    {deleteData.reference_counts.social > 0 && (
-                      <li>Social Posts: <strong>{deleteData.reference_counts.social}</strong></li>
-                    )}
-                    {deleteData.reference_counts.other > 0 && (
-                      <li>Other Records: <strong>{deleteData.reference_counts.other}</strong></li>
-                    )}
-                  </ul>
-                  <p style={{ 
-                    padding: '12px', 
-                    backgroundColor: '#fef2f2', 
-                    border: '1px solid #fca5a5',
-                    borderRadius: '6px',
-                    color: '#991b1b',
-                    fontSize: '0.9rem',
-                    fontWeight: '600'
-                  }}>
-                    WARNING: This will permanently delete ALL of this member's data across all tables.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={cancelDelete}
-                style={{ minWidth: '100px' }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={confirmDelete}
-                style={{ 
-                  minWidth: '100px',
-                  backgroundColor: '#dc2626',
-                  borderColor: '#dc2626'
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -887,7 +887,7 @@ export default function Transactions() {
         <div
           style={{
             position: "fixed",
-            bottom: "var(--footer-height, 56px)",
+            bottom: "112px",
             left: 0,
             right: 0,
             zIndex: 1000,
