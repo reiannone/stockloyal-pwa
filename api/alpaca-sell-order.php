@@ -75,9 +75,9 @@ if (!in_array($timeInForce, ['day', 'gtc', 'ioc'])) {
 try {
     // ── 1. Look up Alpaca account ──
     $stmt = $conn->prepare("
-        SELECT bc.broker_account_id, m.merchant_id
+        SELECT bc.broker_account_id, w.merchant_id
         FROM broker_credentials bc
-        JOIN members m ON m.member_id = bc.member_id
+        LEFT JOIN wallet w ON w.member_id = bc.member_id
         WHERE bc.member_id = :mid AND LOWER(bc.broker) = 'alpaca'
           AND bc.broker_account_id IS NOT NULL
         LIMIT 1

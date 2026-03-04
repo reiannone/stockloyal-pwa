@@ -213,35 +213,6 @@ export default function FundingHistory() {
               )}
             </div>
           )}
-
-          {/* ── Money Flow Diagram ── */}
-          <div style={{ ...cardStyle, padding: "16px", marginBottom: 16, background: "#f9fafb" }}>
-            <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#374151", marginBottom: 12, textAlign: "center" }}>
-              Brokerage Money Flow
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-              <div style={{ background: "#d1fae5", borderRadius: 8, padding: "8px 12px", textAlign: "center", fontSize: "0.75rem", fontWeight: 600, color: "#065f46", minWidth: 80 }}>
-                SL Sweep
-                <div style={{ fontSize: "0.65rem", fontWeight: 400, color: "#6b7280" }}>Firm account</div>
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: "1.2rem" }}>→</div>
-              <div style={{ background: "#dbeafe", borderRadius: 8, padding: "8px 12px", textAlign: "center", fontSize: "0.75rem", fontWeight: 600, color: "#1e40af", minWidth: 80 }}>
-                Journal
-                <div style={{ fontSize: "0.65rem", fontWeight: 400, color: "#6b7280" }}>JNLC cash</div>
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: "1.2rem" }}>→</div>
-              <div style={{ background: "#fef3c7", borderRadius: 8, padding: "8px 12px", textAlign: "center", fontSize: "0.75rem", fontWeight: 600, color: "#92400e", minWidth: 80 }}>
-                Your Account
-                <div style={{ fontSize: "0.65rem", fontWeight: 400, color: "#6b7280" }}>Cash balance</div>
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: "1.2rem" }}>→</div>
-              <div style={{ background: "#ede9fe", borderRadius: 8, padding: "8px 12px", textAlign: "center", fontSize: "0.75rem", fontWeight: 600, color: "#5b21b6", minWidth: 80 }}>
-                Trades
-                <div style={{ fontSize: "0.65rem", fontWeight: 400, color: "#6b7280" }}>Stock buys</div>
-              </div>
-            </div>
-          </div>
-
           {/* ── Tab Navigation ── */}
           <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb", marginBottom: 14, overflowX: "auto" }}>
             <button style={tabStyle("overview")} onClick={() => setActiveTab("overview")}>Overview</button>
