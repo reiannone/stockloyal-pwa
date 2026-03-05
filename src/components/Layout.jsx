@@ -6,13 +6,23 @@ import Footer from "./Footer";
 
 export default function Layout() {
   return (
-    <div className="iphone-frame relative flex flex-col h-[100dvh]">
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        background: "var(--app-bg, #fff)",
+      }}
+    >
       <Header />
 
-      {/* 👇 scrollable main content */}
-      <main className="iphone-content flex-1 overflow-y-auto">
+      {/* scrollable main content */}
+      <main style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
         <Outlet />
       </main>
+
       <Footer />
     </div>
   );

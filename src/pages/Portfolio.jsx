@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { RefreshCw, Clock, CheckCircle, X } from "lucide-react";
 
 import { useBroker } from "../context/BrokerContext";
 
@@ -128,7 +129,7 @@ export default function Portfolio() {
         setLastUpdated(new Date());
 
         if (isRefresh) {
-          setPriceUpdateMsg("✓ Prices updated with latest market data");
+          setPriceUpdateMsg("Prices updated with latest market data");
           setTimeout(() => setPriceUpdateMsg(null), 3000);
         }
       } catch (err) {
@@ -488,7 +489,7 @@ export default function Portfolio() {
           <div style={{ textAlign: "center", marginBottom: "16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
             <div style={{ display: "flex", gap: "10px" }}>
               <button type="button" className="btn-secondary" onClick={() => loadPortfolio(true)} disabled={refreshing} style={{ minWidth: "160px" }}>
-                {refreshing ? "Updating…" : "🔄 Refresh Prices"}
+                {refreshing ? "Updating…" : <><RefreshCw size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />Refresh Prices</>}
               </button>
               {isAlpaca && (
                 <button
@@ -511,7 +512,9 @@ export default function Portfolio() {
               )}
             </div>
             {priceUpdateMsg && (
-              <span style={{ fontSize: "0.85rem", color: "#22c55e", fontWeight: 500 }}>{priceUpdateMsg}</span>
+              <span style={{ fontSize: "0.85rem", color: "#22c55e", fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <CheckCircle size={14} /> {priceUpdateMsg}
+              </span>
             )}
           </div>
 
@@ -629,7 +632,7 @@ export default function Portfolio() {
                       {isAlpaca && (
                         <td style={{ textAlign: "center" }}>
                           {pendingSells.has(o.symbol) || pendingBuys.has(o.symbol) ? (
-                            <span
+                              <span
                               style={{
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -643,7 +646,7 @@ export default function Portfolio() {
                                 fontWeight: 600,
                               }}
                             >
-                              ⏳ Pending
+                              <Clock size={12} /> Pending
                             </span>
                           ) : (
                             <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
@@ -737,8 +740,9 @@ export default function Portfolio() {
                 position: "absolute", top: 10, right: 14,
                 background: "none", border: "none", fontSize: "1.3rem",
                 cursor: "pointer", color: "#6b7280",
+                display: "flex", alignItems: "center", padding: 4,
               }}
-            >✕</button>
+            ><X size={18} /></button>
 
             <h3 style={{ margin: "0 0 4px 0", color: "#dc2626" }}>
               Sell {sellModal.symbol}
@@ -751,8 +755,10 @@ export default function Portfolio() {
             {/* ---- Success Result ---- */}
             {sellResult?.success ? (
               <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ fontSize: "2rem", marginBottom: 8 }}>
-                  {sellResult.pending ? "⏳" : "✅"}
+                <div style={{ fontSize: "2rem", marginBottom: 8, display: "flex", justifyContent: "center" }}>
+                  {sellResult.pending
+                    ? <Clock size={40} color="#d97706" />
+                    : <CheckCircle size={40} color="#059669" />}
                 </div>
                 <div style={{
                   fontSize: "1.1rem",
@@ -960,8 +966,9 @@ export default function Portfolio() {
                 position: "absolute", top: 10, right: 14,
                 background: "none", border: "none", fontSize: "1.3rem",
                 cursor: "pointer", color: "#6b7280",
+                display: "flex", alignItems: "center", padding: 4,
               }}
-            >✕</button>
+            ><X size={18} /></button>
 
             <h3 style={{ margin: "0 0 4px 0", color: "#059669" }}>
               {buyModal.isNew ? "Buy Stock" : `Buy More ${buyModal.symbol}`}
@@ -989,8 +996,10 @@ export default function Portfolio() {
             {/* ---- Success Result ---- */}
             {buyResult?.success ? (
               <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ fontSize: "2rem", marginBottom: 8 }}>
-                  {buyResult.pending ? "⏳" : "✅"}
+                <div style={{ fontSize: "2rem", marginBottom: 8, display: "flex", justifyContent: "center" }}>
+                  {buyResult.pending
+                    ? <Clock size={40} color="#d97706" />
+                    : <CheckCircle size={40} color="#059669" />}
                 </div>
                 <div style={{
                   fontSize: "1.1rem",

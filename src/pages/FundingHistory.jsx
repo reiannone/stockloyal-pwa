@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { DollarSign, Landmark, TrendingUp, FileText, Banknote } from "lucide-react";
 
 export default function FundingHistory() {
   const navigate = useNavigate();
@@ -105,8 +106,13 @@ export default function FundingHistory() {
   };
 
   const activityIcon = (type) => {
-    const icons = { CSD: "💰", CSW: "🏧", DIV: "📈" };
-    return icons[type] || "📋";
+    const iconProps = { size: 16, strokeWidth: 2 };
+    const icons = {
+      CSD: <DollarSign {...iconProps} color="#059669" />,
+      CSW: <Landmark {...iconProps} color="#dc2626" />,
+      DIV: <TrendingUp {...iconProps} color="#d97706" />,
+    };
+    return icons[type] || <FileText {...iconProps} color="#6b7280" />;
   };
 
   // ── Styles ──
@@ -226,13 +232,13 @@ export default function FundingHistory() {
             const timeline = [];
             transfers.forEach((t) => timeline.push({ type: "transfer", date: t.created_at, label: `${t.direction === "INCOMING" ? "Deposit" : "Withdrawal"} (${t.type?.toUpperCase() || "ACH"})`, amount: t.amount, status: t.status, detail: t.direction || "" }));
             journals.forEach((j) => timeline.push({ type: "journal", date: j.created_at, label: `Journal: ${j.description || "Cash transfer"}`, amount: j.amount, status: j.status, detail: `Settle: ${fmtDateShort(j.settle_date)}` }));
-            activities.forEach((a) => timeline.push({ type: "activity", date: a.transaction_time, label: `${activityIcon(a.activity_type)} ${activityLabel(a.activity_type)}`, amount: a.amount, status: a.status, detail: a.symbol || a.description || "" }));
+            activities.forEach((a) => timeline.push({ type: "activity", date: a.transaction_time, icon: activityIcon(a.activity_type), label: activityLabel(a.activity_type), amount: a.amount, status: a.status, detail: a.symbol || a.description || "" }));
             timeline.sort((a, b) => (b.date ? new Date(b.date).getTime() : 0) - (a.date ? new Date(a.date).getTime() : 0));
 
             if (timeline.length === 0) {
               return (
                 <div style={{ textAlign: "center", padding: 30, color: "#9ca3af" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>💸</div>
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><Banknote size={36} color="#9ca3af" /></div>
                   <div style={{ fontWeight: 600 }}>No funding activity found</div>
                   <div style={{ fontSize: "0.85rem", marginTop: 4 }}>Try expanding the date range.</div>
                 </div>
@@ -252,6 +258,7 @@ export default function FundingHistory() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: "0.7rem", fontWeight: 600, color: tc.badge, background: tc.badgeBg, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>{item.type}</span>
+                      {item.icon && <span style={{ display: "inline-flex", alignItems: "center" }}>{item.icon}</span>}
                       <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#111827" }}>{item.label}</span>
                     </div>
                     <span style={{ fontSize: "0.75rem", fontWeight: 600, color: statusColor(item.status), background: statusBg(item.status), padding: "2px 8px", borderRadius: 12 }}>{(item.status || "").toUpperCase()}</span>
@@ -312,7 +319,7 @@ export default function FundingHistory() {
               <div key={a.activity_id || i} style={{ ...cardStyle, borderLeft: "3px solid #fde68a" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: "1.2rem" }}>{activityIcon(a.activity_type)}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center" }}>{activityIcon(a.activity_type)}</span>
                     <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#111827" }}>{activityLabel(a.activity_type)}</span>
                   </div>
                   <span style={{ fontWeight: 700, fontSize: "1rem", color: a.amount >= 0 ? "#059669" : "#dc2626" }}>

@@ -5,7 +5,7 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 body {
@@ -234,10 +234,11 @@ body.dev-frame .iphone-frame::before {
 .app-header {
   background-color: #fff;
   color: #fff;
-  position: sticky;
+  position: relative;
   top: 0;
   z-index: 60;
   padding-top: env(safe-area-inset-top);
+  flex-shrink: 0;
 
   /* ⬅️ Constrain header background */
   max-width: var(--app-max-width);
@@ -341,11 +342,12 @@ body.dev-frame .iphone-frame::before {
 ------------------------------ */
 /* Footer sticks to bottom, keep horizontal row layout */
 .nav-bar {
-  position: sticky;
+  position: relative;
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 999999 !important; /* Same as overlay to stay visible */
+  z-index: 999999 !important;
+  flex-shrink: 0;
 
   border-top: 1px solid #e5e7eb;
   background: #fff;
@@ -1590,10 +1592,6 @@ button.nav-item {
 }
 
 /* Ensure footer stays visible and above overlay backdrop */
-.nav-bar {
-  z-index: 999999 !important; /* Same as overlay to stay visible */
-  position: relative !important;
-}
 
 /* Constrain to app max-width */
 .stocklist-overlay .stocklist-sheet {

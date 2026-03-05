@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api.js";
+import { ClipboardList } from "lucide-react";
 
 export default function AlpacaTransactions() {
   const navigate = useNavigate();
@@ -269,7 +270,7 @@ export default function AlpacaTransactions() {
         <>
           {orders.length === 0 ? (
             <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
-              <div style={{ fontSize: "2rem", marginBottom: 8 }}>📋</div>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}><ClipboardList size={36} color="#9ca3af" /></div>
               <div style={{ fontWeight: 600, fontSize: "1rem" }}>No orders found</div>
               <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
                 Try expanding the date range or clearing filters.

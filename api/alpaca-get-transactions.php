@@ -54,6 +54,7 @@ try {
     }
 
     $accountId = $row['broker_account_id'];
+    error_log("[tx-debug] member={$memberId} resolved account={$accountId}");
     $merchantId = $row['merchant_id'] ?? '';
     $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
     $alpaca  = $adapter->getApi();

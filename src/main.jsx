@@ -9,9 +9,6 @@ import "./index.css";
 import { BasketProvider } from "./context/BasketContext";
 import { BrokerProvider } from "./context/BrokerContext";
 
-// DEV toggle (only renders in dev)
-import DevFrameToggle from "./components/DevFrameToggle";
-
 // src/main.jsx
 if (import.meta.env.DEV) {
   console.log("[ENV] mode:", import.meta.env.MODE, {
@@ -26,8 +23,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <BasketProvider>
     <BrokerProvider>
       <HashRouter>
-        {/* dev toggle rendered at top-level so it's always visible in dev */}
-        <DevFrameToggle />
         <App />
       </HashRouter>
     </BrokerProvider>

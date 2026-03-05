@@ -927,7 +927,7 @@ export default function Wallet() {
             </div>
             <div>
               <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>
-                {alpacaAccount ? "Brokerage Account" : "Portfolio Value"}
+                {alpacaAccount ? "Brokerage Account" : "Brokerage Account"}
               </div>
               <div className="caption">
                 {alpacaAccount

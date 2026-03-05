@@ -72,7 +72,7 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) {
 
 try {
     // ── Check member exists ──
-    $memberStmt = $conn->prepare("SELECT member_id FROM wallet WHERE member_id = ?");
+    $memberStmt = $conn->prepare("SELECT member_id, merchant_id FROM wallet WHERE member_id = ?");
     $memberStmt->execute([$memberId]);
     $member = $memberStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -107,7 +107,7 @@ try {
     }
 
     // ── Create account via Alpaca Broker API ──
-    $merchantId = $row['merchant_id'] ?? '';
+    $merchantId = $member['merchant_id'] ?? '';
     $adapter = BrokerAdapterFactory::forMerchant($conn, $merchantId, 'Alpaca');
     $alpaca  = $adapter->getApi();
 

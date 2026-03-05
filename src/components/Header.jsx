@@ -153,7 +153,7 @@ export default function Header() {
   const MENU_PADDING_EST_PX = 24;  // panel padding/scrollbar slack
 
   return (
-    <div>
+    <>
       <header
         className="app-header bg-white border-b border-gray-200 shadow-sm h-12"
         style={{
@@ -425,6 +425,6 @@ export default function Header() {
         onConfirm={handleLogoutConfirm}
         onCancel={() => setShowLogoutModal(false)}
       />
-    </div>
+    </>
   );
 }

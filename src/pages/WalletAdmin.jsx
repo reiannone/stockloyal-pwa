@@ -35,6 +35,7 @@ export default function WalletAdmin() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [showTaxId, setShowTaxId] = useState(false);
   const editPanelRef = useRef(null);
 
   // Merchants for dropdown
@@ -619,6 +620,7 @@ export default function WalletAdmin() {
     setNewPassword("");
     setConfirmPassword("");
     setShowPw(false);
+    setShowTaxId(false);
     setLockoutMsg("");
     fetchLockoutInfo(withCalc.member_id);
     setTimeout(() => {
@@ -851,6 +853,17 @@ export default function WalletAdmin() {
               />
             </FormRow>
 
+            <FormRow label="Phone">
+              <input
+                className="form-input"
+                type="tel"
+                name="member_phone"
+                value={selected?.member_phone || ""}
+                onChange={handleChange}
+                placeholder="e.g. 2125551234"
+              />
+            </FormRow>
+
             {/* Admin-only password reset */}
             <FormRow label="New Password">
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -930,6 +943,50 @@ export default function WalletAdmin() {
                 value={selected?.last_name || ""}
                 onChange={handleChange}
               />
+            </FormRow>
+
+            <FormRow label="Date of Birth">
+              <input
+                className="form-input"
+                type="date"
+                name="date_of_birth"
+                value={selected?.date_of_birth || ""}
+                onChange={handleChange}
+              />
+            </FormRow>
+
+            <FormRow label="SSN / Tax ID">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <input
+                  className="form-input"
+                  type={showTaxId ? "text" : "password"}
+                  name="tax_id"
+                  value={selected?.tax_id || ""}
+                  onChange={handleChange}
+                  placeholder="e.g. 123-45-6789"
+                  style={{ flex: 1 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTaxId(!showTaxId)}
+                  style={{
+                    background: "none",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
+                    padding: "0.45rem 0.6rem",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    color: "#6b7280",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={showTaxId ? "Hide SSN" : "Show SSN"}
+                >
+                  {showTaxId ? <><EyeOff size={14} /> Hide</> : <><Eye size={14} /> Show</>}
+                </button>
+              </div>
+              <p style={{ fontSize: "0.78rem", color: "#9ca3af", marginTop: "0.25rem", marginBottom: 0 }}>
+                Used for Alpaca KYC onboarding. Stored encrypted.
+              </p>
             </FormRow>
 
             {/* Address */}
