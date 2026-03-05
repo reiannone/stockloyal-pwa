@@ -10,6 +10,8 @@ export default function Layout() {
       style={{
         position: "fixed",
         inset: 0,
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
