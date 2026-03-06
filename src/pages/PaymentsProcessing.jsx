@@ -181,7 +181,7 @@ export default function PaymentsProcessing() {
     setHistoryLoading(true);
     try {
       const offset = loadMore ? history.length : 0;
-      const res = await apiPost("get-settled-batches.php", {
+      const res = await apiPost("get-approved-batches.php", {
         merchant_id: merchantId || null, limit: 25, offset,
       });
       if (res?.success && Array.isArray(res.batches)) {
@@ -679,14 +679,24 @@ export default function PaymentsProcessing() {
           </div>
           {simulateResult.success ? (
             <div style={{ fontSize: "0.85rem", color: "#78350f" }}>
-              Deposited <strong>${safeNum(simulateResult.funded_amount).toFixed(2)}</strong> to firm sweep account ·
-              Marked <strong>{simulateResult.orders_marked}</strong> order(s) as paid
-              {simulateResult.transfer?.transfer_id && (
-                <> · Transfer: <code style={{ fontSize: "0.78rem" }}>{simulateResult.transfer.transfer_id}</code></>
-              )}
-              {simulateResult.sweep_balance != null && (
-                <> · New balance: <strong>${safeNum(simulateResult.sweep_balance).toFixed(2)}</strong></>
-              )}
+              <div>
+                Deposited <strong>${safeNum(simulateResult.funded_amount).toFixed(2)}</strong> to firm sweep account ·
+                Marked <strong>{simulateResult.orders_marked}</strong> order(s) as funded
+                {simulateResult.transfer?.transfer_id && (
+                  <> · Transfer: <code style={{ fontSize: "0.78rem" }}>{simulateResult.transfer.transfer_id}</code></>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
+                {simulateResult.sweep_balance_pre != null && (
+                  <span>Balance before: <strong>${safeNum(simulateResult.sweep_balance_pre).toFixed(2)}</strong></span>
+                )}
+                {simulateResult.sweep_balance != null && (
+                  <span>Current balance: <strong>${safeNum(simulateResult.sweep_balance).toFixed(2)}</strong></span>
+                )}
+                {simulateResult.sweep_balance_post_journal != null && (
+                  <span>Forecasted after journaling: <strong>${safeNum(simulateResult.sweep_balance_post_journal).toFixed(2)}</strong></span>
+                )}
+              </div>
             </div>
           ) : (
             <div style={{ color: "#991b1b" }}>{simulateResult.error}</div>

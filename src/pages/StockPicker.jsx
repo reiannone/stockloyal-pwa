@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { useBasket } from "../context/BasketContext";
 import { Search, Trash2, ShoppingBasket, ClipboardCheck, Wallet as WalletIcon } from "lucide-react";
+import ConfirmModal from "../components/ConfirmModal";
 import "../styles/StockPicker.css";
 
 // ✅ Special category labels
@@ -87,6 +88,9 @@ export default function StockPicker() {
   // --- Broker limits ---
   const [minOrderAmount, setMinOrderAmount] = useState(null);
   const [maxOrderAmount, setMaxOrderAmount] = useState(null);
+  const [maxSecurities, setMaxSecurities] = useState(null);
+  const [modal, setModal] = useState({ show: false, title: "", message: "" });
+  const closeModal = () => setModal(m => ({ ...m, show: false }));
 
   // --- Stock categories state ---
   const [category, setCategory] = useState("");
@@ -416,6 +420,9 @@ export default function StockPicker() {
         if (data.wallet?.max_order_amount != null) {
           setMaxOrderAmount(Number(data.wallet.max_order_amount));
         }
+        if (data.wallet?.max_securities_per_order != null) {
+          setMaxSecurities(Number(data.wallet.max_securities_per_order));
+        }
 
         // ✅ Only apply sweep default if user didn't pass explicit values via location.state
         // This preserves the slider values when user comes from Wallet with specific amounts
@@ -493,8 +500,22 @@ export default function StockPicker() {
   // ✅ NEW: Save a stock to My Basket
   const handleSaveToPicks = async (symbol) => {
     if (!memberId || !symbol) return;
-    
+
     const sym = symbol.toUpperCase();
+
+    // Enforce max securities per order at the UI level
+    const limit = maxSecurities ?? 10;
+    if (myActiveListData.length >= limit) {
+      setModal({
+        show: true,
+        title: "Basket Limit Reached",
+        message: `Your basket is limited to ${limit} securities by your broker. Remove a stock before adding another.`,
+        confirmText: "OK",
+        confirmColor: "#6366f1",
+      });
+      return;
+    }
+
     setSavingPick(sym);
     
     try {
@@ -1105,7 +1126,15 @@ export default function StockPicker() {
 
   return (
     <div className="wallet-container" style={{ paddingBottom: "100px" }}>
-      <h1 className="page-title">Build My Basket of Securities</h1>
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        confirmText={modal.confirmText || "OK"}
+        confirmColor={modal.confirmColor || "#6366f1"}
+        onConfirm={closeModal}
+        onCancel={closeModal}
+      />
 
       {/* Points / Cash display */}
       <div className="card card--accent"

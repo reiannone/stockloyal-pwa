@@ -122,38 +122,53 @@ try {
 
     // ── 3. Fund Alpaca firm sweep account via Transfer API (sandbox instant) ──
     $transferResult = null;
+
+    // Fetch balance BEFORE the deposit
+    $balanceBefore = getSweepBalance($conn, $merchantId ?: 'merchant001');
+
     if ($fundAmount > 0) {
         $transferResult = fundSweepAccount($conn, $fundAmount, $merchantId ?: 'merchant001');
     }
 
-    // ── 4. Mark orders as paid ──
+    // ── 4. Mark orders as paid, funded, and assign batch ID ──
     $markedCount = 0;
+    $paidBatchId = 'PAY-SIM-' . date('Ymd-His') . '-' . substr(uniqid(), -4);
+
     if (count($orders) > 0) {
         $orderIds = array_column($orders, 'order_id');
         $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
 
+        $updateParams = array_merge([$paidBatchId], $orderIds);
         $updateStmt = $conn->prepare("
             UPDATE orders
-            SET paid_flag = 1, updated_at = NOW()
+            SET paid_flag     = 1,
+                paid_batch_id = ?,
+                paid_at       = NOW(),
+                status        = 'funded',
+                updated_at    = NOW()
             WHERE order_id IN ({$placeholders})
               AND LOWER(status) = 'approved'
               AND (paid_flag = 0 OR paid_flag IS NULL)
         ");
-        $updateStmt->execute($orderIds);
+        $updateStmt->execute($updateParams);
         $markedCount = $updateStmt->rowCount();
     }
 
-    // ── 5. Get updated sweep balance ──
-    $newBalance = getSweepBalance($conn, $merchantId ?: 'merchant001');
+    // ── 5. Get balance AFTER deposit ──
+    $balanceAfter = getSweepBalance($conn, $merchantId ?: 'merchant001');
+    $balanceForecasted = $balanceAfter !== null ? round($balanceAfter - $fundAmount, 2) : null;
 
     echo json_encode([
-        'success'        => true,
-        'action'         => 'fund',
-        'funded_amount'  => $fundAmount,
-        'orders_marked'  => $markedCount,
-        'transfer'       => $transferResult,
-        'sweep_balance'  => $newBalance,
-        'by_merchant'    => array_values($byMerchant),
+        'success'                    => true,
+        'action'                     => 'fund',
+        'funded_amount'              => $fundAmount,
+        'orders_marked'              => $markedCount,
+        'paid_batch_id'              => $paidBatchId,
+        'transfer'                   => $transferResult,
+        'sweep_balance_pre'          => $balanceBefore,
+        'sweep_balance'              => $balanceAfter,
+        'sweep_balance_post_journal' => $balanceForecasted,
+        'by_merchant'                => array_values($byMerchant),
     ]);
 
 } catch (Exception $e) {

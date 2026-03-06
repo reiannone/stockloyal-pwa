@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import { LineageLink } from "../components/LineagePopup";
+import ConfirmModal from "../components/ConfirmModal";
+import { Minus, Ban, Trash2 } from "lucide-react";
 
 // Match LedgerAdmin: inline label + control
 function FormRow({ label, children }) {
@@ -59,6 +61,16 @@ export default function OrdersAdmin() {
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
 
   const editPanelRef = useRef(null);
+
+  // ── Confirm modal ──
+  const [modal, setModal] = useState({ show: false, title: "", message: "", data: null, confirmText: "", confirmColor: "#ef4444" });
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  const handleModalConfirm = async () => {
+    closeModal();
+    if (modal.data?.action === "cancel") await doCancel();
+    else if (modal.data?.action === "delete") await doDelete();
+  };
 
   // ---- timezone helpers ----
   const detectedTz = useMemo(() => {
@@ -246,7 +258,65 @@ export default function OrdersAdmin() {
     }
   };
 
-  // ── Basket rollup: group orders by basket_id ──
+  const cancelOrder = () => {
+    if (!selected) return;
+    setModal({
+      show: true,
+      title: "Cancel Order",
+      message: `Cancel order #${selected.order_id} for member ${selected.member_id}? Status will be set to 'cancelled'.`,
+      confirmText: "Cancel Order",
+      confirmColor: "#f59e0b",
+      data: { action: "cancel" },
+    });
+  };
+
+  const deleteOrder = () => {
+    if (!selected) return;
+    setModal({
+      show: true,
+      title: "Delete Order",
+      message: `Permanently delete order #${selected.order_id} for member ${selected.member_id}? This cannot be undone.`,
+      confirmText: "Delete",
+      confirmColor: "#ef4444",
+      data: { action: "delete" },
+    });
+  };
+
+  const doCancel = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const res = await apiPost("cancelorder.php", { order_id: selected.order_id, action: "cancel" });
+      if (res?.success) {
+        setSelected(null);
+        fromDataQuality && affectedRecords.length > 0
+          ? await fetchOrders({ order_ids: affectedRecords.map(Number), sort_by: "placed_at", sort_dir: "DESC", limit: 200 })
+          : await fetchOrders(buildFilters());
+      } else {
+        alert("Cancel failed: " + (res?.error || "Unknown error"));
+      }
+    } catch { alert("Cancel failed: network/server error"); }
+    finally { setSaving(false); }
+  };
+
+  const doDelete = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const res = await apiPost("cancelorder.php", { order_id: selected.order_id, action: "delete" });
+      if (res?.success) {
+        setSelected(null);
+        fromDataQuality && affectedRecords.length > 0
+          ? await fetchOrders({ order_ids: affectedRecords.map(Number), sort_by: "placed_at", sort_dir: "DESC", limit: 200 })
+          : await fetchOrders(buildFilters());
+      } else {
+        alert("Delete failed: " + (res?.error || "Unknown error"));
+      }
+    } catch { alert("Delete failed: network/server error"); }
+    finally { setSaving(false); }
+  };
+
+
   const basketRollup = useMemo(() => {
     const map = new Map();
     for (const o of orders) {
@@ -330,6 +400,15 @@ export default function OrdersAdmin() {
 
   return (
     <div className="app-container app-content">
+      <ConfirmModal
+        show={modal.show}
+        title={modal.title}
+        message={modal.message}
+        confirmText={modal.confirmText}
+        confirmColor={modal.confirmColor}
+        onConfirm={handleModalConfirm}
+        onCancel={closeModal}
+      />
       <h1 className="page-title">Orders Administration</h1>
       <p className="page-deck">View and manage stock orders. Filter by member, symbol, status, or date.</p>
 
@@ -637,13 +716,42 @@ export default function OrdersAdmin() {
               </div>
             </FormRow>
 
-            <div style={{ display: "flex", gap: "1rem", marginTop: "1.25rem", gridColumn: "1 / -1" }}>
+            <div style={{ display: "flex", gap: "1rem", marginTop: "1.25rem", gridColumn: "1 / -1", flexWrap: "wrap" }}>
               <button type="submit" className="btn-primary" disabled={saving}>
                 {saving ? "Saving..." : "Save Order"}
               </button>
               <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
-                Cancel
+                Close
               </button>
+              <div style={{ marginLeft: "auto", display: "flex", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  disabled={saving || selected.status === "cancelled"}
+                  onClick={cancelOrder}
+                  style={{
+                    padding: "0.5rem 1rem", border: "1px solid #f59e0b", borderRadius: 6,
+                    background: "#fef3c7", color: "#92400e", fontWeight: 600, fontSize: "0.875rem",
+                    cursor: saving || selected.status === "cancelled" ? "not-allowed" : "pointer",
+                    opacity: selected.status === "cancelled" ? 0.5 : 1,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}
+                >
+                  <Ban size={14} /> Cancel Order
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={deleteOrder}
+                  style={{
+                    padding: "0.5rem 1rem", border: "1px solid #ef4444", borderRadius: 6,
+                    background: "#fef2f2", color: "#991b1b", fontWeight: 600, fontSize: "0.875rem",
+                    cursor: saving ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}
+                >
+                  <Trash2 size={14} /> Delete Order
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -870,7 +978,7 @@ export default function OrdersAdmin() {
                                     ✓ {new Date(order.executed_at).toLocaleString()}
                                   </span>
                                 ) : (
-                                  <span style={{ color: "#9ca3af", fontSize: "0.8rem" }}>—</span>
+                                  <Minus size={14} color="#9ca3af" />
                                 )}
                               </td>
                             </tr>
@@ -941,7 +1049,7 @@ export default function OrdersAdmin() {
                           ✓ {new Date(order.executed_at).toLocaleString()}
                         </span>
                       ) : (
-                        <span style={{ color: "#9ca3af", fontSize: "0.85rem" }}>—</span>
+                        <Minus size={14} color="#9ca3af" />
                       )}
                     </td>
                   </tr>

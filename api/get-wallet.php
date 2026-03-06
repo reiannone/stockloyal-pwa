@@ -54,7 +54,8 @@ try {
             m.tier5_name, m.tier5_conversion_rate,
             m.tier6_name, m.tier6_conversion_rate,
             b.min_order_amount,
-            b.max_order_amount
+            b.max_order_amount,
+            b.max_securities_per_order
         FROM wallet w
         LEFT JOIN merchant m
           ON w.merchant_id = m.merchant_id
@@ -121,7 +122,8 @@ try {
         'sweep_percentage',
         'conversion_rate',
         'min_order_amount',
-        'max_order_amount'
+        'max_order_amount',
+        'max_securities_per_order'
     ] as $col) {
         if (isset($wallet[$col])) {
             if ($col === 'points' || $col === 'sweep_percentage') {

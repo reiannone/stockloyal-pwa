@@ -222,11 +222,13 @@ export default function PrepareOrders() {
       if (filterMerchant) payload.merchant_id = filterMerchant;
       const res = await apiPost("prepare_orders.php", payload);
       setPrepareResult(res);
-      if (res.success) {
+      if (res.success && !res.nothing_to_stage && res.batch_id) {
         await loadBatches();
         setActiveTab("batches");
         setActiveBatchId(res.batch_id);
         loadStats(res.batch_id);
+      } else if (res.success && res.nothing_to_stage) {
+        await loadBatches(); // refresh list so any stale staged batches are cleared
       }
     } catch (err) {
       setPrepareResult({ success: false, error: err.message });
@@ -548,11 +550,22 @@ export default function PrepareOrders() {
           padding: "1rem",
           marginBottom: "1rem",
           borderRadius: "8px",
-          background: prepareResult.success ? "#d1fae5" : "#fee2e2",
-          border: `1px solid ${prepareResult.success ? "#10b981" : "#ef4444"}`,
+          background: prepareResult.success ? (prepareResult.nothing_to_stage ? "#eff6ff" : "#d1fae5") : "#fee2e2",
+          border: `1px solid ${prepareResult.success ? (prepareResult.nothing_to_stage ? "#93c5fd" : "#10b981") : "#ef4444"}`,
         }}>
-          <strong>{prepareResult.success ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> {prepareResult.is_refresh ? "Trial Refreshed Successfully" : "Trial Staged Successfully"}</> : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}</strong>
-          {prepareResult.success && prepareResult.results && (
+          <strong>
+            {prepareResult.success
+              ? prepareResult.nothing_to_stage
+                ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Nothing to Stage</>
+                : <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> {prepareResult.is_refresh ? "Trial Refreshed Successfully" : "Trial Staged Successfully"}</>
+              : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}
+          </strong>
+          {prepareResult.success && prepareResult.nothing_to_stage && (
+            <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#1e40af" }}>
+              All active picks are already covered by approved or in-flight orders. No new staging batch was created.
+            </div>
+          )}
+          {prepareResult.success && prepareResult.results && !prepareResult.nothing_to_stage && (
             <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
               <span>Batch: <strong style={{ fontFamily: "monospace" }}>{prepareResult.batch_id}</strong></span>
               <span>Members: <strong>{fmtN(prepareResult.results.total_members)}</strong></span>
@@ -642,6 +655,35 @@ export default function PrepareOrders() {
                 : <><CirclePlay size={14} style={{ verticalAlign: "middle" }} /> Run Trial</>}
             </button>
           </div>
+
+          {/* ── Run Trial block reason ── */}
+          {(() => {
+            if (preparing) return (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", fontSize: "0.85rem", fontWeight: 500 }}>
+                <RefreshCw size={14} style={{ flexShrink: 0 }} />
+                Staging in progress — please wait…
+              </div>
+            );
+            if (previewLoading) return (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
+                <RefreshCw size={14} style={{ flexShrink: 0 }} />
+                Loading preview — Run Trial is available once preview data loads.
+              </div>
+            );
+            if (!preview) return (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "0.85rem", fontWeight: 500 }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                Run Trial is disabled — click <strong style={{ margin: "0 4px" }}>Refresh</strong> to load preview data first.
+              </div>
+            );
+            if (!preview.eligible_members || preview.eligible_members === 0) return (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", fontSize: "0.85rem", fontWeight: 500 }}>
+                <XCircle size={14} style={{ flexShrink: 0 }} />
+                Run Trial is disabled — no eligible members found. Members need points, an active basket, and an investment election.
+              </div>
+            );
+            return null;
+          })()}
 
           {previewLoading ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "#64748b" }}>Loading preview...</div>

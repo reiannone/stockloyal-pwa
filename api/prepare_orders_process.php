@@ -252,13 +252,6 @@ class PrepareOrdersProcess
                 JOIN {$pcSub} pc       ON pc.member_id COLLATE utf8mb4_unicode_ci = msp.member_id COLLATE utf8mb4_unicode_ci
                 WHERE msp.is_active = 1
                   AND w.points > 0
-                  AND NOT EXISTS (
-                      SELECT 1 FROM orders o
-                      WHERE o.member_id   = msp.member_id
-                        AND o.symbol      = msp.symbol
-                        AND o.merchant_id = w.merchant_id
-                        AND o.status IN ('pending','approved','funded','placed','submitted')
-                  )
                   {$merchantW}
             ";
             $stmt = $this->conn->prepare($sql);
@@ -405,18 +398,70 @@ class PrepareOrdersProcess
         if ($memberId)   $this->log("  filter member:   {$memberId}");
         if ($merchantId) $this->log("  filter merchant: {$merchantId}");
 
-        // ── Auto-cleanup: cancel any pending orders ──
+        // ══════════════════════════════════════════════════════════════
+        // STEP 0: Reconcile existing pending orders
+        //
+        // A) Cancel pending orders where symbol no longer in active picks
+        // B) Refresh amount/points for pending orders still matching active picks
+        //    (price/shares reset to NULL/0 for fresh Yahoo Finance lookup below)
+        // INSERT...SELECT (step 1) will skip symbols already covered by pending/
+        // approved/funded/placed orders via NOT EXISTS — only new picks get staged.
+        // ══════════════════════════════════════════════════════════════
+
+        // Step A — cancel stale pending orders (symbol removed from picks)
         try {
-            $cancelStmt = $this->conn->prepare(
-                "UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE LOWER(status) = 'pending'"
-            );
-            $cancelStmt->execute();
-            $cancelled = $cancelStmt->rowCount();
-            if ($cancelled > 0) {
-                $this->log("AUTO-CANCEL: {$cancelled} pending order(s) cancelled");
+            $cancelStaleStmt = $this->conn->prepare("
+                UPDATE orders o
+                LEFT JOIN member_stock_picks msp
+                    ON  msp.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
+                    AND msp.symbol    = o.symbol
+                    AND msp.is_active = 1
+                SET o.status = 'cancelled', o.updated_at = NOW()
+                WHERE LOWER(o.status) = 'pending'
+                  AND msp.member_id IS NULL
+            ");
+            $cancelStaleStmt->execute();
+            $cancelledStale = $cancelStaleStmt->rowCount();
+            if ($cancelledStale > 0) {
+                $this->log("RECONCILE A: {$cancelledStale} pending order(s) cancelled (symbol removed from picks)");
             }
         } catch (\Exception $e) {
-            $this->log("⚠️ Auto-cancel pending orders failed: " . $e->getMessage());
+            $this->log("⚠️ Reconcile cancel-stale failed: " . $e->getMessage());
+        }
+
+        // Step B — refresh pending orders still matching active picks
+        try {
+            $rate     = $this->tierRateExpr();
+            $sweepPts = $this->sweepPointsExpr();
+            $pcSub    = $this->pickCountSubquery();
+
+            $refreshStmt = $this->conn->prepare("
+                UPDATE orders o
+                JOIN wallet w
+                    ON  w.member_id   COLLATE utf8mb4_unicode_ci = o.member_id   COLLATE utf8mb4_unicode_ci
+                    AND w.merchant_id COLLATE utf8mb4_unicode_ci = o.merchant_id COLLATE utf8mb4_unicode_ci
+                LEFT JOIN merchant m
+                    ON  m.merchant_id COLLATE utf8mb4_unicode_ci = w.merchant_id COLLATE utf8mb4_unicode_ci
+                JOIN {$pcSub} pc
+                    ON  pc.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
+                JOIN member_stock_picks msp
+                    ON  msp.member_id COLLATE utf8mb4_unicode_ci = o.member_id COLLATE utf8mb4_unicode_ci
+                    AND msp.symbol    = o.symbol
+                    AND msp.is_active = 1
+                SET o.amount      = ROUND(({$sweepPts}) * ({$rate}) / pc.cnt, 2),
+                    o.points_used = FLOOR(({$sweepPts}) / pc.cnt),
+                    o.shares      = 0,
+                    o.batch_id    = ?,
+                    o.updated_at  = NOW()
+                WHERE LOWER(o.status) = 'pending'
+            ");
+            $refreshStmt->execute([$batchId]);
+            $refreshed = $refreshStmt->rowCount();
+            if ($refreshed > 0) {
+                $this->log("RECONCILE B: {$refreshed} pending order(s) refreshed with current wallet/picks");
+            }
+        } catch (\Exception $e) {
+            $this->log("⚠️ Reconcile refresh-pending failed: " . $e->getMessage());
         }
 
         try {
@@ -488,18 +533,30 @@ class PrepareOrdersProcess
 
             // ══════════════════════════════════════════════════════════════
             // STEP 2: Fetch live prices and calculate shares
+            // Runs if we staged new rows OR have reconciled pending orders
             // ══════════════════════════════════════════════════════════════
 
             $pricesFetched = 0;
             $pricesFailed  = 0;
 
+            // Collect symbols from both staged rows and refreshed pending orders
+            $symbolSources = [];
             if ($rowsInserted > 0) {
-                // Get distinct symbols for this batch
                 $symStmt = $this->conn->prepare(
                     "SELECT DISTINCT symbol FROM prepared_orders WHERE batch_id = ?"
                 );
                 $symStmt->execute([$batchId]);
-                $symbols = $symStmt->fetchAll(PDO::FETCH_COLUMN);
+                foreach ($symStmt->fetchAll(PDO::FETCH_COLUMN) as $s) $symbolSources[$s] = true;
+            }
+            // Add symbols from pending orders with no shares calculated yet
+            $pendingSymStmt = $this->conn->query(
+                "SELECT DISTINCT symbol FROM orders WHERE LOWER(status) = 'pending' AND (shares IS NULL OR shares = 0)"
+            );
+            foreach ($pendingSymStmt->fetchAll(PDO::FETCH_COLUMN) as $s) $symbolSources[$s] = true;
+
+            $symbols = array_keys($symbolSources);
+
+            if (!empty($symbols)) {
 
                 $this->log("FETCHING PRICES for " . count($symbols) . " symbols: " . implode(', ', $symbols));
 
@@ -524,6 +581,19 @@ class PrepareOrdersProcess
                         $updateStmt->execute([$price, $price, $batchId, $sym]);
                         $updated = $updateStmt->rowCount();
                         $this->log("  {$sym}: \${$price} -> {$updated} rows updated");
+                    }
+
+                    // Also update reconciled pending orders with fresh shares
+                    $updatePendingStmt = $this->conn->prepare("
+                        UPDATE orders
+                        SET shares     = ROUND(amount / ?, 6),
+                            updated_at = NOW()
+                        WHERE LOWER(status) = 'pending'
+                          AND symbol = ?
+                          AND (shares IS NULL OR shares = 0)
+                    ");
+                    foreach ($prices as $sym => $price) {
+                        $updatePendingStmt->execute([$price, $sym]);
                     }
                 }
 
@@ -629,7 +699,7 @@ class PrepareOrdersProcess
             ";
             $skipped = (int) ($this->conn->query($skipSql)->fetchColumn() ?: 0);
 
-            // ── Aggregate from staged rows ──
+            // ── Aggregate from staged rows + reconciled pending orders ──
             $aggStmt = $this->conn->prepare("
                 SELECT COUNT(DISTINCT member_id) AS total_members,
                        COUNT(*)                  AS total_orders,
@@ -642,6 +712,26 @@ class PrepareOrdersProcess
             ");
             $aggStmt->execute([$batchId]);
             $agg = $aggStmt->fetch(PDO::FETCH_ASSOC);
+
+            // Also count reconciled pending orders stamped with this batch_id
+            $pendingAggStmt = $this->conn->prepare("
+                SELECT COUNT(DISTINCT member_id) AS total_members,
+                       COUNT(*)                  AS total_orders,
+                       COALESCE(SUM(amount), 0)      AS total_amount,
+                       COALESCE(SUM(points_used), 0)  AS total_points,
+                       COALESCE(SUM(shares), 0)       AS total_shares
+                FROM orders
+                WHERE batch_id = ? AND LOWER(status) = 'pending'
+            ");
+            $pendingAggStmt->execute([$batchId]);
+            $pendingAgg = $pendingAggStmt->fetch(PDO::FETCH_ASSOC);
+
+            // Merge both counts
+            $agg['total_members'] = (int)$agg['total_members'] + (int)$pendingAgg['total_members'];
+            $agg['total_orders']  = (int)$agg['total_orders']  + (int)$pendingAgg['total_orders'];
+            $agg['total_amount']  = (float)$agg['total_amount'] + (float)$pendingAgg['total_amount'];
+            $agg['total_points']  = (int)$agg['total_points']  + (int)$pendingAgg['total_points'];
+            $agg['total_shares']  = (float)$agg['total_shares'] + (float)$pendingAgg['total_shares'];
 
             // ── Record batch row (insert or update) ──
             if ($isRefresh) {
@@ -772,10 +862,16 @@ class PrepareOrdersProcess
                        SUM(amount)               AS total_amount,
                        SUM(points_used)          AS total_points,
                        SUM(shares)               AS total_shares
-                FROM prepared_orders WHERE {$filter}
+                FROM (
+                    SELECT merchant_id, member_id, amount, points_used, shares
+                    FROM prepared_orders WHERE batch_id = ?
+                    UNION ALL
+                    SELECT merchant_id, member_id, amount, points_used, shares
+                    FROM orders WHERE batch_id = ? AND LOWER(status) = 'pending'
+                ) combined
                 GROUP BY merchant_id ORDER BY total_amount DESC
             ");
-            $s1->execute([$batchId]);
+            $s1->execute([$batchId, $batchId]);
 
             // ── By broker ──
             $s2 = $this->conn->prepare("
@@ -1108,6 +1204,23 @@ class PrepareOrdersProcess
             $ins->execute([$batchId]);
             $ordersCreated = $ins->rowCount();
 
+            // ── Advance reconciled pending orders to 'approved' ──
+            // These were refreshed in prepare() Step B and stamped with this batch_id.
+            // They were skipped by INSERT...SELECT (NOT EXISTS) but are ready to flow.
+            $advanceStmt = $this->conn->prepare("
+                UPDATE orders
+                SET status     = 'approved',
+                    updated_at = NOW()
+                WHERE LOWER(status) = 'pending'
+                  AND batch_id = ?
+            ");
+            $advanceStmt->execute([$batchId]);
+            $ordersAdvanced = $advanceStmt->rowCount();
+            if ($ordersAdvanced > 0) {
+                $this->log("APPROVE: advanced {$ordersAdvanced} reconciled pending order(s) to approved");
+                $ordersCreated += $ordersAdvanced;
+            }
+
             // Mark staging rows approved
             $this->conn->prepare(
                 "UPDATE prepared_orders SET status = 'approved' WHERE batch_id = ? AND status = 'staged'"
@@ -1277,12 +1390,19 @@ class PrepareOrdersProcess
                    SUM(amount)               AS total_amount,
                    SUM(shares)               AS total_shares,
                    SUM(points_used)          AS total_points
-            FROM prepared_orders
-            WHERE batch_id = ? AND merchant_id = ?
+            FROM (
+                SELECT broker, member_id, amount, shares, points_used
+                FROM prepared_orders
+                WHERE batch_id = ? AND merchant_id = ?
+                UNION ALL
+                SELECT broker, member_id, amount, shares, points_used
+                FROM orders
+                WHERE batch_id = ? AND merchant_id = ? AND LOWER(status) = 'pending'
+            ) combined
             GROUP BY broker
             ORDER BY broker
         ");
-        $stmt->execute([$batchId, $merchantId]);
+        $stmt->execute([$batchId, $merchantId, $batchId, $merchantId]);
 
         return ['success' => true, 'brokers' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
     }
@@ -1303,12 +1423,19 @@ class PrepareOrdersProcess
                    SUM(amount)      AS total_amount,
                    SUM(shares)      AS total_shares,
                    SUM(points_used) AS total_points
-            FROM prepared_orders
-            WHERE batch_id = ? AND merchant_id = ? AND broker = ?
+            FROM (
+                SELECT basket_id, member_id, amount, shares, points_used
+                FROM prepared_orders
+                WHERE batch_id = ? AND merchant_id = ? AND broker = ?
+                UNION ALL
+                SELECT basket_id, member_id, amount, shares, points_used
+                FROM orders
+                WHERE batch_id = ? AND merchant_id = ? AND broker = ? AND LOWER(status) = 'pending'
+            ) combined
             GROUP BY basket_id, member_id
             ORDER BY basket_id
         ");
-        $stmt->execute([$batchId, $merchantId, $broker]);
+        $stmt->execute([$batchId, $merchantId, $broker, $batchId, $merchantId, $broker]);
 
         return ['success' => true, 'baskets' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
     }
@@ -1323,18 +1450,21 @@ class PrepareOrdersProcess
         }
 
         $stmt = $this->conn->prepare("
-            SELECT id AS order_id,
-                   symbol,
-                   amount,
-                   price,
-                   shares,
-                   points_used AS points,
-                   status
-            FROM prepared_orders
-            WHERE batch_id = ? AND basket_id = ?
-            ORDER BY symbol, id
+            SELECT order_id, symbol, amount, price, shares, points, status, source
+            FROM (
+                SELECT id AS order_id, symbol, amount, price, shares,
+                       points_used AS points, status, 'staged' AS source
+                FROM prepared_orders
+                WHERE batch_id = ? AND basket_id = ?
+                UNION ALL
+                SELECT order_id, symbol, amount, NULL AS price, shares,
+                       points_used AS points, status, 'reconciled' AS source
+                FROM orders
+                WHERE batch_id = ? AND basket_id = ? AND LOWER(status) = 'pending'
+            ) combined
+            ORDER BY symbol, order_id
         ");
-        $stmt->execute([$batchId, $basketId]);
+        $stmt->execute([$batchId, $basketId, $batchId, $basketId]);
 
         return ['success' => true, 'orders' => $stmt->fetchAll(PDO::FETCH_ASSOC)];
     }
