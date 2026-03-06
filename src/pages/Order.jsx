@@ -317,6 +317,10 @@ export default function Order() {
 
       // nav + clear basket
       clearBasket();
+      // ✅ Order confirmed — now safe to clear the slider session cache
+      sessionStorage.removeItem("sl_slider_amount");
+      sessionStorage.removeItem("sl_slider_points");
+      sessionStorage.removeItem("sl_slider_sweep_pct");
       navigate("/order-confirmation", {
         state: {
           refreshWallet: true,

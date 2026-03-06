@@ -716,6 +716,24 @@ export default function Login() {
           </button>
         </form>
       )}
+
+      {/* Admin access link */}
+      <div style={{ textAlign: "center", marginTop: "24px", paddingBottom: "8px" }}>
+        <button
+          type="button"
+          onClick={() => navigate("/admin-login")}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#94a3b8",
+            fontSize: "0.75rem",
+            cursor: "pointer",
+            textDecoration: "underline",
+          }}
+        >
+          Admin sign in
+        </button>
+      </div>
     </div>
   );
 }

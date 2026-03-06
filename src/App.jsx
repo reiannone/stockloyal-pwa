@@ -54,6 +54,7 @@ import BrokerNotifications from "./pages/BrokerNotifications.jsx";
 import AdminFAQ from "./pages/AdminFAQ.jsx";
 import DataQualityCheck from "./pages/DataQualityCheck.jsx";
 import DemoLaunch from "./pages/DemoLaunch.jsx";
+import AdminLogin from "./pages/AdminLogin.jsx";
 import SocialFeed from "./pages/SocialFeed.jsx";
 import PostDetail from "./pages/PostDetail.jsx";
 import SkyBlueRewards from "./pages/SkyBlueRewards.jsx";
@@ -163,6 +164,14 @@ function App() {
                 element={
                   <PageWrapper>
                     <DemoLaunch />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/admin-login"
+                element={
+                  <PageWrapper>
+                    <AdminLogin />
                   </PageWrapper>
                 }
               />

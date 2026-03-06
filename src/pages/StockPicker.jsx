@@ -40,8 +40,16 @@ export default function StockPicker() {
   const { addToBasket, basket, clearBasket, removeFromBasket } = useBasket();
 
   const memberId = localStorage.getItem("memberId");
-  const { amount: initialAmount = 0, pointsUsed: initialPoints = 0 } =
-    location.state || {};
+  const {
+    amount: stateAmount,
+    pointsUsed: statePoints,
+  } = location.state || {};
+
+  // Prefer explicit navigation state, then fall back to session-persisted values
+  const initialAmount = stateAmount ?? parseFloat(sessionStorage.getItem("sl_slider_amount") || "0");
+  const initialPoints = statePoints ?? parseInt(sessionStorage.getItem("sl_slider_points") || "0", 10);
+  // Also restore the sweep percentage that was active when the user last set the slider
+  const initialSweepPct = sessionStorage.getItem("sl_slider_sweep_pct") || null;
 
   // ✅ Get merchant name from localStorage
   const merchantName =
@@ -424,21 +432,27 @@ export default function StockPicker() {
           setMaxSecurities(Number(data.wallet.max_securities_per_order));
         }
 
-        // ✅ Only apply sweep default if user didn't pass explicit values via location.state
-        // This preserves the slider values when user comes from Wallet with specific amounts
-        if (initialPoints === 0 && data.wallet?.sweep_percentage && data.wallet?.points) {
+        // ✅ Only apply sweep default if no user-set values exist anywhere.
+        // Read sessionStorage fresh inside the effect (not from closure) to avoid
+        // stale capture — closure values are fixed at mount and can be wrong on re-run.
+        const savedPoints = parseInt(sessionStorage.getItem("sl_slider_points") || "0", 10);
+        const savedSweepPct = sessionStorage.getItem("sl_slider_sweep_pct") || null;
+        const hasSavedSlider = savedPoints > 0 || savedSweepPct !== null;
+        if (!hasSavedSlider && data.wallet?.sweep_percentage && data.wallet?.points) {
           const sweepVal = Math.round(
             (parseInt(data.wallet.points, 10) || 0) *
               (parseFloat(data.wallet.sweep_percentage) / 100)
           );
           setSelectedPoints(sweepVal);
+          sessionStorage.setItem("sl_slider_points", String(sweepVal));
+          sessionStorage.setItem("sl_slider_sweep_pct", String(data.wallet.sweep_percentage));
         }
       } catch (e) {
         console.error("[StockPicker] fetch wallet error:", e);
         setError("Network error while fetching wallet.");
       }
     })();
-  }, [memberId, initialPoints]);
+  }, [memberId]);
 
   // ✅ Use member's tier-specific conversion rate from wallet (mirrors Wallet.jsx line 629)
   useEffect(() => {
@@ -467,11 +481,25 @@ export default function StockPicker() {
     }
   }, [selectedPoints, conversionRate, isEditingCash]);
 
-  // ✅ Sync slider values to localStorage so they always reflect current selection
+  // ✅ Persist points to sessionStorage immediately whenever they change —
+  // don't gate on cashValue since that's recalculated async after mount
+  useEffect(() => {
+    if (selectedPoints > 0) {
+      sessionStorage.setItem("sl_slider_points", String(selectedPoints));
+      // Mark as user-controlled so the sweep default guard never fires again this session
+      if (!sessionStorage.getItem("sl_slider_sweep_pct")) {
+        sessionStorage.setItem("sl_slider_sweep_pct", "user");
+      }
+    }
+  }, [selectedPoints]);
+
+  // ✅ Sync cash + points to localStorage (and sessionStorage) once both are ready
   useEffect(() => {
     if (selectedPoints > 0 && cashValue > 0) {
       localStorage.setItem("basket_amount", cashValue.toFixed(2));
       localStorage.setItem("basket_pointsUsed", String(selectedPoints));
+      sessionStorage.setItem("sl_slider_amount", cashValue.toFixed(2));
+      sessionStorage.setItem("sl_slider_points", String(selectedPoints));
     }
   }, [selectedPoints, cashValue]);
 
@@ -482,6 +510,13 @@ export default function StockPicker() {
     const max = parseInt(wallet?.points ?? "0", 10) || 0;
     v = Math.max(0, Math.min(v, max));
     setSelectedPoints(v);
+    // Write synchronously — effect fires too late if user navigates right after sliding
+    const cash = Math.floor(Math.round(v * conversionRate * 100) / 100);
+    if (v > 0) {
+      sessionStorage.setItem("sl_slider_points", String(v));
+      sessionStorage.setItem("sl_slider_amount", cash.toFixed(2));
+      sessionStorage.setItem("sl_slider_sweep_pct", "user");
+    }
   };
 
   // --- Derived broker-range check for cashValue ---
@@ -644,6 +679,8 @@ export default function StockPicker() {
     localStorage.setItem("lastInvestedAmount", String(investedAmount));
     localStorage.setItem("basket_pointsUsed", String(selectedPoints));
     localStorage.setItem("basket_amount", String(investedAmount));
+    // ⚠️ Do NOT clear session slider cache here — user may hit Back from Order.jsx
+    // The cache is cleared in Order.jsx only after the order is successfully confirmed.
 
     // ✅ Enrich basket with allocation + shares (same logic as Basket.jsx)
     const enrichedBasket = basketArray.map((stock) => {
@@ -1100,6 +1137,11 @@ export default function StockPicker() {
     const finalCash = Math.floor(cents / 100);
     setCashValue(finalCash);
     setCashInput(finalCash.toLocaleString());
+    if (clampedPoints > 0) {
+      sessionStorage.setItem("sl_slider_points", String(clampedPoints));
+      sessionStorage.setItem("sl_slider_amount", finalCash.toFixed(2));
+      sessionStorage.setItem("sl_slider_sweep_pct", "user");
+    }
   };
 
   // --- Derived values ---
