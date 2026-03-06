@@ -298,6 +298,11 @@ export default function SweepAdmin() {
     executeSweep(modal.data?.merchantId);
   };
 
+  // Derived: are there any orders that haven't been funded yet?
+  const unfundedCount = (overview?.total_pending_orders || 0) - (overview?.total_funded_orders || 0);
+  const hasUnfundedOrders = unfundedCount > 0;
+  const allOrdersFunded = (overview?.total_funded_orders || 0) > 0 && !hasUnfundedOrders;
+
   // Initial load
   useEffect(() => {
     loadOverview();
@@ -464,35 +469,73 @@ export default function SweepAdmin() {
           >
             <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
               <div style={{ fontSize: "24px", fontWeight: "700", color: "#f59e0b" }}>{overview.total_pending_orders || 0}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Pending Orders</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                <Tooltip text="Orders in 'funded' status that have been journaled to member Alpaca accounts and are ready to be submitted to the broker for execution.">Pending Orders</Tooltip>
+              </div>
+            </div>
+            <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: "24px", fontWeight: "700", color: allOrdersFunded ? "#10b981" : "#ef4444" }}>{overview.total_funded_orders || 0}</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                <Tooltip text="Orders confirmed as funded — journal transfers from the StockLoyal IB sweep account have executed at Alpaca. All orders must be funded before the sweep can run.">Funded Orders</Tooltip>
+              </div>
             </div>
             <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
               <div style={{ fontSize: "24px", fontWeight: "700", color: "#10b981" }}>{formatCurrency(overview.total_pending_amount)}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Total Amount</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                <Tooltip text="Total USD value of all pending orders across all merchants and members. This is the amount that will be invested in fractional shares when the sweep runs.">Total Amount</Tooltip>
+              </div>
             </div>
             <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
               <div style={{ fontSize: "24px", fontWeight: "700", color: "#6366f1" }}>{overview.pending_by_merchant?.length || 0}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Merchants</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                <Tooltip text="Number of merchants with pending orders in this sweep cycle. Each merchant's orders are processed and submitted to Alpaca as a grouped batch.">Merchants</Tooltip>
+              </div>
             </div>
             <div style={{ backgroundColor: "#f3f4f6", borderRadius: "8px", padding: "12px", textAlign: "center" }}>
               <div style={{ fontSize: "24px", fontWeight: "700", color: "#8b5cf6" }}>{overview.today?.sweeps_run || 0}</div>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>Sweeps Today</div>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                <Tooltip text="Number of times the sweep has been triggered today. Multiple sweeps can run in a day as new batches are funded and ready.">Sweeps Today</Tooltip>
+              </div>
             </div>
           </div>
+
+          {/* Unfunded orders warning */}
+          {hasUnfundedOrders && (
+            <div style={{
+              backgroundColor: "#fef3c7",
+              border: "2px solid #f59e0b",
+              borderRadius: "8px",
+              padding: "12px 16px",
+              marginBottom: "12px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "10px",
+            }}>
+              <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: "13px", color: "#92400e", lineHeight: 1.5 }}>
+                <strong>Journal funding incomplete.</strong> {unfundedCount} order{unfundedCount !== 1 ? "s have" : " has"} not been funded yet.
+                The sweep can only run once all journals have been executed — funds must be transferred
+                from the StockLoyal sweep account into each member&#x2019;s individual Alpaca account before
+                orders can be submitted. This ensures trades are funded exclusively from converted
+                loyalty points, not from members&#x2019; existing Alpaca balances.
+                Please complete the <strong>Journal Funding</strong> step before proceeding.
+              </div>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
             <button
               onClick={() => showSweepModal()}
-              disabled={sweepRunning || (overview.total_pending_orders || 0) === 0}
+              disabled={sweepRunning || (overview.total_pending_orders || 0) === 0 || hasUnfundedOrders}
               style={{
                 padding: "0.75rem 1.5rem",
-                background: sweepRunning || (overview.total_pending_orders || 0) === 0 ? "#94a3b8" : "#4ECDC4",
+                background: sweepRunning || (overview.total_pending_orders || 0) === 0 || hasUnfundedOrders ? "#94a3b8" : "#4ECDC4",
                 color: "#fff",
                 border: "none",
                 borderRadius: "8px",
                 fontWeight: "600",
-                cursor: sweepRunning || (overview.total_pending_orders || 0) === 0 ? "not-allowed" : "pointer",
+                cursor: sweepRunning || (overview.total_pending_orders || 0) === 0 || hasUnfundedOrders ? "not-allowed" : "pointer",
                 fontSize: "14px",
               }}
             >
@@ -647,24 +690,28 @@ export default function SweepAdmin() {
                   value={overview.total_pending_orders || 0}
                   subtext={formatCurrency(overview.total_pending_amount)}
                   color="#f59e0b"
+                  tooltip="Total funded orders queued and ready for broker submission across all merchants."
                 />
                 <StatCard 
                   label="Today's Sweeps" 
                   value={overview.today?.sweeps_run || 0}
                   subtext={`${overview.today?.orders_confirmed || 0} confirmed`}
                   color="#10b981"
+                  tooltip="Number of sweep executions run today. Each sweep submits a batch of funded orders to Alpaca for execution."
                 />
                 <StatCard 
                   label="Scheduled Today" 
                   value={overview.today?.scheduled_merchants?.length || 0}
                   subtext="merchants"
                   color="#6366f1"
+                  tooltip="Merchants whose sweep schedule is configured to run today based on their sweep day settings."
                 />
                 <StatCard 
                   label="Failed Today" 
                   value={overview.today?.orders_failed || 0}
                   subtext="orders"
                   color="#ef4444"
+                  tooltip="Orders that were submitted to Alpaca today but returned an error or rejection. Check broker execution logs for details."
                 />
               </div>
 
@@ -727,8 +774,9 @@ export default function SweepAdmin() {
                         <td style={tdStyle}>
                           <button
                             onClick={() => showSweepModal(m.merchant_id)}
-                            disabled={sweepRunning}
-                            style={smallBtnStyle}
+                            disabled={sweepRunning || hasUnfundedOrders}
+                            style={{...smallBtnStyle, ...(hasUnfundedOrders ? { background: "#94a3b8", cursor: "not-allowed" } : {})}}
+                            title={hasUnfundedOrders ? "Complete journal funding before sweeping" : ""}
                           >
                             Run Sweep
                           </button>
@@ -1042,7 +1090,7 @@ export default function SweepAdmin() {
                         <td style={tdStyle}>
                           <button
                             onClick={() => showSweepModal(s.merchant_id)}
-                            disabled={sweepRunning || !s.pending_orders}
+                            disabled={sweepRunning || !s.pending_orders || hasUnfundedOrders}
                             style={{
                               ...smallBtnStyle,
                               opacity: s.pending_orders ? 1 : 0.5
@@ -1098,7 +1146,48 @@ export default function SweepAdmin() {
 }
 
 // Stat Card Component
-function StatCard({ label, value, subtext, color }) {
+function Tooltip({ text, children }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <span style={{
+          position: "absolute",
+          bottom: "calc(100% + 8px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1f2937",
+          color: "#f9fafb",
+          fontSize: "11px",
+          lineHeight: 1.5,
+          padding: "8px 12px",
+          borderRadius: "7px",
+          whiteSpace: "normal",
+          width: 240,
+          zIndex: 999,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+          pointerEvents: "none",
+        }}>
+          {text}
+          <span style={{
+            position: "absolute",
+            top: "100%", left: "50%",
+            transform: "translateX(-50%)",
+            borderWidth: "5px", borderStyle: "solid",
+            borderColor: "#1f2937 transparent transparent transparent",
+          }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+function StatCard({ label, value, subtext, color, tooltip }) {
   return (
     <div style={{
       padding: "1rem",
@@ -1108,7 +1197,7 @@ function StatCard({ label, value, subtext, color }) {
       borderLeft: `4px solid ${color}`
     }}>
       <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem" }}>
-        {label}
+        {tooltip ? <Tooltip text={tooltip}>{label}</Tooltip> : label}
       </div>
       <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#1e293b" }}>
         {value}

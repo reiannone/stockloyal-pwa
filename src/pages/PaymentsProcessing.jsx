@@ -606,10 +606,10 @@ export default function PaymentsProcessing() {
       {/* Summary Stats */}
       {activeTab === "unpaid" && topTotals.orders > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
-          <StatCard label="Approved Orders" value={topTotals.orders} subtext="Awaiting merchant funding" color="#f59e0b" />
-          <StatCard label="Funding Required" value={fmtMoney(topTotals.totalDue)} subtext="ACH to IB sweep" color="#10b981" />
-          <StatCard label="Brokers" value={topTotals.brokers} subtext="Payees" color="#6366f1" />
-          <StatCard label="Members" value={topTotals.members} subtext="Investors" color="#06b6d4" />
+          <StatCard label="Approved Orders" value={topTotals.orders} subtext="Awaiting merchant funding" color="#f59e0b" tooltip="Orders in 'approved' status — prepared and confirmed, waiting for the merchant's ACH payment to fund the IB sweep account before journaling can begin." />
+          <StatCard label="Funding Required" value={fmtMoney(topTotals.totalDue)} subtext="ACH to IB sweep" color="#10b981" tooltip="Total USD amount the merchant needs to transfer via ACH into the StockLoyal IB sweep account. This pool funds the journal transfers into individual member Alpaca accounts." />
+          <StatCard label="Brokers" value={topTotals.brokers} subtext="Payees" color="#6366f1" tooltip="Number of distinct broker firms receiving orders across all merchants in this batch — currently Alpaca Securities LLC." />
+          <StatCard label="Members" value={topTotals.members} subtext="Investors" color="#06b6d4" tooltip="Total number of members with approved orders awaiting funding across all merchants in this cycle." />
         </div>
       )}
 
@@ -1174,16 +1174,22 @@ function ResultsBanner({ results, onDismiss }) {
         {failed.length > 0 && (
           <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
             <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ef4444" }}>{failed.length}</div>
-            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Failed</div>
+            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+              <Tooltip text="Merchants whose ACH payment or Plaid transfer failed in this run. These orders remain in 'approved' status and can be retried.">Failed</Tooltip>
+            </div>
           </div>
         )}
         <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#3b82f6" }}>{totalOrders}</div>
-          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Orders Funded</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+            <Tooltip text="Total number of orders across all merchants that were successfully funded in this payment run.">Orders Funded</Tooltip>
+          </div>
         </div>
         <div style={{ background: "white", borderRadius: 6, padding: 12, textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "#8b5cf6" }}>{fmtMoney(totalAmount)}</div>
-          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>Total Amount</div>
+          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+            <Tooltip text="Total USD value transferred via ACH into the StockLoyal IB sweep account across all merchants in this payment run.">Total Amount</Tooltip>
+          </div>
         </div>
       </div>
 
@@ -1307,13 +1313,56 @@ function ResultsBanner({ results, onDismiss }) {
 // Sub-Components & Styles
 // ═══════════════════════════════════════════════════════════════════════════
 
-function StatCard({ label, value, subtext, color }) {
+function Tooltip({ text, children }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <span style={{
+          position: "absolute",
+          bottom: "calc(100% + 8px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1f2937",
+          color: "#f9fafb",
+          fontSize: "11px",
+          lineHeight: 1.5,
+          padding: "8px 12px",
+          borderRadius: "7px",
+          whiteSpace: "normal",
+          width: 240,
+          zIndex: 999,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+          pointerEvents: "none",
+        }}>
+          {text}
+          <span style={{
+            position: "absolute",
+            top: "100%", left: "50%",
+            transform: "translateX(-50%)",
+            borderWidth: "5px", borderStyle: "solid",
+            borderColor: "#1f2937 transparent transparent transparent",
+          }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+function StatCard({ label, value, subtext, color, tooltip }) {
   return (
     <div style={{
       padding: "1rem", background: "#fff", borderRadius: 8,
       border: "1px solid #e2e8f0", borderLeft: `4px solid ${color}`,
     }}>
-      <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem" }}>{label}</div>
+      <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem" }}>
+        {tooltip ? <Tooltip text={tooltip}>{label}</Tooltip> : label}
+      </div>
       <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1e293b" }}>{value}</div>
       {subtext && <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{subtext}</div>}
     </div>

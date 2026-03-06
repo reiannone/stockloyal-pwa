@@ -783,22 +783,22 @@ export default function PrepareOrders() {
                 gap: "0.75rem",
                 marginBottom: "1.5rem",
               }}>
-                <StatCard label="Members" value={fmtN(preview.eligible_members)} color="#6366f1" />
-                <StatCard label="Merchants" value={fmtN(preview.unique_merchants)} color="#8b5cf6" />
-                <StatCard label="Brokers" value={fmtN(preview.unique_brokers)} color="#0ea5e9" />
-                <StatCard label="Symbols" value={fmtN(preview.unique_symbols)} color="#06b6d4" />
-                <StatCard label="Baskets" value={fmtN(preview.eligible_members)} color="#14b8a6" />
-                <StatCard label="Total Orders" value={fmtN(preview.total_picks)} color="#0284c7" />
-                <StatCard label="Est. Amount" value={fmt$(preview.est_total_amount)} color="#10b981" />
-                <StatCard label="Est. Points" value={fmtN(preview.est_total_points)} color="#f59e0b" />
+                <StatCard label="Members" value={fmtN(preview.eligible_members)} color="#6366f1" tooltip="Number of members with active stock picks who are eligible to receive orders in this batch." />
+                <StatCard label="Merchants" value={fmtN(preview.unique_merchants)} color="#8b5cf6" tooltip="Number of distinct merchants whose loyalty members are included in this batch." />
+                <StatCard label="Brokers" value={fmtN(preview.unique_brokers)} color="#0ea5e9" tooltip="Number of distinct broker firms that orders will be routed to across all members in this batch — currently Alpaca Securities LLC." />
+                <StatCard label="Symbols" value={fmtN(preview.unique_symbols)} color="#06b6d4" tooltip="Number of unique stock symbols selected across all member baskets in this batch." />
+                <StatCard label="Baskets" value={fmtN(preview.eligible_members)} color="#14b8a6" tooltip="Each eligible member gets one basket — a grouped set of orders for all their selected stocks in this sweep cycle." />
+                <StatCard label="Total Orders" value={fmtN(preview.total_picks)} color="#0284c7" tooltip="Total number of individual stock orders across all member baskets. Each symbol in a member's basket becomes one order." />
+                <StatCard label="Est. Amount" value={fmt$(preview.est_total_amount)} color="#10b981" tooltip="Estimated total USD value of all orders based on current stock prices and each member's point conversion rate. Final amounts are set at execution." />
+                <StatCard label="Est. Points" value={fmtN(preview.est_total_points)} color="#f59e0b" tooltip="Estimated total loyalty points that will be redeemed across all members in this batch, based on each merchant's conversion rate." />
                 {preview.bypassed_below_min > 0 && (
-                  <StatCard label="Bypassed (Min)" value={fmtN(preview.bypassed_below_min)} color="#ef4444" />
+                  <StatCard label="Bypassed (Min)" value={fmtN(preview.bypassed_below_min)} color="#ef4444" tooltip="Orders dropped because the calculated amount fell below the broker's minimum order size ($5.00 per order for Alpaca). These members will not receive an order for that symbol." />
                 )}
                 {preview.capped_at_max > 0 && (
-                  <StatCard label="Capped (Max)" value={fmtN(preview.capped_at_max)} color="#f97316" />
+                  <StatCard label="Capped (Max)" value={fmtN(preview.capped_at_max)} color="#f97316" tooltip="Baskets that exceeded the broker's maximum basket value ($5,000 per basket for Alpaca). All orders in those baskets were scaled down proportionally to stay within the limit." />
                 )}
                 {preview.members_skipped > 0 && (
-                  <StatCard label="Skipped (0 pts)" value={fmtN(preview.members_skipped)} color="#6b7280" />
+                  <StatCard label="Skipped (0 pts)" value={fmtN(preview.members_skipped)} color="#6b7280" tooltip="Members who had no redeemable point balance at the time of preparation and were excluded from this batch entirely." />
                 )}
               </div>
 
@@ -1043,7 +1043,48 @@ export default function PrepareOrders() {
 // Sub-components
 // ═══════════════════════════════════════════════════════════════════════════
 
-function StatCard({ label, value, color }) {
+function Tooltip({ text, children }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <span style={{
+          position: "absolute",
+          bottom: "calc(100% + 8px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1f2937",
+          color: "#f9fafb",
+          fontSize: "11px",
+          lineHeight: 1.5,
+          padding: "8px 12px",
+          borderRadius: "7px",
+          whiteSpace: "normal",
+          width: 240,
+          zIndex: 999,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+          pointerEvents: "none",
+        }}>
+          {text}
+          <span style={{
+            position: "absolute",
+            top: "100%", left: "50%",
+            transform: "translateX(-50%)",
+            borderWidth: "5px", borderStyle: "solid",
+            borderColor: "#1f2937 transparent transparent transparent",
+          }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+function StatCard({ label, value, color, tooltip }) {
   return (
     <div style={{
       padding: "1rem 1.25rem",
@@ -1053,7 +1094,7 @@ function StatCard({ label, value, color }) {
       borderTop: `3px solid ${color}`,
     }}>
       <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        {label}
+        {tooltip ? <Tooltip text={tooltip}>{label}</Tooltip> : label}
       </div>
       <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#1e293b", marginTop: "0.25rem" }}>
         {value}

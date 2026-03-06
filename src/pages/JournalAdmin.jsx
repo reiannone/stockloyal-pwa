@@ -7,6 +7,7 @@ import {
   Play,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   DollarSign,
   Users,
@@ -22,12 +23,55 @@ import OrderPipeline from "../components/OrderPipeline";
 import { apiPost } from "../api";
 
 /* ─── Status badge helper ─────────────────────────────────────── */
+function Tooltip({ text, children }) {
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <span style={{
+          position: "absolute",
+          bottom: "calc(100% + 8px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#1f2937",
+          color: "#f9fafb",
+          fontSize: "11px",
+          lineHeight: 1.5,
+          padding: "8px 12px",
+          borderRadius: "7px",
+          whiteSpace: "normal",
+          width: 240,
+          zIndex: 999,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+          pointerEvents: "none",
+        }}>
+          {text}
+          {/* arrow */}
+          <span style={{
+            position: "absolute",
+            top: "100%", left: "50%",
+            transform: "translateX(-50%)",
+            borderWidth: "5px", borderStyle: "solid",
+            borderColor: "#1f2937 transparent transparent transparent",
+          }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
 function StatusBadge({ status }) {
   const map = {
     approved:   { bg: "#dbeafe", fg: "#1e40af", label: "Approved" },
     funded:     { bg: "#dcfce7", fg: "#166534", label: "Funded" },
-    settled:    { bg: "#f0fdf4", fg: "#166534", label: "Settled" },
+    executed:   { bg: "#f0fdf4", fg: "#166534", label: "Executed" },
     pending:    { bg: "#fef3c7", fg: "#92400e", label: "Pending" },
+    queued:     { bg: "#fef3c7", fg: "#92400e", label: "Queued" },
     placed:     { bg: "#e0e7ff", fg: "#3730a3", label: "Placed" },
     ready:      { bg: "#e0e7ff", fg: "#3730a3", label: "Ready to Fund" },
     failed:     { bg: "#fee2e2", fg: "#991b1b", label: "Failed" },
@@ -79,6 +123,32 @@ export default function JournalAdmin() {
   const [expandedMember, setExpandedMember] = useState(null);
   const [selectedMembers, setSelectedMembers] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  // ── Check Alpaca journal status for all recent journals ────────
+  const checkJournalStatuses = useCallback(async () => {
+    if (!recentJournals.length) return;
+    setCheckingStatus(true);
+    try {
+      const res = await apiPost("check-journal-status.php", {
+        journal_ids: recentJournals
+          .filter(j => j.alpaca_journal_id)
+          .map(j => j.alpaca_journal_id),
+      });
+      if (res.success && res.statuses) {
+        // Merge updated statuses back into recentJournals
+        setRecentJournals(prev =>
+          prev.map(j => {
+            const updated = res.statuses[j.alpaca_journal_id];
+            return updated ? { ...j, journal_status: updated } : j;
+          })
+        );
+      }
+    } catch (err) {
+      console.error("[JournalAdmin] status check failed:", err);
+    }
+    setCheckingStatus(false);
+  }, [recentJournals]);
 
   // ── Load data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -224,6 +294,9 @@ export default function JournalAdmin() {
 
   // ── Computed values ────────────────────────────────────────────
   const totalPending = pendingJournals.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
+  const hasPendingJournals = recentJournals.some(
+    j => !["executed"].includes((j.journal_status || "").toLowerCase())
+  );
   const selectedTotal = memberSummary
     .filter((m) => selectedMembers.has(m.member_id))
     .reduce((s, m) => s + parseFloat(m.total_amount || 0), 0);
@@ -340,7 +413,9 @@ export default function JournalAdmin() {
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                 <Building2 size={16} color={insufficientForAll ? "#dc2626" : "#6b7280"} />
                 <span style={{ fontSize: "12px", color: insufficientForAll ? "#991b1b" : "#6b7280", fontWeight: "500" }}>
-                  IB Sweep Account Balance
+                  <Tooltip text="Cash held in StockLoyal's omnibus firm account at Alpaca. This pool is funded by merchant ACH payments and is the source of all journal transfers to member accounts.">
+                    IB Sweep Account Balance
+                  </Tooltip>
                 </span>
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: insufficientForAll ? "#dc2626" : "#111827" }}>
@@ -368,7 +443,9 @@ export default function JournalAdmin() {
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                 <Clock size={16} color="#d97706" />
                 <span style={{ fontSize: "12px", color: "#92400e", fontWeight: "500" }}>
-                  Awaiting Journal
+                  <Tooltip text="Orders in 'approved' status whose merchant payment has been received but whose funds have not yet been journaled (transferred) from the IB sweep account into member Alpaca accounts.">
+                    Awaiting Journal
+                  </Tooltip>
                 </span>
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: "#92400e" }}>
@@ -391,7 +468,9 @@ export default function JournalAdmin() {
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                 <Users size={16} color={selectedMembers.size > 0 ? "#16a34a" : "#6b7280"} />
                 <span style={{ fontSize: "12px", color: selectedMembers.size > 0 ? "#166534" : "#6b7280", fontWeight: "500" }}>
-                  Selected to Journal
+                  <Tooltip text="Members you have individually selected for journaling. Use this to fund specific members rather than all at once. The total shown is the combined order amount for your selection.">
+                    Selected to Journal
+                  </Tooltip>
                 </span>
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: selectedMembers.size > 0 ? "#166534" : "#111827" }}>
@@ -414,7 +493,9 @@ export default function JournalAdmin() {
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
                 <CheckCircle2 size={16} color="#16a34a" />
                 <span style={{ fontSize: "12px", color: "#6b7280", fontWeight: "500" }}>
-                  Recent Journals
+                  <Tooltip text="JNLC journal transfers submitted to Alpaca in the last 30 days — one per member. Journals must reach 'Executed' status at Alpaca before the Sweep step can run.">
+                    Recent Journals
+                  </Tooltip>
                 </span>
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: "#111827" }}>
@@ -746,9 +827,69 @@ export default function JournalAdmin() {
           {/* ── Recent Journal History ─────────────────────── */}
           {recentJournals.length > 0 && (
             <div style={{ marginTop: "24px" }}>
-              <h3 style={{ fontSize: "15px", fontWeight: "600", color: "#374151", marginBottom: "12px" }}>
-                Recent Journal Transactions
-              </h3>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                <h3 style={{ fontSize: "15px", fontWeight: "600", color: "#374151", margin: 0 }}>
+                  Recent Journal Transactions
+                </h3>
+                <button
+                  onClick={checkJournalStatuses}
+                  disabled={checkingStatus}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "6px 14px", fontSize: "12px", fontWeight: "600",
+                    background: checkingStatus ? "#e5e7eb" : "#f0fdf4",
+                    color: checkingStatus ? "#9ca3af" : "#166534",
+                    border: "1px solid " + (checkingStatus ? "#d1d5db" : "#86efac"),
+                    borderRadius: "6px",
+                    cursor: checkingStatus ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {checkingStatus
+                    ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Checking…</>
+                    : <><RefreshCw size={12} /> Check Alpaca Status</>
+                  }
+                </button>
+              </div>
+
+              {/* Pending journals warning */}
+              {hasPendingJournals && (
+                <div style={{
+                  backgroundColor: "#fef3c7",
+                  border: "2px solid #f59e0b",
+                  borderRadius: "8px",
+                  padding: "12px 16px",
+                  marginBottom: "12px",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                }}>
+                  <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ fontSize: "13px", color: "#92400e", lineHeight: 1.6 }}>
+                    <strong>One or more journals are still pending at Alpaca.</strong> The Sweep step
+                    requires all journals to be in <strong>executed</strong> status before orders can be
+                    submitted to the broker. Click <em>Check Alpaca Status</em> to refresh, or wait for
+                    Alpaca to settle the transfers and check again.
+                  </div>
+                </div>
+              )}
+
+              {!hasPendingJournals && recentJournals.length > 0 && (
+                <div style={{
+                  backgroundColor: "#f0fdf4",
+                  border: "1px solid #86efac",
+                  borderRadius: "8px",
+                  padding: "10px 16px",
+                  marginBottom: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "13px",
+                  color: "#166534",
+                }}>
+                  <CheckCircle2 size={16} color="#10b981" />
+                  All journals executed — you may proceed to the Sweep step.
+                </div>
+              )}
               <div
                 style={{
                   backgroundColor: "#fff",

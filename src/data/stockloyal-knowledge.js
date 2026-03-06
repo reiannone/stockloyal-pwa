@@ -16,10 +16,19 @@ const STOCKLOYAL_KNOWLEDGE = {
   overview: `
     StockLoyal is a financial technology platform that converts merchant loyalty 
     points into fractional stock investments. Members earn points from partner 
-    merchants (restaurants, retailers, etc.) and can invest those points into 
-    real stocks, ETFs, mutual funds, and crypto through connected brokerage accounts.
+    merchants (restaurants, retailers, etc.) and StockLoyal automatically invests 
+    those points into real stocks and ETFs through a dedicated brokerage account.
     
     Think of it as: "Your loyalty points → real investments."
+    
+    IMPORTANT — HOW IT WORKS BEHIND THE SCENES:
+    - StockLoyal operates as an Introducing Broker (IB)
+    - Alpaca Securities LLC is the exclusive clearing/custodian broker
+    - Each member gets their own individual brokerage account at Alpaca, opened 
+      automatically during onboarding — no separate Alpaca account needed
+    - Members do not log into Alpaca directly; StockLoyal manages it via the Broker API
+    - Alpaca is a FINRA-registered broker-dealer (CRD #304483) and SIPC member
+    - Member investments are held in custody at Alpaca Securities
     
     The app is a Progressive Web App (PWA) that works on mobile and desktop.
     Members access it via a link from their merchant's loyalty program.
@@ -53,13 +62,13 @@ const STOCKLOYAL_KNOWLEDGE = {
        
        Step 4 - Review & Submit:
        - Review all entered information
-       - Submit creates both the StockLoyal profile AND the brokerage account
+       - Submit creates both the StockLoyal profile AND the Alpaca brokerage account
 
     3. SELECT BROKER
-       - Members choose a brokerage (currently Alpaca Securities)
-       - Brokerage account is created automatically during onboarding
-       - Each member gets their own individual brokerage account
-       - No separate broker login needed — managed by StockLoyal
+       - StockLoyal currently uses Alpaca Securities as its exclusive broker
+       - A brokerage account is created automatically during onboarding
+       - Each member gets their own individual Alpaca account — no separate login needed
+       - The account is managed entirely through StockLoyal via the Broker API
 
     4. INVESTMENT ELECTION
        - Choose election type: "immediate" (T+1) or "monthly" subscription
@@ -69,6 +78,7 @@ const STOCKLOYAL_KNOWLEDGE = {
 
     5. TERMS & CONDITIONS
        - Must accept before investing
+       - Covers the StockLoyal Introducing Broker relationship and Alpaca as custodian
 
     After completing all steps, members can access the Wallet and start investing.
   `,
@@ -101,6 +111,9 @@ const STOCKLOYAL_KNOWLEDGE = {
        - Range slider with haptic feedback
        - Can also type a cash amount directly
        - Must be within broker's min/max order limits
+       - Broker minimum: $5.00 per individual order
+       - Broker maximum: $5,000 per basket (total across all stocks)
+       - Maximum stocks per basket: 10 (set by Alpaca)
        - Shows real-time points-to-cash conversion
 
     2. FILL BASKET (FillBasket page)
@@ -113,6 +126,7 @@ const STOCKLOYAL_KNOWLEDGE = {
        - Cash is split equally across selected stocks by default
        - Members can save favorite stocks (heart icon)
        - Can remove stocks from basket (trash icon)
+       - Maximum 10 stocks per basket (Alpaca limit — shown in Stock Picker)
 
     3. ORDER REVIEW (Order page)
        - Shows all stocks in basket with share quantities and allocations
@@ -141,7 +155,7 @@ const STOCKLOYAL_KNOWLEDGE = {
     - POINTS BALANCE: Raw loyalty points from merchant
     - MEMBER TIER: If applicable (Gold, Silver, etc.)
     - SWEEP PERCENTAGE: For monthly subscribers
-    - PORTFOLIO VALUE: Market value of investments held at broker
+    - PORTFOLIO VALUE: Market value of investments held at Alpaca
     - "Convert to Invest Basket" button: Opens the stock picker flow
     
     QUICK LINKS (tile grid):
@@ -152,14 +166,14 @@ const STOCKLOYAL_KNOWLEDGE = {
     
     NOTES:
     - If no broker is linked, the invest button is disabled
-    - Portfolio value comes from the broker and may be delayed
+    - Portfolio value comes from Alpaca and may be delayed
     - Points are refreshable via a button on the landing page
     - Portfolio card navigates to full Portfolio page with buy/sell capabilities
   `,
 
   // ── Portfolio ────────────────────────────────────────────────────────────
   portfolio: `
-    The Portfolio page shows all stocks the member owns through their brokerage:
+    The Portfolio page shows all stocks the member owns through their Alpaca account:
     - Stock symbol and company name
     - Number of shares (fractional)
     - Current market value and cost basis
@@ -187,7 +201,7 @@ const STOCKLOYAL_KNOWLEDGE = {
     - Alpaca Funding: View money flow and funding history
     - Back to Wallet: Return to main dashboard
     
-    NOTE: Portfolio data comes from the broker (Alpaca) and shows positions
+    NOTE: Portfolio data comes from Alpaca Securities and shows positions
     held in the member's individual brokerage account.
   `,
 
@@ -198,7 +212,15 @@ const STOCKLOYAL_KNOWLEDGE = {
     - Can filter by: status, symbol, date, order type
     - Auto-defaults to "pending" filter when pending orders exist
     - Orders are grouped by basket (multiple stocks per order)
-    - Statuses: pending, queued, executed, confirmed, failed, partial
+    - Statuses: pending, approved, funded, placed, settled, failed
+
+    ORDER STATUS PIPELINE (what happens after you invest):
+    - pending: Order prepared and staged by StockLoyal
+    - approved: Order confirmed and ready for merchant funding
+    - funded: Cash journaled from StockLoyal sweep account into your Alpaca account
+    - placed: Order submitted to Alpaca for execution
+    - settled: Trade fully executed and confirmed
+    - failed: Order could not be completed
     
     TRANSACTION LEDGER (/ledger):
     - Complete record of all financial transactions
@@ -215,20 +237,12 @@ const STOCKLOYAL_KNOWLEDGE = {
     BROKERAGE FUNDING HISTORY (/funding-history):
     - Shows the complete money flow into your brokerage account
     - Four tabs: Overview, Transfers, Journals, Activity
-    - Transfers: ACH deposits/withdrawals (Plaid)
-    - Journals: Cash movements from StockLoyal sweep to member account (JNLC)
+    - Transfers: ACH deposits/withdrawals (via Plaid)
+    - Journals (JNLC): Cash moved from StockLoyal's IB sweep account to your Alpaca account
     - Activity: Deposits (CSD), withdrawals (CSW), dividends (DIV)
     - Summary cards show totals for each category
-    - Money flow diagram: SL Sweep → Journal → Your Account → Trades
+    - Money flow diagram: Merchant Payment → SL Sweep Account → Journal → Your Alpaca Account → Trades
     - Filterable by time period (7 days to 1 year)
-    
-    ORDER STATUSES EXPLAINED:
-    - Pending: Order submitted, waiting for broker to execute
-    - Queued: In processing queue
-    - Executed: Broker completed the trade
-    - Confirmed: Trade settled and verified
-    - Failed: Order could not be completed (insufficient funds, etc.)
-    - Partial: Some stocks in the basket executed, others failed
   `,
 
   // ── Election Types ───────────────────────────────────────────────────────
@@ -253,19 +267,24 @@ const STOCKLOYAL_KNOWLEDGE = {
 
   // ── Brokers ──────────────────────────────────────────────────────────────
   brokers: `
-    CURRENT BROKER: Alpaca Securities
+    CURRENT BROKER: Alpaca Securities LLC (exclusive)
     - StockLoyal uses the Alpaca Broker API to manage individual brokerage accounts
     - Each member gets their own Alpaca brokerage account created during onboarding
-    - No separate Alpaca login needed — account is managed through StockLoyal
+    - No separate Alpaca login needed — account is fully managed through StockLoyal
+    - Alpaca is FINRA-registered (CRD #304483) and a SIPC member
     - Supports fractional share trading
     - Commission-free stock and ETF trading
     
-    HOW IT WORKS:
-    - StockLoyal operates as an introducing broker
-    - Member funds flow: Merchant payment → StockLoyal sweep account (via Plaid ACH)
-      → Journal transfer to member's Alpaca account → Stock purchases
-    - Orders are executed through Alpaca's trading infrastructure
-    - Members can buy and sell directly from the Portfolio page
+    HOW MONEY FLOWS:
+    1. Member earns loyalty points from merchant
+    2. Member elects to invest (immediate or monthly sweep)
+    3. Merchant transfers funds via ACH into StockLoyal's IB sweep account
+    4. StockLoyal journals (JNLC transfer) funds from sweep account into member's Alpaca account
+    5. Orders are submitted to Alpaca for execution
+    6. Stocks are purchased and held in the member's Alpaca account
+    
+    Members do NOT need to link an existing brokerage account. A new, dedicated 
+    Alpaca account is opened on their behalf as part of onboarding.
     
     ACCOUNT STATUSES:
     - SUBMITTED: Account application sent to Alpaca
@@ -294,7 +313,8 @@ const STOCKLOYAL_KNOWLEDGE = {
   // ── Common Questions & Troubleshooting ───────────────────────────────────
   faq: `
     Q: Why can't I click "Convert to Invest Basket"?
-    A: You need to link a broker first. Go to Select Broker to set up your brokerage account.
+    A: You need to complete onboarding first — your Alpaca brokerage account must 
+       be active. Go to Select Broker if you haven't finished setup yet.
 
     Q: Why are my points showing as zero?
     A: Points come from your merchant. Try refreshing your points from the home page. 
@@ -303,6 +323,15 @@ const STOCKLOYAL_KNOWLEDGE = {
     Q: Can I withdraw cash instead of investing?
     A: No — StockLoyal converts points to stock investments only. 
        Points cannot be cashed out directly.
+
+    Q: Do I need an existing brokerage account?
+    A: No. StockLoyal opens a new, dedicated Alpaca brokerage account on your behalf 
+       during onboarding. You don't need a Schwab, Fidelity, or Robinhood account.
+
+    Q: Where are my shares held?
+    A: Your shares are held in your individual brokerage account at Alpaca Securities LLC, 
+       a FINRA-registered broker-dealer and SIPC member. You can view your account at 
+       alpaca.markets once active.
 
     Q: How do I buy stocks from my portfolio?
     A: Go to Portfolio and tap "Buy Stock" for a new position, or tap the "Buy" 
@@ -314,16 +343,18 @@ const STOCKLOYAL_KNOWLEDGE = {
        You can sell by share quantity using market or limit orders.
 
     Q: Why is my order still "pending"?
-    A: Orders are sent to your broker for execution. This can take up to 
-       1 business day (T+1). If pending for more than 2 days, contact support.
+    A: Orders go through a multi-step pipeline: approved → funded (cash journaled to 
+       your Alpaca account) → placed (submitted to broker) → settled. Each step 
+       can take up to 1 business day. If pending for more than 2 days, contact support.
 
     Q: Can I cancel a pending order?
     A: Currently, orders cannot be cancelled through StockLoyal once submitted.
-       Contact your broker directly for cancellation.
+       Contact support for assistance.
 
     Q: What is the minimum investment?
-    A: It depends on your broker. Typical minimums are $1-$5. The app will 
-       show you your broker's limits on the Points Slider page.
+    A: The minimum is $5.00 per individual stock order. The maximum basket total 
+       is $5,000, and you can select up to 10 stocks per basket. These limits are 
+       set by Alpaca Securities and shown on the Points Slider page.
 
     Q: Where can I see how my money flows into my brokerage account?
     A: Go to Funding History (accessible from Portfolio). It shows ACH transfers, 
@@ -331,54 +362,70 @@ const STOCKLOYAL_KNOWLEDGE = {
 
     Q: What is a journal (JNLC)?
     A: A journal is a cash transfer from StockLoyal's firm sweep account to your 
-       individual brokerage account. This is how your converted points become 
-       buying power for stock purchases.
+       individual Alpaca brokerage account. This is how your converted points become 
+       buying power for stock purchases. JNLC stands for Journal Cash.
+
+    Q: What is the sweep account?
+    A: The sweep account is StockLoyal's omnibus firm account at Alpaca. It holds 
+       funds collected from merchant ACH payments and acts as the source for all 
+       journal transfers into individual member accounts. Members do not have direct 
+       access to this account — it is managed by StockLoyal as the Introducing Broker.
 
     Q: Where can I see my actual trade executions?
     A: Go to Alpaca Trades (accessible from Portfolio) to see filled prices, 
        quantities, and execution details from the broker.
 
     Q: Why do I need to enter my SSN during onboarding?
-    A: Your SSN is required by federal regulations (KYC) to open a brokerage account.
-       It is encrypted and securely transmitted to Alpaca Securities. StockLoyal 
+    A: Your SSN is required by federal regulations (KYC/AML) to open a brokerage account.
+       It is AES-encrypted and securely transmitted to Alpaca Securities. StockLoyal 
        only stores an encrypted version and never shows more than the last 4 digits.
 
+    Q: Is my brokerage account password shared with StockLoyal?
+    A: No. StockLoyal uses the Alpaca Broker API to manage your account — you don't 
+       have a separate Alpaca password. StockLoyal holds API credentials, not your 
+       personal login details.
+
     Q: Are there fees?
-    A: StockLoyal may charge merchant fees. Trading through Alpaca is commission-free
-       for stocks and ETFs.
+    A: StockLoyal may charge merchant-level fees. Trading through Alpaca is 
+       commission-free for stocks and ETFs.
 
     Q: Is my data secure?
-    A: Yes. SSN is AES-encrypted. The app uses HTTPS encryption. Your brokerage 
-       account is held at Alpaca Securities, a registered broker-dealer.
+    A: Yes. SSN is AES-encrypted. The app uses HTTPS/TLS encryption. Your investments 
+       are held at Alpaca Securities, a FINRA-registered broker-dealer with SIPC coverage 
+       up to $500,000.
 
     Q: What happens to my investments if I leave the merchant's loyalty program?
-    A: Your investments remain in your brokerage account. You own the stocks 
+    A: Your investments remain in your brokerage account at Alpaca. You own the stocks 
        regardless of your loyalty program status.
 
     Q: What is buying power?
-    A: Buying power is the cash available in your brokerage account to purchase 
+    A: Buying power is the cash available in your Alpaca brokerage account to purchase 
        stocks. It comes from journaled funds (converted loyalty points) and any 
        dividends you've earned.
+
+    Q: How many stocks can I pick per basket?
+    A: Up to 10 stocks per basket. This limit is set by Alpaca Securities and is 
+       displayed in the Stock Picker when you're selecting stocks.
   `,
 
   // ── App Navigation Map ───────────────────────────────────────────────────
   navigation: `
-    MAIN PAGES:
+    MAIN MEMBER PAGES:
     - Home / Landing: /stockloyal-landing — Setup progress + quick links
     - Login: /login — Sign in or create account
     - Member Profile: /member-onboard — Personal info + KYC wizard (4 steps)
-    - Select Broker: /select-broker — Choose and link brokerage
+    - Select Broker: /select-broker — Alpaca account setup (automatic)
     - Investment Election: /election — Choose immediate or monthly
-    - Terms: /terms — Terms & conditions
+    - Terms: /terms — Terms & conditions (StockLoyal IB + Alpaca custodian)
     - Wallet: /wallet — Main dashboard with balances
-    - Points Slider: /points-slider — Select investment amount
-    - Stock Picker: /fill-basket — Browse and select stocks
+    - Points Slider: /points-slider — Select investment amount (min $5, max $5,000)
+    - Stock Picker: /fill-basket — Browse and select stocks (max 10 per basket)
     - Order: /order — Review and place order
     - Order Confirmation: /order-confirmation — Success page
     - Portfolio: /portfolio — View owned stocks, buy/sell directly
     - Trade Orders: /transactions — StockLoyal order history with filters
     - Transaction Ledger: /ledger — Complete financial record
-    - Brokerage Trade History: /alpaca-transactions — Broker trade executions
+    - Brokerage Trade History: /alpaca-transactions — Broker trade executions at Alpaca
     - Brokerage Funding History: /funding-history — Money flow: transfers, journals, dividends
     - Promotions: /promotions — Merchant offers
     - Community Feed: /social — Social posts
@@ -397,6 +444,8 @@ const STOCKLOYAL_KNOWLEDGE = {
     - If you don't know something, say so and suggest where to find help
     - Never make up information about the member's account
     - Always use real data from API calls, never fabricate numbers
+    - When asked about brokers or brokerage accounts, clarify that Alpaca is the 
+      exclusive broker and no separate account or login is needed
   `,
 };
 
