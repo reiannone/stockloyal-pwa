@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { apiPost } from "../api.js";
 import ConfirmModal from "../components/ConfirmModal";
+import { Trash2 } from "lucide-react";
 
 export default function TransactionsLedgerAdmin() {
   const location = useLocation();
@@ -270,21 +271,35 @@ export default function TransactionsLedgerAdmin() {
         ledger_id: row.ledger_id,
       });
       if (res?.success) {
-        alert("Deleted");
         const currentFilters = buildFilters();
         await fetchRows(currentFilters);
         if (selected && primaryKey(selected) === pk) setSelected(null);
       } else {
-        alert("Delete failed: " + (res?.error || "Unknown error"));
+        setModal({
+          show: true,
+          title: "Delete Failed",
+          message: res?.error || "Unknown error",
+          confirmText: "OK",
+          confirmColor: "#ef4444",
+          data: null,
+        });
       }
     } catch (e) {
       console.error("[TransactionsLedgerAdmin] delete failed", e);
-      alert("Delete failed: network/server error");
+      setModal({
+        show: true,
+        title: "Delete Failed",
+        message: "Network or server error.",
+        confirmText: "OK",
+        confirmColor: "#ef4444",
+        data: null,
+      });
     }
   };
 
   const handleModalConfirm = () => {
-    executeDelete(modal.data?.row);
+    if (!modal.data?.row) { closeModal(); return; }
+    executeDelete(modal.data.row);
   };
 
   // --- handle field changes ---
@@ -664,6 +679,7 @@ export default function TransactionsLedgerAdmin() {
                 <th>Channel / Status</th>
                 <th>Points / Cash</th>
                 <th>Event (Local)</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -698,6 +714,21 @@ export default function TransactionsLedgerAdmin() {
                       <div>Cash: {fmtMoney(r?.amount_cash)}</div>
                     </td>
                     <td>{localTime}</td>
+                    <td style={{ textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => deleteRow(r)}
+                        title="Delete this ledger row"
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          padding: "2px 6px", borderRadius: 4,
+                          color: "#ef4444", lineHeight: 1,
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "#fef2f2"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

@@ -3,7 +3,7 @@ import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
-import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
+import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -422,7 +422,70 @@ export default function PrepareOrders() {
     setActionLoading(false);
   };
 
-  // ── Handle modal confirm ──
+  // ── Delete Batch (hard delete: orders, baskets, batch record) ──
+  const showDeleteBatchModal = (batchId) => {
+    const batch = batches.find(b => b.batch_id === batchId);
+    setModal({
+      show: true,
+      type: "delete_batch",
+      title: "Delete Batch Permanently",
+      icon: <Bomb size={20} color="#ef4444" />,
+      message: (
+        <>
+          Permanently delete batch <strong style={{ fontFamily: "monospace" }}>{batchId}</strong>?
+          <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#ef4444", fontWeight: 600 }}>
+            This will physically DELETE all orders, baskets, and the batch record. This cannot be undone.
+          </div>
+        </>
+      ),
+      details: batch ? (
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "0.85rem" }}>
+          <span>Orders: <strong>{fmtN(batch.total_orders)}</strong></span>
+          <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
+          <span>Members: <strong>{fmtN(batch.total_members)}</strong></span>
+        </div>
+      ) : null,
+      confirmText: "Delete Everything",
+      confirmColor: "#dc2626",
+      data: { batchId },
+    });
+  };
+
+  const executeDeleteBatch = async (batchId) => {
+    closeModal();
+    setActionLoading(true);
+    try {
+      const res = await apiPost("prepare_orders.php", { action: "delete_batch", batch_id: batchId });
+      if (res.success) {
+        await loadBatches();
+        if (activeBatchId === batchId) {
+          setActiveBatchId(null);
+          setBatchStats(null);
+        }
+      } else {
+        setModal({
+          show: true, type: "result",
+          title: "Delete Failed",
+          icon: <XCircle size={20} color="#ef4444" />,
+          message: res.error || "Unknown error.",
+          confirmText: "OK", confirmColor: "#ef4444",
+          data: { resultOnly: true },
+        });
+      }
+    } catch (err) {
+      setModal({
+        show: true, type: "result",
+        title: "Error",
+        icon: <XCircle size={20} color="#ef4444" />,
+        message: err.message,
+        confirmText: "OK", confirmColor: "#ef4444",
+        data: { resultOnly: true },
+      });
+    }
+    setActionLoading(false);
+  };
+
+
   const handleModalConfirm = () => {
     switch (modal.type) {
       case "prepare":
@@ -434,6 +497,9 @@ export default function PrepareOrders() {
         break;
       case "discard":
         executeDiscard(modal.data?.batchId);
+        break;
+      case "delete_batch":
+        executeDeleteBatch(modal.data?.batchId);
         break;
       case "result":
         closeModal();
@@ -909,6 +975,14 @@ export default function PrepareOrders() {
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); showDeleteBatchModal(b.batch_id); }}
+                          disabled={actionLoading}
+                          style={{ ...actionBtn("#7f1d1d"), background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5" }}
+                          title="Permanently delete all orders, baskets, and batch record"
+                        >
+                          <Bomb size={12} style={{ verticalAlign: "middle" }} /> Delete
+                        </button>
                         <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
                           {isActive ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </span>

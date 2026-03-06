@@ -249,6 +249,12 @@ export default function PaymentsProcessing() {
   const processBroker = async (mid, broker) => {
     const method = fundingMethods[mid] || "manual_ach";
 
+    // Guard: skip if no approved orders for this merchant/broker
+    const relevantOrders = orders.filter(o => o.merchant_id === mid && o.broker === broker);
+    if (relevantOrders.length === 0) {
+      return { merchant_id: mid, broker, funding_method: method, success: false, skipped: true, error: "No approved orders to fund." };
+    }
+
     try {
       if (method === "plaid") {
         // ── Plaid Transfer: ACH debit from merchant's linked bank ──
@@ -898,7 +904,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, fundingMethods = {},
                   </button>
                 )}
                 <button onClick={(e) => { e.stopPropagation(); onProcessMerchant(mId, m.merchant_name, m.orders.length, m.totalAmount); }}
-                  disabled={processing} style={{ ...smallBtnStyle, background: "#10b981" }}>
+                  disabled={processing || m.orders.length === 0} style={{ ...smallBtnStyle, background: m.orders.length === 0 ? "#d1d5db" : "#10b981" }}>
                   <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process
                 </button>
                 {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
@@ -932,7 +938,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, fundingMethods = {},
                         </button>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); onProcessBroker(mId, brKey, br.orders.length, br.totalAmount); }}
-                        disabled={processing} style={{ ...smallBtnStyle, background: "#f59e0b", color: "#fff" }}>
+                        disabled={processing || br.orders.length === 0} style={{ ...smallBtnStyle, background: br.orders.length === 0 ? "#d1d5db" : "#f59e0b", color: "#fff" }}>
                         <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process
                       </button>
                       {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
@@ -1112,7 +1118,7 @@ function ResultsBanner({ results, onDismiss }) {
   if (!results || results.length === 0) return null;
 
   const successful = results.filter((r) => r.success);
-  const failed = results.filter((r) => !r.success);
+  const failed = results.filter((r) => !r.success && !r.skipped);
   const totalAmount = successful.reduce((sum, r) => sum + safeNum(r.total_amount), 0);
   const totalOrders = successful.reduce((sum, r) => sum + safeNum(r.order_count), 0);
 

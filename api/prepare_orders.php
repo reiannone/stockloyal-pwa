@@ -96,6 +96,11 @@ switch ($action) {
         echo json_encode($process->cancelPendingOrders());
         break;
 
+    case 'delete_batch':
+        $batchId = $input['batch_id'] ?? '';
+        echo json_encode($process->deleteBatch($batchId));
+        break;
+
     default:
         echo json_encode([
             'success' => false,

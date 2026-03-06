@@ -606,10 +606,10 @@ class PrepareOrdersProcess
             }
 
             // ══════════════════════════════════════════════════════════════
-            // STEP 3: Enforce broker min/max order limits
+            // STEP 3: Enforce broker min/max limits
             //
-            // - basket total < broker min_order_amount → remove member rows
-            // - basket total > broker max_order_amount → scale down pro-rata
+            // - min_order_amount → per individual order (drop orders below min)
+            // - max_order_amount → per basket (scale all member orders down pro-rata)
             // ══════════════════════════════════════════════════════════════
 
             $bypassedBelowMin = 0;
@@ -617,76 +617,83 @@ class PrepareOrdersProcess
             $amountBeforeCaps = 0;
 
             if ($rowsInserted > 0) {
-                $this->log("BROKER LIMITS: checking min/max order amounts");
+                $this->log("BROKER LIMITS: checking per-order min and per-basket max");
 
-                // Get each member's basket total + their broker limits
+                // ── Fetch all staged orders with their broker limits ──
                 $blStmt = $this->conn->prepare("
-                    SELECT po.member_id,
-                           po.broker,
-                           SUM(po.amount)                AS basket_total,
+                    SELECT po.id, po.member_id, po.symbol, po.amount, po.broker,
                            COALESCE(bm.min_order_amount, 1.00)      AS broker_min,
                            COALESCE(bm.max_order_amount, 100000.00) AS broker_max
                     FROM prepared_orders po
                     LEFT JOIN broker_master bm
                         ON po.broker COLLATE utf8mb4_unicode_ci = bm.broker_id COLLATE utf8mb4_unicode_ci
                     WHERE po.batch_id = ? AND po.status = 'staged'
-                    GROUP BY po.member_id, po.broker, bm.min_order_amount, bm.max_order_amount
                 ");
                 $blStmt->execute([$batchId]);
-                $memberBaskets = $blStmt->fetchAll(PDO::FETCH_ASSOC);
+                $stagedOrders = $blStmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Track original total before caps for reporting
-                $amountBeforeCaps = array_sum(array_column($memberBaskets, 'basket_total'));
+                // Track original total before caps
+                $amountBeforeCaps = array_sum(array_column($stagedOrders, 'amount'));
 
-                // ── Members below broker minimum: remove their staged rows ──
-                $belowMinMembers = [];
-                foreach ($memberBaskets as $mb) {
-                    if ((float) $mb['basket_total'] < (float) $mb['broker_min']) {
-                        $belowMinMembers[] = $mb['member_id'];
+                // ── A: Drop individual orders below broker min ──
+                $belowMinIds = [];
+                foreach ($stagedOrders as $o) {
+                    if ((float) $o['amount'] < (float) $o['broker_min']) {
+                        $belowMinIds[] = (int) $o['id'];
+                        $this->log("BROKER MIN: drop order id={$o['id']} {$o['member_id']}/{$o['symbol']} "
+                                 . "\${$o['amount']} < min \${$o['broker_min']}");
                     }
                 }
 
-                if (!empty($belowMinMembers)) {
-                    $bypassedBelowMin = count($belowMinMembers);
-                    $placeholders = implode(',', array_fill(0, count($belowMinMembers), '?'));
-                    $delParams = array_merge([$batchId], $belowMinMembers);
-
+                if (!empty($belowMinIds)) {
+                    $bypassedBelowMin = count($belowMinIds);
+                    $placeholders = implode(',', array_fill(0, count($belowMinIds), '?'));
                     $this->conn->prepare("
                         DELETE FROM prepared_orders
-                        WHERE batch_id = ? AND member_id IN ({$placeholders}) AND status = 'staged'
-                    ")->execute($delParams);
-
-                    $this->log("BROKER MIN: bypassed {$bypassedBelowMin} members (basket below broker minimum)");
+                        WHERE id IN ({$placeholders}) AND status = 'staged'
+                    ")->execute($belowMinIds);
+                    $this->log("BROKER MIN: dropped {$bypassedBelowMin} order(s) below broker minimum");
                 }
 
-                // ── Members above broker maximum: scale down pro-rata ──
-                foreach ($memberBaskets as $mb) {
-                    // Skip already-removed members
-                    if (in_array($mb['member_id'], $belowMinMembers)) continue;
+                // ── B: Scale down baskets above broker max (per-member) ──
+                // Re-aggregate after min removals
+                $basketStmt = $this->conn->prepare("
+                    SELECT po.member_id,
+                           po.broker,
+                           SUM(po.amount)                           AS basket_total,
+                           COALESCE(bm.max_order_amount, 100000.00) AS broker_max
+                    FROM prepared_orders po
+                    LEFT JOIN broker_master bm
+                        ON po.broker COLLATE utf8mb4_unicode_ci = bm.broker_id COLLATE utf8mb4_unicode_ci
+                    WHERE po.batch_id = ? AND po.status = 'staged'
+                    GROUP BY po.member_id, po.broker, bm.max_order_amount
+                ");
+                $basketStmt->execute([$batchId]);
+                $memberBaskets = $basketStmt->fetchAll(PDO::FETCH_ASSOC);
 
+                foreach ($memberBaskets as $mb) {
                     $basketTotal = (float) $mb['basket_total'];
                     $brokerMax   = (float) $mb['broker_max'];
 
-                    if ($basketTotal > $brokerMax && $brokerMax > 0) {
+                    if ($brokerMax > 0 && $basketTotal > $brokerMax) {
                         $cappedAtMax++;
                         $scaleFactor = $brokerMax / $basketTotal;
 
-                        // Scale down each order for this member proportionally
                         $this->conn->prepare("
                             UPDATE prepared_orders
-                            SET amount     = ROUND(amount * ?, 2),
+                            SET amount      = ROUND(amount * ?, 2),
                                 points_used = FLOOR(points_used * ?),
-                                shares     = CASE WHEN price > 0 THEN ROUND((amount * ?) / price, 6) ELSE 0 END
+                                shares      = CASE WHEN price > 0 THEN ROUND((amount * ?) / price, 6) ELSE 0 END
                             WHERE batch_id = ? AND member_id = ? AND status = 'staged'
                         ")->execute([$scaleFactor, $scaleFactor, $scaleFactor, $batchId, $mb['member_id']]);
 
-                        $this->log("BROKER MAX: capped member {$mb['member_id']} "
+                        $this->log("BROKER MAX: capped basket for {$mb['member_id']} "
                                  . "from \${$basketTotal} to ~\${$brokerMax} (scale={$scaleFactor})");
                     }
                 }
 
                 if ($cappedAtMax > 0) {
-                    $this->log("BROKER MAX: capped {$cappedAtMax} members (basket exceeded broker maximum)");
+                    $this->log("BROKER MAX: {$cappedAtMax} basket(s) scaled down to broker maximum");
                 }
             }
 
@@ -1370,9 +1377,64 @@ class PrepareOrdersProcess
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Batch Hierarchy: Merchant → Broker → Basket → Orders
-    // ═══════════════════════════════════════════════════════════════════════
+    // ── Hard delete: physically remove orders, prepared_orders, and batch record ──
+    public function deleteBatch(string $batchId): array
+    {
+        if (!$batchId) {
+            return ['success' => false, 'error' => 'Missing batch_id'];
+        }
+
+        try {
+            $this->conn->beginTransaction();
+
+            // 1. Delete orders tied to this batch
+            $delOrders = $this->conn->prepare(
+                "DELETE FROM orders WHERE batch_id = ?"
+            );
+            $delOrders->execute([$batchId]);
+            $ordersDeleted = $delOrders->rowCount();
+
+            // 2. Delete prepared_orders (staged rows)
+            $delPrepared = $this->conn->prepare(
+                "DELETE FROM prepared_orders WHERE batch_id = ?"
+            );
+            $delPrepared->execute([$batchId]);
+            $preparedDeleted = $delPrepared->rowCount();
+
+            // 3. Delete baskets whose basket_id starts with this batch prefix
+            //    basket_id format: {batch_id}-{member_id}
+            $delBaskets = $this->conn->prepare(
+                "DELETE FROM basket WHERE basket_id LIKE ?"
+            );
+            $delBaskets->execute([$batchId . '%']);
+            $basketsDeleted = $delBaskets->rowCount();
+
+            // 4. Delete the batch record itself
+            $delBatch = $this->conn->prepare(
+                "DELETE FROM prepare_batches WHERE batch_id = ?"
+            );
+            $delBatch->execute([$batchId]);
+
+            $this->conn->commit();
+
+            $this->log("DELETE BATCH: {$batchId} — "
+                     . "{$ordersDeleted} orders, {$preparedDeleted} prepared_orders, "
+                     . "{$basketsDeleted} baskets deleted");
+
+            return [
+                'success'          => true,
+                'batch_id'         => $batchId,
+                'orders_deleted'   => $ordersDeleted,
+                'prepared_deleted' => $preparedDeleted,
+                'baskets_deleted'  => $basketsDeleted,
+            ];
+        } catch (\Exception $e) {
+            if ($this->conn->inTransaction()) $this->conn->rollBack();
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+
 
     /**
      * Brokers within a merchant for a given batch.
