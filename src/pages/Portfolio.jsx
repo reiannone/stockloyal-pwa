@@ -462,7 +462,7 @@ export default function Portfolio() {
               >
                 <div>
                   <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Positions Value</div>
-                  <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(accountInfo.portfolio_value)}</div>
+                  <div style={{ fontSize: "1.35rem", fontWeight: 700, color: "#0c4a6e" }}>{fmt(portfolioValue)}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: "0.75rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>Cash Balance</div>

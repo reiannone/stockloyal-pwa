@@ -942,12 +942,26 @@ export default function Wallet() {
           </div>
 
           <div style={{ textAlign: "right" }}>
-            <div className="wallet-portfolio" style={{ margin: 0 }}>
-              {formatDollars(alpacaAccount ? alpacaAccount.equity : portfolioValue)}
-            </div>
-            {alpacaAccount && (
-              <div className="caption" style={{ marginTop: 2, fontWeight: 600 }}>
-                Total Equity
+            {alpacaAccount ? (
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 4 }}>
+                  <div>
+                    <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Positions</div>
+                    <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
+                      {formatDollars(alpacaAccount.long_market_value ?? (parseFloat(alpacaAccount.equity || 0) - parseFloat(alpacaAccount.cash || 0)))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Cash</div>
+                    <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
+                      {formatDollars(alpacaAccount.cash)}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="wallet-portfolio" style={{ margin: 0 }}>
+                {formatDollars(portfolioValue)}
               </div>
             )}
             <div className="caption" style={{ marginTop: 4 }}>

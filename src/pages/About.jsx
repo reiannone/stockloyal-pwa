@@ -153,7 +153,7 @@ export default function About() {
 
                   <div
                     className="body-text"
-                    style={{ lineHeight: 1.6 }}
+                    style={{ lineHeight: 1.6, color: "#111827" }}
                     // answer_html comes from admin WYSIWYG and is read-only here.
                     dangerouslySetInnerHTML={{
                       __html:
