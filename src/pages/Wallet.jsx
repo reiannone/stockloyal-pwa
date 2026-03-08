@@ -943,22 +943,25 @@ export default function Wallet() {
 
           <div style={{ textAlign: "right" }}>
             {alpacaAccount ? (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 4 }}>
-                  <div>
-                    <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Positions</div>
-                    <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
-                      {formatDollars(alpacaAccount.long_market_value ?? (parseFloat(alpacaAccount.equity || 0) - parseFloat(alpacaAccount.cash || 0)))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Cash</div>
-                    <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
-                      {formatDollars(alpacaAccount.cash)}
-                    </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 4 }}>
+                <div>
+                  <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Positions</div>
+                  <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
+                    {formatDollars(alpacaAccount.long_market_value ?? (parseFloat(alpacaAccount.equity || 0) - parseFloat(alpacaAccount.cash || 0)))}
                   </div>
                 </div>
-              </>
+                <div>
+                  <div className="caption" style={{ fontWeight: 600, color: "#6b7280" }}>Cash</div>
+                  <div className="wallet-portfolio" style={{ margin: 0, fontSize: "1.1rem" }}>
+                    {formatDollars(alpacaAccount.cash)}
+                  </div>
+                </div>
+              </div>
+            ) : isAlpaca ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 4, alignItems: "flex-end" }}>
+                <div style={{ width: 90, height: 14, borderRadius: 6, background: "#e5e7eb" }} />
+                <div style={{ width: 70, height: 14, borderRadius: 6, background: "#e5e7eb" }} />
+              </div>
             ) : (
               <div className="wallet-portfolio" style={{ margin: 0 }}>
                 {formatDollars(portfolioValue)}
