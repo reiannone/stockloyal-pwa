@@ -32,6 +32,7 @@ const BROKER_TEMPLATE = {
   
   webhook_url: "",
   api_key: "",
+  website_url: "",   // General homepage / investor portal URL
 
   broker_created_at: null,
   broker_modified_at: null,
@@ -55,6 +56,18 @@ export default function AdminBroker() {
     confirmText: "Confirm", confirmColor: "#007bff", data: null,
   });
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  const showAlert = (title, message, isError = false) => {
+    setModal({
+      show: true,
+      title,
+      message,
+      icon: null,
+      confirmText: "OK",
+      confirmColor: isError ? "#dc2626" : "#007bff",
+      data: { type: "alert" },
+    });
+  };
 
   // Load all brokers
   const fetchBrokers = async () => {
@@ -95,7 +108,7 @@ export default function AdminBroker() {
     try {
       const res = await apiPost("save-broker.php", selected);
       if (!res?.success) {
-        alert("Save failed: " + (res?.error || "Unknown error"));
+        showAlert("Save Failed", res?.error || "Unknown error", true);
         return;
       }
 
@@ -110,10 +123,10 @@ export default function AdminBroker() {
         setSelected(current || null);
       }
 
-      alert("Broker saved!");
+      showAlert("Broker Saved", `Broker "${selected?.broker_name || selected?.broker_id}" has been saved successfully.`);
     } catch (err) {
       console.error("[AdminBroker] save-broker failed:", err);
-      alert("Save failed: network/server error");
+      showAlert("Save Failed", "A network or server error occurred. Please try again.", true);
     }
   };
 
@@ -135,18 +148,18 @@ export default function AdminBroker() {
     try {
       const res = await apiPost("delete-broker.php", { broker_id });
       if (res?.success) {
-        alert("Deleted");
+        showAlert("Broker Deleted", "The broker has been deleted successfully.");
         const updated = brokers.filter(
           (b) => String(b.broker_id) !== String(broker_id)
         );
         setBrokers(updated);
         setSelected(null);
       } else {
-        alert("Delete failed: " + (res?.error || "Unknown error"));
+        showAlert("Delete Failed", res?.error || "Unknown error", true);
       }
     } catch (e) {
       console.error("[AdminBroker] delete-broker failed:", e);
-      alert("Delete failed: network/server error");
+      showAlert("Delete Failed", "A network or server error occurred. Please try again.", true);
     }
   };
 
@@ -189,13 +202,13 @@ export default function AdminBroker() {
     // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml'];
     if (!validTypes.includes(file.type)) {
-      alert('Please select a valid image file (PNG, JPG, GIF, WebP, or SVG)');
+      showAlert("Invalid File", "Please select a valid image file (PNG, JPG, GIF, WebP, or SVG).", true);
       return;
     }
 
     // Validate file size (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
-      alert('Image file must be less than 2MB');
+      showAlert("File Too Large", "Image file must be less than 2MB.", true);
       return;
     }
 
@@ -229,12 +242,12 @@ export default function AdminBroker() {
         setLogoPreview(null);
         console.log(' Logo uploaded:', data.url);
       } else {
-        alert('Upload failed: ' + (data?.error || 'Unknown error'));
+        showAlert("Upload Failed", data?.error || "Unknown error", true);
         setLogoPreview(null);
       }
     } catch (err) {
       console.error('[AdminBroker] Logo upload failed:', err);
-      alert('Upload failed: network/server error');
+      showAlert("Upload Failed", "A network or server error occurred. Please try again.", true);
       setLogoPreview(null);
     } finally {
       setUploadingLogo(false);
@@ -248,7 +261,7 @@ export default function AdminBroker() {
   const handleLogoFromUrl = async () => {
     const url = logoUrlInput.trim();
     if (!url) {
-      alert('Please enter an image URL');
+      showAlert("Missing URL", "Please enter an image URL.", true);
       return;
     }
 
@@ -256,7 +269,7 @@ export default function AdminBroker() {
     try {
       new URL(url);
     } catch {
-      alert('Please enter a valid URL (e.g. https://example.com/logo.png)');
+      showAlert("Invalid URL", "Please enter a valid URL (e.g. https://example.com/logo.png).", true);
       return;
     }
 
@@ -286,12 +299,12 @@ export default function AdminBroker() {
         setLogoUrlInput('');
         console.log(' Logo fetched & saved:', data.url);
       } else {
-        alert('Fetch failed: ' + (data?.error || 'Unknown error'));
+        showAlert("Fetch Failed", data?.error || "Unknown error", true);
         setLogoPreview(null);
       }
     } catch (err) {
       console.error('[AdminBroker] Logo URL fetch failed:', err);
-      alert('Fetch failed: network/server error');
+      showAlert("Fetch Failed", "A network or server error occurred. Please try again.", true);
       setLogoPreview(null);
     } finally {
       setUploadingLogo(false);
@@ -734,6 +747,17 @@ export default function AdminBroker() {
               />
             </FormRow>
 
+            <FormRow label="Broker Homepage URL">
+              <input
+                className="form-input"
+                type="url"
+                name="website_url"
+                value={selected?.website_url || ""}
+                onChange={handleChange}
+                placeholder="https://broker.com"
+              />
+            </FormRow>
+
             {/* Address */}
             <FormRow label="Address Line 1">
               <input
@@ -857,6 +881,7 @@ export default function AdminBroker() {
                 <th>Name</th>
                 <th>Support Phone</th>
                 <th>Support Email</th>
+                <th>Homepage</th>
               </tr>
             </thead>
             <tbody>
@@ -887,6 +912,11 @@ export default function AdminBroker() {
                   <td>{b.broker_name}</td>
                   <td>{b.support_phone || "-"}</td>
                   <td>{b.support_email || "-"}</td>
+                  <td>
+                    {b.website_url
+                      ? <a href={b.website_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: "0.8rem", color: "#2563eb" }}>Visit ↗</a>
+                      : "-"}
+                  </td>
                 </tr>
               ))}
               {brokers.length === 0 && (

@@ -343,9 +343,9 @@ export default function Transactions() {
       </h2>
 
       {/* --- Page Notice --- */}
-      <p className="form-disclosure mt-4">
-        <strong>Note:</strong> This page displays trade orders submitted to and executed by your broker {broker}. To view points and cash trasnactiosn click "View Trasnactions Ledger".
-      </p>
+<p className="form-disclosure mt-4">
+  <strong>Note:</strong> This page displays trade baskets and orders placed by StockLoyal LLC as introducing broker to {broker} for execution and settlement. Positions are held in your account at {broker}, who provides custodial services. To view points and cash transactions, click "View Transactions Ledger".
+</p>
 
       {/* Filter bar */}
       {!loading && !error && orders.length > 0 && (

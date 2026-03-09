@@ -55,6 +55,7 @@ export default function Wallet() {
   // Alpaca live account data
   const [alpacaAccount, setAlpacaAccount] = useState(null);
   const isAlpaca = (localStorage.getItem("broker") || "").toLowerCase() === "alpaca";
+  const brokerDisplayName = localStorage.getItem("brokerDisplayName") || localStorage.getItem("broker") || "your broker";
 
   // Merchant sync notification
   const [merchantSynced, setMerchantSynced] = useState(false);
@@ -727,7 +728,7 @@ export default function Wallet() {
         <div
           style={{
             position: "fixed",
-            top: 80,
+            top: 140,
             left: "50%",
             transform: "translateX(-50%)",
             backgroundColor: "#10b981",
@@ -744,10 +745,21 @@ export default function Wallet() {
           }}
         >
           <RefreshCw size={20} />
-          <div>
-            <div style={{ fontWeight: 600 }}>Portfolio Value Updated</div>
-            <div style={{ fontSize: "0.9rem", opacity: 0.9 }}>
-              New value: {formatDollars(newPortfolioValue)}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontWeight: 700, marginBottom: 2 }}>Portfolio Value Updated</div>
+            <div style={{ display: "flex", gap: 20, fontSize: "0.875rem", opacity: 0.95 }}>
+              <div>
+                <div style={{ opacity: 0.75, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Positions</div>
+                <div style={{ fontWeight: 600 }}>{formatDollars(newPortfolioValue)}</div>
+              </div>
+              <div>
+                <div style={{ opacity: 0.75, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Cash</div>
+                <div style={{ fontWeight: 600 }}>{formatDollars(alpacaAccount?.cash ?? 0)}</div>
+              </div>
+              <div>
+                <div style={{ opacity: 0.75, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total</div>
+                <div style={{ fontWeight: 700 }}>{formatDollars((parseFloat(newPortfolioValue) || 0) + (parseFloat(alpacaAccount?.cash) || 0))}</div>
+              </div>
             </div>
           </div>
           <button
@@ -1056,17 +1068,12 @@ export default function Wallet() {
 
       <p className="form-disclosure" style={{ marginTop: 12 }}>
         {alpacaAccount
-          ? "Account data provided in real-time by Alpaca Securities LLC."
+          ? `Account data provided in real-time by ${brokerDisplayName}.`
           : "Market prices are delayed 15 minutes."
         }
-        {" "}Investment portfolio reflects shares purchased through the StockLoyal LLC as introducing broker.
+        {" "}Investment portfolio reflects shares purchased through StockLoyal LLC as introducing broker,
+        {" "}held at {brokerDisplayName} as custodian.
         {lastPointsSync && (<> Points last synced: {formatLastUpdated(lastPointsSync).replace('Updated ', '')}.</>)}
-        {" "}
-        {wallet.broker && wallet.broker_url && (
-          <>
-            To see your portfolio is at {wallet.broker}.
-          </>
-        )}
       </p>
 
       <button
