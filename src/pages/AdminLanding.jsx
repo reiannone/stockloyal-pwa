@@ -28,6 +28,7 @@ import {
   ClipboardCheck,
   CircleDollarSign,
   NotebookPen,
+  NotebookTabs,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -153,15 +154,15 @@ export default function AdminLanding() {
     },
     {
       to: "/ledger-admin",
-      label: "Ledger Admin",
+      label: "StockLoyal Ledger Admin",
       icon: <BookOpen size={32} />,
       color: "#ec4899",
       bgColor: "#fdf2f8",
     },
     {
-      to: "/orders-admin",
-      label: "Baskets and Orders Admin",
-      icon: <ShoppingBasket size={32} />,
+      to: "/alpaca-broker-admin",
+      label: "Alpaca Broker Administration",
+      icon: <NotebookTabs size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",
     },

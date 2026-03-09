@@ -40,7 +40,7 @@ import PaymentsBroker from "./pages/PaymentsBroker.jsx";
 import PaymentsBasketDetail from "./pages/PaymentsBasketDetail.jsx";
 import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
-import OrdersAdmin from "./pages/OrdersAdmin.jsx";
+import AlpacaBrokerAdmin from "./pages/AlpacaBrokerAdmin.jsx";
 import PrepareOrders from "./pages/PrepareOrders.jsx";
 import JournalAdmin from "./pages/JournalAdmin.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
@@ -398,10 +398,10 @@ function App() {
                 }
               />
               <Route
-                path="/orders-admin"
+                path="/alpaca-broker-admin"
                 element={
                   <PageWrapper>
-                    <OrdersAdmin />
+                    <AlpacaBrokerAdmin />
                   </PageWrapper>
                 }
               />
