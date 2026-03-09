@@ -7,7 +7,7 @@ import {
   Timer, Play, Activity, Server, CalendarClock, BarChart3,
   CircleDot, CircleOff, Wifi, WifiOff,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
 /**
@@ -35,19 +35,6 @@ export default function BrokerExecAdmin() {
     confirmText: "Execute", confirmColor: "#059669", data: null,
   });
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
-
-  // Pipeline queue counts
-  const [queueCounts, setQueueCounts] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiPost("admin-queue-counts.php");
-        if (data?.success) setQueueCounts(data.counts);
-      } catch (err) {
-        console.warn("[BrokerExecAdmin] queue counts fetch failed:", err);
-      }
-    })();
-  }, []);
 
   // Load placed orders (flat array, frontend groups into hierarchy)
   const loadPlacedOrders = useCallback(async () => {
@@ -185,7 +172,7 @@ export default function BrokerExecAdmin() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={5} queueCounts={queueCounts} />
+      <OrderPipeline currentStep={5} />
 
       {/* Action Bar */}
       <div style={{

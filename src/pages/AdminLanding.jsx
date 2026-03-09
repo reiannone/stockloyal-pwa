@@ -29,6 +29,7 @@ import {
   CircleDollarSign,
   NotebookPen,
   NotebookTabs,
+  SquareGanttChart,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -102,6 +103,13 @@ export default function AdminLanding() {
       icon: <Wallet size={32} />,
       color: "#06b6d4",
       bgColor: "#ecfeff",
+    },
+    {
+      to: "/pipeline",
+      label: "Pipeline Dashboard",
+      icon: <SquareGanttChart size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
     },
     {
       to: "/prepare-orders",

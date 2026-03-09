@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api"; // Use existing api helper
 import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
 
@@ -44,19 +44,6 @@ export default function SweepAdmin() {
   });
 
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
-
-  // Pipeline queue counts
-  const [queueCounts, setQueueCounts] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiPost("admin-queue-counts.php");
-        if (data?.success) setQueueCounts(data.counts);
-      } catch (err) {
-        console.warn("[SweepAdmin] queue counts fetch failed:", err);
-      }
-    })();
-  }, []);
 
   // ── JSON Viewer (formatted / raw toggle) ─────────────────────────────────
   const JsonToggle = () => (
@@ -433,7 +420,7 @@ export default function SweepAdmin() {
       </p>
 
       {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={4} queueCounts={queueCounts} />
+      <OrderPipeline currentStep={4} />
 
       {/* All Caught Up Message */}
       {!loading && overview && (overview.total_pending_orders || 0) === 0 && (

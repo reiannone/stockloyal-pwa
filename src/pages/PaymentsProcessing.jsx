@@ -7,7 +7,7 @@ import {
   XCircle, History, RotateCcw, RefreshCw, ChevronUp, ChevronDown,
   ShoppingBasket, FileSpreadsheet, Download, Clock, Info, Zap,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
 function safeNum(v) {
@@ -64,21 +64,9 @@ export default function PaymentsProcessing() {
   const [simulateResult, setSimulateResult] = useState(null);
 
   // Pipeline queue counts
-  const [queueCounts, setQueueCounts] = useState(null);
 
   // ── Merchant funding methods (plaid vs manual_ach) ──
   const [fundingMethods, setFundingMethods] = useState({}); // { merchant_id: 'plaid' | 'manual_ach' }
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiPost("admin-queue-counts.php");
-        if (data?.success) setQueueCounts(data.counts);
-      } catch (err) {
-        console.warn("[PaymentsProcessing] queue counts fetch failed:", err);
-      }
-    })();
-  }, []);
-
   // Load merchant list once
   useEffect(() => {
     let mounted = true;
@@ -389,11 +377,7 @@ export default function PaymentsProcessing() {
       if (merchantId) await loadSingleMerchant(merchantId);
       else await loadAllMerchants();
 
-      // Refresh queue counts
-      try {
-        const qc = await apiPost("admin-queue-counts.php");
-        if (qc?.success) setQueueCounts(qc.counts);
-      } catch (_) {}
+
     } catch (err) {
       setSimulateResult({ success: false, error: err.message });
     } finally {
@@ -542,7 +526,7 @@ export default function PaymentsProcessing() {
         }
       </p>
 
-      <OrderPipeline currentStep={2} queueCounts={queueCounts} />
+      <OrderPipeline currentStep={2} />
 
       {/* Action bar */}
       <div style={{

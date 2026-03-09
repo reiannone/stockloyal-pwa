@@ -19,7 +19,7 @@ import {
   Loader2,
   ShieldAlert,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
 import { apiPost } from "../api";
 
 /* ─── Status badge helper ─────────────────────────────────────── */
@@ -117,7 +117,6 @@ export default function JournalAdmin() {
   const [pendingJournals, setPendingJournals] = useState([]);  // Orders approved + paid, awaiting journal
   const [recentJournals, setRecentJournals] = useState([]);     // Completed journals (funded)
   const [memberSummary, setMemberSummary] = useState([]);       // Grouped by member
-  const [queueCounts, setQueueCounts] = useState(null);
 
   // UI
   const [expandedMember, setExpandedMember] = useState(null);
@@ -155,10 +154,7 @@ export default function JournalAdmin() {
     setLoading(true);
     setError(null);
     try {
-      const [journalData, counts] = await Promise.all([
-        apiPost("get-journal-status.php"),
-        apiPost("admin-queue-counts.php"),
-      ]);
+      const journalData = await apiPost("get-journal-status.php");
 
       if (journalData.success) {
         setFirmBalance(journalData.firm_balance);
@@ -169,9 +165,7 @@ export default function JournalAdmin() {
         setError(journalData.error || "Failed to load journal data");
       }
 
-      if (counts.success) {
-        setQueueCounts(counts.counts);
-      }
+
     } catch (err) {
       setError("Network error: " + err.message);
     } finally {
@@ -336,7 +330,7 @@ export default function JournalAdmin() {
       </div>
 
       {/* Pipeline */}
-      <OrderPipeline currentStep={3} queueCounts={queueCounts} />
+      <OrderPipeline currentStep={3} />
 
       {/* Error/Success banners */}
       {error && (
