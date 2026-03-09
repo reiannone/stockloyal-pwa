@@ -236,10 +236,10 @@ export default function AlpacaBrokerAdmin() {
             <>
               {/* Firm balance summary cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: "1rem" }}>
-                <StatCard label="Equity"         value={fmt$(firmAccount.equity)}          icon={Building2}      color="#2563eb" />
-                <StatCard label="Cash"            value={fmt$(firmAccount.cash)}             icon={Building2}      color="#059669" />
-                <StatCard label="Buying Power"    value={fmt$(firmAccount.buying_power)}     icon={Building2}      color="#7c3aed" />
-                <StatCard label="Portfolio Value" value={fmt$(firmAccount.portfolio_value)}  icon={Building2}      color="#d97706" />
+                <StatCard label="Last Equity"     value={fmt$(firmAccount.last_equity)}      icon={Building2}      color="#2563eb" />
+                <StatCard label="Account #"       value={firmAccount.account_number}         icon={Building2}      color="#059669" sub={firmAccount.status} />
+                <StatCard label="Trading Type"    value={firmAccount.trading_type}           icon={Building2}      color="#7c3aed" />
+                <StatCard label="Currency"        value={firmAccount.currency}               icon={Building2}      color="#d97706" />
               </div>
 
               {/* Firm account details */}
@@ -251,13 +251,13 @@ export default function AlpacaBrokerAdmin() {
                   {[
                     ["Account ID",        firmAccount.id],
                     ["Account Number",    firmAccount.account_number],
+                    ["Account Name",      firmAccount.account_name],
                     ["Status",            firmAccount.status],
                     ["Currency",          firmAccount.currency],
-                    ["Long Market Value", fmt$(firmAccount.long_market_value)],
-                    ["Short Market Value",fmt$(firmAccount.short_market_value)],
-                    ["Initial Margin",    fmt$(firmAccount.initial_margin)],
-                    ["Daytrade Count",    firmAccount.daytrade_count],
-                    ["Pattern Day Trader",firmAccount.pattern_day_trader ? "Yes" : "No"],
+                    ["Last Equity",       fmt$(firmAccount.last_equity)],
+                    ["Trading Type",      firmAccount.trading_type],
+                    ["Crypto Status",     firmAccount.crypto_status],
+                    ["Enabled Assets",    (firmAccount.enabled_assets || []).join(", ")],
                     ["Created At",        fmtDate(firmAccount.created_at)],
                   ].map(([label, val]) => (
                     <div key={label}>
@@ -315,8 +315,8 @@ export default function AlpacaBrokerAdmin() {
                   <th>Account #</th>
                   <th>Status</th>
                   <th>KYC</th>
-                  <th style={{ textAlign: "right" }}>Equity</th>
-                  <th style={{ textAlign: "right" }}>Cash</th>
+                  <th style={{ textAlign: "right" }}>Last Equity</th>
+                  <th>Member</th>
                   <th>Created</th>
                   <th></th>
                 </tr>
@@ -324,35 +324,36 @@ export default function AlpacaBrokerAdmin() {
               <tbody>
                 {filteredAccounts.length === 0 ? (
                   <tr><td colSpan={8} style={{ textAlign: "center", color: "#9ca3af", padding: 32 }}>No accounts found.</td></tr>
-                ) : filteredAccounts.map(a => (
-                  <React.Fragment key={a.id}>
+                ) : filteredAccounts.map((a, i) => (
+                  <React.Fragment key={a.id || a._member_id || i}>
                     <tr
-                      style={{ cursor: "pointer", background: expandedRow === a.id ? "#f0f9ff" : undefined }}
-                      onClick={() => setExpandedRow(expandedRow === a.id ? null : a.id)}
+                      style={{ cursor: "pointer", background: expandedRow === (a.id || a._member_id) ? "#f0f9ff" : undefined }}
+                      onClick={() => setExpandedRow(expandedRow === (a.id || a._member_id) ? null : (a.id || a._member_id))}
                     >
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.id}</td>
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.account_number || "—"}</td>
                       <td><StatusPill status={a.status} /></td>
-                      <td><StatusPill status={a.kyc_results?.status || a.kyc_status || "—"} /></td>
-                      <td style={{ textAlign: "right" }}>{fmt$(a.equity)}</td>
-                      <td style={{ textAlign: "right" }}>{fmt$(a.cash)}</td>
+                      <td><StatusPill status={a.kyc_results?.summary || "—"} /></td>
+                      <td style={{ textAlign: "right" }}>{fmt$(a.last_equity)}</td>
+                      <td style={{ textAlign: "right" }}>{a._member_id || "—"}</td>
                       <td style={{ fontSize: "0.8rem" }}>{fmtDate(a.created_at)}</td>
-                      <td>{expandedRow === a.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</td>
+                      <td>{expandedRow === (a.id || a._member_id) ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</td>
                     </tr>
-                    {expandedRow === a.id && (
+                    {expandedRow === (a.id || a._member_id) && (
                       <tr>
                         <td colSpan={8} style={{ background: "#f8fafc", padding: "12px 16px" }}>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px 24px" }}>
                             {[
-                              ["Currency", a.currency],
-                              ["Buying Power", fmt$(a.buying_power)],
-                              ["Portfolio Value", fmt$(a.portfolio_value)],
-                              ["Long Market Value", fmt$(a.long_market_value)],
-                              ["Pattern Day Trader", a.pattern_day_trader ? "Yes" : "No"],
-                              ["Account Type", a.account_type],
-                              ["Country", a.identity?.country_of_citizenship],
-                              ["Email", a.contact?.email_address],
-                              ["Updated", fmtDt(a.updated_at)],
+                              ["Member ID",        a._member_id],
+                              ["Currency",         a.currency],
+                              ["Last Equity",      fmt$(a.last_equity)],
+                              ["Trading Type",     a.trading_type],
+                              ["Crypto Status",    a.crypto_status],
+                              ["Account Type",     a.account_type],
+                              ["Enabled Assets",   (a.enabled_assets || []).join(", ")],
+                              ["Country",          a.identity?.country_of_citizenship || a.identity?.country_of_tax_residence],
+                              ["Email",            a.contact?.email_address],
+                              ["Updated",          fmtDt(a.updated_at)],
                             ].map(([label, val]) => (
                               <div key={label}>
                                 <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase" }}>{label}</div>
@@ -590,8 +591,8 @@ export default function AlpacaBrokerAdmin() {
               <tbody>
                 {filteredJournals.length === 0 ? (
                   <tr><td colSpan={8} style={{ textAlign: "center", color: "#9ca3af", padding: 32 }}>No journals found.</td></tr>
-                ) : filteredJournals.map(j => (
-                  <React.Fragment key={j.id}>
+                ) : filteredJournals.map((j, i) => (
+                  <React.Fragment key={j.id || i}>
                     <tr
                       style={{ cursor: "pointer", background: expandedRow === j.id ? "#f0f9ff" : undefined }}
                       onClick={() => setExpandedRow(expandedRow === j.id ? null : j.id)}

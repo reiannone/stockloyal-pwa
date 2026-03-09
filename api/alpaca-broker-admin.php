@@ -10,7 +10,7 @@ header('Content-Type: application/json');
 $input  = json_decode(file_get_contents('php://input'), true) ?? [];
 $action = trim((string)($input['action'] ?? 'all'));
 
-// ── Instantiate AlpacaBrokerAPI directly from ENV ────────────────────────────
+// ── Instantiate from ENV ─────────────────────────────────────────────────────
 try {
     $alpaca = new AlpacaBrokerAPI();
 } catch (Throwable $e) {
@@ -18,17 +18,26 @@ try {
     exit;
 }
 
-// ── Firm account ID from ENV ─────────────────────────────────────────────────
 $firmAccountId = $_ENV['ALPACA_FIRM_ACCOUNT_ID'] ?? '';
 
-// ── Helper: load broker account IDs from wallet table ───────────────────────
+// ── Helper: unwrap the ['success','http_code','data'] envelope ───────────────
+// Every AlpacaBrokerAPI method returns this wrapper. We only want ['data'].
+function unwrap(array $response): ?array {
+    if (($response['success'] ?? false) && isset($response['data'])) {
+        return is_array($response['data']) ? $response['data'] : null;
+    }
+    return null;
+}
+
+// ── Load broker account IDs from wallet + broker_credentials ─────────────────
 function loadBrokerAccounts(PDO $pdo): array {
     $stmt = $pdo->query("
-        SELECT w.member_id, bc.alpaca_account_id AS broker_account_id
+        SELECT w.member_id, bc.broker_account_id
         FROM wallet w
         JOIN broker_credentials bc ON bc.member_id = w.member_id
-        WHERE bc.alpaca_account_id IS NOT NULL
-          AND bc.alpaca_account_id != ''
+        WHERE bc.broker_account_id IS NOT NULL
+          AND bc.broker_account_id != ''
+        GROUP BY bc.broker_account_id
         ORDER BY w.member_id
     ");
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -38,23 +47,36 @@ function loadBrokerAccounts(PDO $pdo): array {
 function fetchFirmAccount(AlpacaBrokerAPI $alpaca, string $firmAccountId): ?array {
     if (empty($firmAccountId)) return null;
     try {
-        return $alpaca->getAccount($firmAccountId);
+        $res  = $alpaca->getAccount($firmAccountId);
+        $data = unwrap($res);
+        return $data; // already a flat account object
     } catch (Throwable $e) {
         error_log("[alpaca-broker-admin] fetchFirmAccount failed: " . $e->getMessage());
         return null;
     }
 }
 
-// ── Fetch member accounts from Alpaca ───────────────────────────────────────
+// ── Fetch member accounts ────────────────────────────────────────────────────
 function fetchAccounts(AlpacaBrokerAPI $alpaca, array $walletRows): array {
     $accounts = [];
     foreach (array_slice($walletRows, 0, 100) as $row) {
         $accountId = $row['broker_account_id'] ?? '';
         if (empty($accountId)) continue;
         try {
-            $acct = $alpaca->getAccount($accountId);
-            $acct['_member_id'] = $row['member_id'];
-            $accounts[] = $acct;
+            $res  = $alpaca->getAccount($accountId);
+            $data = unwrap($res);
+            if ($data !== null) {
+                $data['_member_id'] = $row['member_id'];
+                $accounts[] = $data;
+            } else {
+                // Surface error stubs so admin can see broken accounts
+                $accounts[] = [
+                    'id'         => $accountId,
+                    '_member_id' => $row['member_id'],
+                    'status'     => 'error',
+                    '_error'     => $res['error'] ?? 'Unknown error',
+                ];
+            }
         } catch (Throwable $e) {
             error_log("[alpaca-broker-admin] getAccount({$accountId}) failed: " . $e->getMessage());
             $accounts[] = [
@@ -69,25 +91,46 @@ function fetchAccounts(AlpacaBrokerAPI $alpaca, array $walletRows): array {
 }
 
 // ── Fetch transfers per account ──────────────────────────────────────────────
-function fetchTransfers(AlpacaBrokerAPI $alpaca, array $walletRows): array {
+function fetchTransfers(AlpacaBrokerAPI $alpaca, array $walletRows, string $firmAccountId): array {
     $all = [];
-    foreach (array_slice($walletRows, 0, 50) as $row) {
-        $accountId = $row['broker_account_id'] ?? '';
-        if (empty($accountId)) continue;
+
+    // Build deduped target list: member accounts + firm account
+    $targets = [];
+    foreach ($walletRows as $row) {
+        $id = $row['broker_account_id'] ?? '';
+        if ($id) $targets[$id] = $row['member_id'];
+    }
+    if (!empty($firmAccountId)) {
+        $targets[$firmAccountId] = $targets[$firmAccountId] ?? 'firm';
+    }
+
+    foreach (array_slice(array_keys($targets), 0, 60) as $accountId) {
         try {
-            $transfers = $alpaca->getTransfers($accountId);
-            if (!is_array($transfers)) continue;
-            foreach ($transfers as $t) {
+            $res  = $alpaca->getTransfers($accountId);
+            $data = unwrap($res);
+            if (!is_array($data)) continue;
+            $list = isset($data[0]) || empty($data) ? $data : [$data];
+            foreach ($list as $t) {
                 $t['_account_id'] = $t['account_id'] ?? $accountId;
-                $t['_member_id']  = $row['member_id'];
+                $t['_member_id']  = $targets[$accountId];
                 $all[] = $t;
             }
         } catch (Throwable $e) {
             error_log("[alpaca-broker-admin] getTransfers({$accountId}) failed: " . $e->getMessage());
         }
     }
-    usort($all, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
-    return array_slice($all, 0, 200);
+
+    // Dedupe by transfer id
+    $seen = []; $deduped = [];
+    foreach ($all as $t) {
+        $tid = $t['id'] ?? null;
+        if ($tid && isset($seen[$tid])) continue;
+        if ($tid) $seen[$tid] = true;
+        $deduped[] = $t;
+    }
+
+    usort($deduped, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
+    return array_slice($deduped, 0, 200);
 }
 
 // ── Fetch orders per account ─────────────────────────────────────────────────
@@ -97,9 +140,11 @@ function fetchOrders(AlpacaBrokerAPI $alpaca, array $walletRows): array {
         $accountId = $row['broker_account_id'] ?? '';
         if (empty($accountId)) continue;
         try {
-            $orders = $alpaca->getOrders($accountId, 'all');
-            if (!is_array($orders)) continue;
-            foreach ($orders as $o) {
+            $res  = $alpaca->getOrders($accountId, 'all');
+            $data = unwrap($res);
+            if (!is_array($data)) continue;
+            $list = isset($data[0]) || empty($data) ? $data : [$data];
+            foreach ($list as $o) {
                 $o['_account_id'] = $o['account_id'] ?? $accountId;
                 $o['_member_id']  = $row['member_id'];
                 $all[] = $o;
@@ -120,64 +165,62 @@ function fetchJournals(AlpacaBrokerAPI $alpaca): array {
     $all = [];
     foreach (['JNLC', 'JNLS'] as $type) {
         try {
-            $entries = $alpaca->getJournals(90, $type);
-            if (is_array($entries)) {
-                $all = array_merge($all, $entries);
-            }
+            $res  = $alpaca->getJournals(90, $type);
+            $data = unwrap($res);
+            if (!is_array($data)) continue;
+            $list = isset($data[0]) || empty($data) ? $data : [$data];
+            $all  = array_merge($all, $list);
         } catch (Throwable $e) {
             error_log("[alpaca-broker-admin] getJournals({$type}) failed: " . $e->getMessage());
         }
     }
-    usort($all, fn($a, $b) => strcmp(
+    // Dedupe by journal id
+    $seen = [];
+    $deduped = [];
+    foreach ($all as $j) {
+        $jid = $j['id'] ?? null;
+        if ($jid && isset($seen[$jid])) continue;
+        if ($jid) $seen[$jid] = true;
+        $deduped[] = $j;
+    }
+    usort($deduped, fn($a, $b) => strcmp(
         $b['settle_date'] ?? $b['entry_date'] ?? '',
         $a['settle_date'] ?? $a['entry_date'] ?? ''
     ));
-    return array_slice($all, 0, 200);
+    return array_slice($deduped, 0, 200);
 }
 
-// ── Route by action ──────────────────────────────────────────────────────────
+// ── Route ────────────────────────────────────────────────────────────────────
 try {
     $walletRows = loadBrokerAccounts($conn);
 
     switch ($action) {
-
-        case 'all': {
-            $firmAccount = fetchFirmAccount($alpaca, $firmAccountId);
-            $accounts    = fetchAccounts($alpaca, $walletRows);
-            $transfers   = fetchTransfers($alpaca, $walletRows);
-            $orders      = fetchOrders($alpaca, $walletRows);
-            $journals    = fetchJournals($alpaca);
-
+        case 'all':
             echo json_encode([
                 'success'      => true,
-                'firm_account' => $firmAccount,
-                'accounts'     => $accounts,
-                'transfers'    => $transfers,
-                'orders'       => $orders,
-                'journals'     => $journals,
+                'firm_account' => fetchFirmAccount($alpaca, $firmAccountId),
+                'accounts'     => fetchAccounts($alpaca, $walletRows),
+                'transfers'    => fetchTransfers($alpaca, $walletRows, $firmAccountId),
+                'orders'       => fetchOrders($alpaca, $walletRows),
+                'journals'     => fetchJournals($alpaca),
             ]);
             break;
-        }
 
-        case 'accounts': {
+        case 'accounts':
             echo json_encode(['success' => true, 'accounts' => fetchAccounts($alpaca, $walletRows)]);
             break;
-        }
 
-        case 'transfers': {
-            echo json_encode(['success' => true, 'transfers' => fetchTransfers($alpaca, $walletRows)]);
+        case 'transfers':
+            echo json_encode(['success' => true, 'transfers' => fetchTransfers($alpaca, $walletRows, $firmAccountId)]);
             break;
-        }
 
-        case 'orders': {
+        case 'orders':
             echo json_encode(['success' => true, 'orders' => fetchOrders($alpaca, $walletRows)]);
             break;
-        }
 
-        case 'journals': {
+        case 'journals':
             echo json_encode(['success' => true, 'journals' => fetchJournals($alpaca)]);
             break;
-        }
 
         default:
             echo json_encode(['success' => false, 'error' => "Unknown action: $action"]);
