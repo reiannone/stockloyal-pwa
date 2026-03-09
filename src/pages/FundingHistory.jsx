@@ -9,6 +9,7 @@ export default function FundingHistory() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
   const storedBroker = localStorage.getItem("broker");
+  const brokerDisplayName = localStorage.getItem("brokerDisplayName") || storedBroker || "your broker";
 
   const [transfers, setTransfers] = useState([]);
   const [journals, setJournals] = useState([]);
@@ -148,10 +149,10 @@ export default function FundingHistory() {
   return (
     <div style={{ paddingBottom: 210, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
-         {storedBroker} Funding History
+        {brokerDisplayName} Funding History
       </h2>
       <p style={{ textAlign: "center", fontSize: "0.85rem", color: "#6b7280", margin: "-8px 0 16px 0" }}>
-        Powered by {storedBroker}
+        Powered by {brokerDisplayName}
       </p>
 
       {/* ── Period Selector ── */}
@@ -340,8 +341,8 @@ export default function FundingHistory() {
         <div style={{ position: "fixed", bottom: "112px", left: 0, right: 0, zIndex: 1000, display: "flex", justifyContent: "center" }}>
           <div style={{ width: "100%", maxWidth: "var(--app-max-width, 600px)", background: "rgba(248, 250, 252, 0.7)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderTop: "1px solid #e2e8f0", paddingTop: 12, paddingBottom: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
             <div style={{ display: "flex", flexDirection: "row", justifyContent: "center", gap: "10px", width: "90%", maxWidth: "480px" }}>
-              <button type="button" className="btn-secondary" onClick={() => navigate("/portfolio")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{storedBroker} Portfolio</button>
-              <button type="button" className="btn-secondary" onClick={() => navigate("/alpaca-transactions")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{storedBroker} Trades</button>
+              <button type="button" className="btn-secondary" onClick={() => navigate("/portfolio")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{brokerDisplayName} Portfolio</button>
+              <button type="button" className="btn-secondary" onClick={() => navigate("/alpaca-transactions")} style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}>{brokerDisplayName} Trades</button>
             </div>
             <button type="button" className="btn-primary" onClick={() => navigate("/wallet")} style={{ width: "90%", maxWidth: "320px", fontSize: "0.9rem", fontWeight: 700 }}>Back to Wallet</button>
           </div>

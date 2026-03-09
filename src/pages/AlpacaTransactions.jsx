@@ -9,6 +9,7 @@ export default function AlpacaTransactions() {
   const navigate = useNavigate();
   const memberId = localStorage.getItem("memberId");
   const storedBroker = localStorage.getItem("broker");
+  const brokerDisplayName = localStorage.getItem("brokerDisplayName") || storedBroker || "your broker";
 
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -138,7 +139,7 @@ export default function AlpacaTransactions() {
   return (
     <div style={{ paddingBottom: 210, maxWidth: 600, margin: "0 auto", paddingLeft: 16, paddingRight: 16 }}>
       <h2 className="page-title" style={{ textAlign: "center" }}>
-        {storedBroker} Trade History
+        {brokerDisplayName} Trade History
       </h2>
 
       {/* ── Summary Cards ── */}
@@ -366,6 +367,13 @@ export default function AlpacaTransactions() {
         </>
       )}
 
+      {/* ── Disclosure ── */}
+      <p className="form-disclosure" style={{ marginTop: 16 }}>
+        <strong>Note:</strong> Orders displayed on this page are placed by StockLoyal LLC as introducing broker
+        and executed by {brokerDisplayName}. Positions are held in your {brokerDisplayName} brokerage account,
+        who provides custodial services.
+      </p>
+
       {/* ── Fixed Action Buttons (portal to body) ── */}
       {createPortal(
         <div
@@ -411,7 +419,7 @@ export default function AlpacaTransactions() {
                 onClick={() => navigate("/portfolio")}
                 style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
-              {storedBroker} Portfolio
+              {brokerDisplayName} Portfolio
               </button>
               <button
                 type="button"
@@ -419,7 +427,7 @@ export default function AlpacaTransactions() {
                 onClick={() => navigate("/funding-history")}
                 style={{ flex: 1, fontSize: "0.85rem", fontWeight: 600 }}
               >
-                 {storedBroker} Funding
+              {brokerDisplayName} Funding
               </button>
             </div>
             <button

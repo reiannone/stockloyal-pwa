@@ -33,6 +33,7 @@ export default function Ledger() {
   const memberId = localStorage.getItem("memberId");
   const merchantName = localStorage.getItem("merchantName");
   const broker = localStorage.getItem("broker");
+  const brokerDisplayName = localStorage.getItem("brokerDisplayName") || broker || "your broker";
 
   const [entries, setEntries] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
@@ -274,8 +275,7 @@ export default function Ledger() {
 
       {/* --- Page Notice --- */}
       <p className="form-disclosure mt-4">
-        <strong>Note:</strong> This page displays points and cash related transactions with {merchantName} and  {broker}. To view track trade orders "View Order History"
-.      </p>
+        <strong>Note:</strong> This page displays points and cash transactions for your {merchantName} rewards account. Investments are executed by StockLoyal LLC as introducing broker and held in your {brokerDisplayName} brokerage account. To view trade order history, click "View Order History".</p>
 
       {/* Filter bar */}
       {!loading && !error && entries.length > 0 && (

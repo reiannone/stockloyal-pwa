@@ -10,6 +10,7 @@ export default function Transactions() {
   const location = useLocation();
   const memberId = localStorage.getItem("memberId");
   const broker = localStorage.getItem("broker");
+  const brokerDisplayName = localStorage.getItem("brokerDisplayName") || broker || "your broker";
 
   const [orders, setOrders] = useState([]);
   const [memberTimezone, setMemberTimezone] = useState("");
@@ -344,7 +345,7 @@ export default function Transactions() {
 
       {/* --- Page Notice --- */}
 <p className="form-disclosure mt-4">
-  <strong>Note:</strong> This page displays trade baskets and orders placed by StockLoyal LLC as introducing broker to {broker} for execution and settlement. Positions are held in your account at {broker}, who provides custodial services. To view points and cash transactions, click "View Transactions Ledger".
+  <strong>Note:</strong> This page displays trade baskets and orders placed by StockLoyal LLC as introducing broker to {brokerDisplayName} for execution and settlement. Positions are held in your account at {brokerDisplayName}, who provides custodial services. To view points and cash transactions, click "View Transactions Ledger".
 </p>
 
       {/* Filter bar */}

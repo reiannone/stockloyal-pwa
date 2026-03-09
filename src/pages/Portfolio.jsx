@@ -23,7 +23,7 @@ export default function Portfolio() {
 
   console.log("[Portfolio] storedBroker:", storedBroker, "isAlpaca:", isAlpaca);
 
-  const memberBroker = brokerContext?.broker?.name || storedBroker || "your brokerage firm";
+  const memberBroker = brokerContext?.broker?.name || localStorage.getItem("brokerDisplayName") || storedBroker || "your brokerage firm";
 
   const getBrokerUrl = () => {
     if (!storedBroker) return null;
@@ -424,7 +424,7 @@ export default function Portfolio() {
           </p>
           <p style={{ color: "#9ca3af", fontSize: "0.75rem", margin: "4px 0 0 0", fontStyle: "italic" }}>
             {isAlpaca
-              ? "Real-time market data from Alpaca"
+              ? `Real-time market data from ${memberBroker}`
               : "Market prices are delayed by 15 minutes"}
           </p>
         </div>
@@ -931,7 +931,7 @@ export default function Portfolio() {
                 {/* ---- Disclosure ---- */}
                 <p style={{ fontSize: "0.7rem", color: "#9ca3af", marginTop: 12, marginBottom: 0 }}>
                   Market orders execute at the next available price. Limit orders execute only at your specified price or better.
-                  Fractional shares are supported. All trades are executed by Alpaca Securities LLC.
+                  Fractional shares are supported. All trades are executed by {memberBroker}.
                 </p>
               </>
             )}
@@ -1213,7 +1213,7 @@ export default function Portfolio() {
                 {/* ---- Disclosure ---- */}
                 <p style={{ fontSize: "0.7rem", color: "#9ca3af", marginTop: 12, marginBottom: 0 }}>
                   Market orders execute at the next available price. Limit orders execute only at your specified price or better.
-                  Fractional shares are supported. All trades are executed by Alpaca Securities LLC.
+                  Fractional shares are supported. All trades are executed by {memberBroker}.
                 </p>
               </>
             )}
