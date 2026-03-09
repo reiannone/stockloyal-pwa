@@ -931,7 +931,7 @@ export default function Wallet() {
               </div>
               <div className="caption">
                 {alpacaAccount
-                  ? <>Live account at <strong style={{ color: "#2563eb" }}>Alpaca</strong></>
+                  ? <>Account held at <strong style={{ color: "#2563eb" }}>Alpaca</strong></>
                   : <>Market value of investments held at{" "}
                       <strong style={{ color: "#2563eb" }}>{wallet.broker || localStorage.getItem("broker") || "your broker"}</strong>.
                       <br />Purchased through StockLoyal.
@@ -1059,21 +1059,12 @@ export default function Wallet() {
           ? "Account data provided in real-time by Alpaca Securities LLC."
           : "Market prices are delayed 15 minutes."
         }
-        {" "}Investment portfolio reflects shares purchased through the StockLoyal app only.
+        {" "}Investment portfolio reflects shares purchased through the StockLoyal LLC as introducing broker.
         {lastPointsSync && (<> Points last synced: {formatLastUpdated(lastPointsSync).replace('Updated ', '')}.</>)}
         {" "}
         {wallet.broker && wallet.broker_url && (
           <>
-            To see your full portfolio at {wallet.broker}, click{" "}
-            <a
-              href={wallet.broker_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
-            >
-              here
-            </a>
-            .
+            To see your portfolio is at {wallet.broker}.
           </>
         )}
       </p>
