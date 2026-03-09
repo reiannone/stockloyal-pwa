@@ -1225,7 +1225,7 @@ export default function Portfolio() {
       {/* ==== Disclosure ==== */}
       <p className="form-disclosure">
         <strong>Disclosure:</strong> <em>My Portfolio</em> displays the securities held through the <strong>StockLoyal LLC</strong> as introducing broker.
-        These holdings are maintained directly with {" "}
+        These holdings are maintained at {" "}
         {brokerUrl ? (
           <strong>
             <a href={brokerUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#007bff", textDecoration: "underline" }}>
@@ -1235,7 +1235,7 @@ export default function Portfolio() {
         ) : (
           <strong>{memberBroker}</strong>
         )}
-        . To view your full investment portfolio, please visit your broker's website or app.
+        .
       </p>
 
       {/* --- Fixed Action Buttons (portal to body) --- */}
