@@ -30,6 +30,7 @@ import {
   NotebookPen,
   NotebookTabs,
   SquareGanttChart,
+  RefreshCcwDot,
 } from "lucide-react";
 
 export default function AdminLanding() {
@@ -111,6 +112,14 @@ export default function AdminLanding() {
       color: "#6366f1",
       bgColor: "#eef2ff",
     },
+    {
+      to: "/pipeline-cycles",
+      label: "Pipeline Cycles Admin",
+      icon: <RefreshCcwDot size={32} />,
+      color: "#6366f1",
+      bgColor: "#eef2ff",
+    },
+
     {
       to: "/prepare-orders",
       label: "Prepare Batch Orders",

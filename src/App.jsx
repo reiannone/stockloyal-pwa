@@ -42,6 +42,7 @@ import WalletAdmin from "./pages/WalletAdmin.jsx";
 import LedgerAdmin from "./pages/LedgerAdmin.jsx";
 import AlpacaBrokerAdmin from "./pages/AlpacaBrokerAdmin.jsx";
 import PipelineDashboard from "./pages/PipelineDashboard.jsx";
+import PipelineCyclesAdmin from "./pages/PipelineCyclesAdmin.jsx";
 import PrepareOrders from "./pages/PrepareOrders.jsx";
 import JournalAdmin from "./pages/JournalAdmin.jsx";
 import SweepAdmin from "./pages/SweepAdmin.jsx";
@@ -407,10 +408,18 @@ function App() {
                 }
               />
               <Route
-                path="/pipeline"
+                path="/pipeline-dashboard"
                 element={
                   <PageWrapper>
                     <PipelineDashboard />
+                  </PageWrapper>
+                }
+              />
+              <Route
+                path="/pipeline-cycles"
+                element={
+                  <PageWrapper>
+                    <PipelineCyclesAdmin />
                   </PageWrapper>
                 }
               />

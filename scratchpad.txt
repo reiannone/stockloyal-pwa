@@ -23,3 +23,6 @@ BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
 sudo mv /home/ec2-user/get-wallet.php /var/www/html/api/get-wallet.php
 sudo chown apache:apache /var/www/html/api/get-wallet.php
 sudo chmod 644 /var/www/html/api/get-wallet.php
+
+# From your local machine
+scp pipeline-status.php ec2-user@3.150.49.91:/var/www/html/api/pipeline-status.php
