@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
+import OrderPipeline from "../components/OrderPipeline";
 import {
   Activity, AlertCircle, AlertTriangle, ArrowRightLeft, CheckCircle2,
   ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Filter,
@@ -57,7 +58,7 @@ const STAGES = [
 
 // stage key → { path, label, param? }
 const STAGE_LINKS = {
-  baskets_orders: { path: "/prepare-orders",       label: "Prepare Orders" },
+  baskets_orders: { path: "/prepare-orders", label: "Prepare Orders", param: c => `?merchant_id=${encodeURIComponent(c.merchant_id_str || '')}&broker_id=${encodeURIComponent(c.broker_id || '')}` },
   payment:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
   funding:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
   journal:    { path: "/journal",              label: "Journal" },
@@ -112,14 +113,25 @@ function StagePill({ stageKey, status }) {
 // ── Stage progress bar ────────────────────────────────────────────────────────
 function StageProgressBar({ cycle }) {
   const statusWeight = { completed: 1, skipped: 1, in_progress: 0.5, blocked: 0, failed: 0, pending: 0 };
-  const done = STAGES.reduce((sum, s) => sum + (statusWeight[cycle[`stage_${s.key}`]] ?? 0), 0);
+
+  // Resolve the combined baskets_orders stage from the two real DB columns
+  const resolveStageStatus = (key) => {
+    if (key === 'baskets_orders') {
+      const b = cycle.stage_baskets || 'pending';
+      const o = cycle.stage_orders  || 'pending';
+      return b === 'completed' ? o : b;
+    }
+    return cycle[`stage_${key}`] || 'pending';
+  };
+
+  const done = STAGES.reduce((sum, s) => sum + (statusWeight[resolveStageStatus(s.key)] ?? 0), 0);
   const pct  = Math.round((done / STAGES.length) * 100);
 
   return (
     <div>
       <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "#e5e7eb", marginBottom: 4 }}>
         {STAGES.map(s => {
-          const st  = cycle[`stage_${s.key}`] || 'pending';
+          const st  = resolveStageStatus(s.key);
           const col = st === 'completed' ? s.color
                     : st === 'in_progress' ? s.color + "99"
                     : st === 'skipped'     ? "#d1d5db"
@@ -929,7 +941,7 @@ export default function PipelineCyclesAdmin() {
             <Activity size={22} color="#fff" />
             <div>
               <h1 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#fff" }}>
-                Pipeline Cycles
+                Pipeline Cycles Control Panel
               </h1>
               <p style={{ margin: 0, fontSize: "0.73rem", color: "rgba(255,255,255,0.55)" }}>
                 One open cycle per merchant ↔ broker pair — end-to-end stage tracking
@@ -968,6 +980,9 @@ export default function PipelineCyclesAdmin() {
 
       {/* Body */}
       <div style={{ maxWidth: 1120, margin: "0 auto", padding: "24px 28px" }}>
+
+        {/* Pipeline stepper — navigation + lock status */}
+        <OrderPipeline currentStep={0} title="IB Order Processing Pipeline" />
 
         {loading && (
           <div style={{ textAlign: "center", padding: "4rem", color: "#94a3b8" }}>

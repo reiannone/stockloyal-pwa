@@ -190,6 +190,28 @@ function fetchJournals(AlpacaBrokerAPI $alpaca): array {
     return array_slice($deduped, 0, 200);
 }
 
+// ── Fetch live trading snapshot for a single account ─────────────────────────
+function fetchTradingAccount(AlpacaBrokerAPI $alpaca, string $accountId): array {
+    try {
+        $res = $alpaca->getTradingAccount($accountId);
+        if (!($res['success'] ?? false)) {
+            $msg = $res['error'] ?? ('HTTP ' . ($res['http_code'] ?? '?'));
+            error_log("[alpaca-broker-admin] fetchTradingAccount({$accountId}) failed: {$msg}");
+            return ['success' => false, 'error' => $msg];
+        }
+        $data = $res['data'] ?? null;
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Empty trading account response'];
+        }
+        // Returns: cash, long_market_value, short_market_value,
+        //          equity, last_equity, buying_power, portfolio_value
+        return ['success' => true, 'trading' => $data];
+    } catch (Throwable $e) {
+        error_log("[alpaca-broker-admin] fetchTradingAccount exception: " . $e->getMessage());
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
 // ── Route ────────────────────────────────────────────────────────────────────
 try {
     $walletRows = loadBrokerAccounts($conn);
@@ -222,7 +244,16 @@ try {
             echo json_encode(['success' => true, 'journals' => fetchJournals($alpaca)]);
             break;
 
-        default:
+        case 'account_trading':
+            $accountId = trim((string)($input['account_id'] ?? ''));
+            if (empty($accountId)) {
+                echo json_encode(['success' => false, 'error' => 'account_id required']);
+                exit;
+            }
+            echo json_encode(fetchTradingAccount($alpaca, $accountId));
+            break;
+
+                default:
             echo json_encode(['success' => false, 'error' => "Unknown action: $action"]);
     }
 

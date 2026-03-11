@@ -16,12 +16,23 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import {
-  ClipboardCheck, CreditCard, ArrowRightLeft, Repeat2, Zap, CheckCircle2,
+  ShoppingBasket, ClipboardCheck, CreditCard, ArrowRightLeft, Repeat2, Zap, CheckCircle2,
   Lock, Unlock, RefreshCw, AlertTriangle, AlertCircle, Activity,
   LayoutDashboard, Building2, Users, ChevronRight, Clock, TrendingUp,
   ExternalLink,
 } from "lucide-react";
-import { PIPELINE_STEPS } from "../components/OrderPipeline";
+
+// ── Pipeline stage definitions (matches PipelineCyclesAdmin) ─────────────────
+const PIPELINE_STEPS = [
+  { key: "baskets_orders", label: "Baskets & Orders", icon: ShoppingBasket, color: "#10b981", sub: "Loyalty baskets built & orders approved",  to: "/prepare-orders" },
+  { key: "payment",        label: "Payment",          icon: CreditCard,     color: "#06b6d4", sub: "Merchant ACH / bank payment initiated",    to: "/payments-processing" },
+  { key: "funding",        label: "Funding",          icon: ArrowRightLeft, color: "#8b5cf6", sub: "Journal funding to member accounts",       to: "/payments-processing" },
+  { key: "journal",        label: "Journal",          icon: ArrowRightLeft, color: "#ec4899", sub: "Journal entries recorded & reconciled",    to: "/journal" },
+  { key: "placement",      label: "Placement",        icon: Repeat2,        color: "#3b82f6", sub: "Orders placed with broker",                to: "/sweep" },
+  { key: "submission",     label: "Submission",       icon: Zap,            color: "#a855f7", sub: "Broker submission acknowledged",           to: "/broker-exec" },
+  { key: "execution",      label: "Execution",        icon: Activity,       color: "#f97316", sub: "Market orders filled by broker",           to: "/broker-exec" },
+  { key: "settlement",     label: "Settlement",       icon: CheckCircle2,   color: "#14b8a6", sub: "Trade settlement complete (T+1/T+2)",     to: "/broker-exec" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt$ = v => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v || 0);
@@ -40,8 +51,6 @@ const STAGE_MAP = Object.fromEntries(PIPELINE_STEPS.map(s => [s.key, s]));
 function stepCount(step, stages) {
   const s = stages?.[step.key];
   if (!s) return 0;
-  if (step.key === "prepare")
-    return s.staged_batch?.total_orders ?? s.approved_batch?.total_orders ?? 0;
   return s.count ?? 0;
 }
 
@@ -92,13 +101,13 @@ function CycleBanner({ locked, inflight, stages, activeBatchId }) {
               letterSpacing: "-0.01em",
             }}>
               {locked
-                ? "CYCLE IN PROGRESS — NEW BATCH LOCKED"
+                ? "CYCLE IN PROGRESS — NEW CYCLE LOCKED"
                 : "READY FOR NEW CYCLE"}
             </div>
             <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.68)", marginTop: 3 }}>
               {locked
-                ? `${inflight.length} merchant batch${inflight.length > 1 ? "es" : ""} still in flight — all orders must reach "settled" before a new batch can be approved`
-                : "No in-flight orders — you may prepare and approve a new batch"}
+                ? `${inflight.length} active cycle${inflight.length > 1 ? "s" : ""} in flight — all orders must settle before a new cycle can be opened`
+                : "No active cycles — open a new cycle via Pipeline Cycles"}
             </div>
           </div>
         </div>
@@ -325,7 +334,7 @@ function MerchantBatchTable({ merchantBatches, navigate }) {
           <Building2 size={13} color="#64748b" /> Merchant Batches In Progress
         </div>
         <span style={{ fontSize: "0.7rem", color: "#f59e0b", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-          <Lock size={11} /> New batch locked until all settle
+          <Lock size={11} /> New cycle locked until all settle
         </span>
       </div>
 
@@ -363,7 +372,7 @@ function MerchantBatchTable({ merchantBatches, navigate }) {
                 {/* Merchant */}
                 <td style={{ padding: "10px 14px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {isBlocked && <Lock size={11} color="#f59e0b" title="Blocking new batch" />}
+                    {isBlocked && <Lock size={11} color="#f59e0b" title="Blocking new cycle" />}
                     <span style={{ fontWeight: 700, color: "#1e293b" }}>{mb.merchant_id}</span>
                   </div>
                 </td>
@@ -518,10 +527,7 @@ export default function PipelineDashboard() {
   }, [load]);
 
   const { locked, inflight } = deriveLock(data?.merchant_batches);
-  const activeBatchId =
-    data?.stages?.prepare?.staged_batch?.batch_id ||
-    data?.stages?.prepare?.approved_batch?.batch_id ||
-    inflight?.[0]?.batch_id || null;
+  const activeBatchId = inflight?.[0]?.batch_id || data?.active_batch_id || null;
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: "#f1f5f9", minHeight: "100vh" }}>

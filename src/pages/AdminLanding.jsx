@@ -106,15 +106,8 @@ export default function AdminLanding() {
       bgColor: "#ecfeff",
     },
     {
-      to: "/pipeline-dashboard",
-      label: "Pipeline Dashboard",
-      icon: <SquareGanttChart size={32} />,
-      color: "#6366f1",
-      bgColor: "#eef2ff",
-    },
-    {
       to: "/pipeline-cycles",
-      label: "Pipeline Cycles Admin",
+      label: "Pipeline Cycles Control Panel",
       icon: <RefreshCcwDot size={32} />,
       color: "#6366f1",
       bgColor: "#eef2ff",

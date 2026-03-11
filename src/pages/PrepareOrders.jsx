@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
-import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
+import { ArrowLeft, CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
@@ -22,15 +23,62 @@ import { CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb, AlertTriang
  */
 
 export default function PrepareOrders() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // ── Read ?merchant_id and ?broker_id from URL (navigated from Pipeline Cycles) ──
+  const params = new URLSearchParams(location.search);
+  const urlMerchantId = params.get("merchant_id") || "";
+  const urlBrokerId   = params.get("broker_id")   || "";
+
+  // Selected merchant-broker pair — stored as "merchantId|brokerId" or "" for All
+  const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
+  const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+
+  // Derived filters from selected pair
+  const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+  const filterBroker   = selectedPair.includes("|") ? selectedPair.split("|")[1] : "";
+
   const [activeTab, setActiveTab] = useState("preview");
 
   // ── Preview state ──
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
-  const [filterMerchant, setFilterMerchant] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [prepareResult, setPrepareResult] = useState(null);
+
+  // ── Pipeline cycle pairs (for dropdown + blocking) ──
+  const [cycleOptions, setCycleOptions] = useState([]); // [{ key, merchant_id, broker_id, merchant_name, broker_name, cycle }]
+  const [activeCycle, setActiveCycle] = useState(null);
+
+  useEffect(() => {
+    apiPost("pipeline-cycles.php", { action: "list", limit: 100 })
+      .then(res => {
+        if (!res?.success) return;
+        const open = (res.cycles || []).filter(c => ["open", "locked"].includes(c.status));
+        const opts = open.map(c => ({
+          key:           makeKey(c.merchant_id_str, c.broker_id),
+          merchant_id:   c.merchant_id_str,
+          broker_id:     c.broker_id,
+          merchant_name: c.merchant_name || c.merchant_id_str,
+          broker_name:   c.broker_name   || c.broker_id,
+          cycle:         c,
+        }));
+        setCycleOptions(opts);
+
+        // Determine blocking cycle for current selection
+        const blocking = open.find(c =>
+          c.merchant_id_str === filterMerchant &&
+          (!filterBroker || c.broker_id === filterBroker) &&
+          ["open", "locked"].includes(c.status) &&
+          c.stage_orders === "completed"
+        );
+        setActiveCycle(blocking || null);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPair]);
 
   // ── Batches state ──
   const [batches, setBatches] = useState([]);
@@ -84,6 +132,7 @@ export default function PrepareOrders() {
     try {
       const payload = { action: "preview" };
       if (filterMerchant) payload.merchant_id = filterMerchant;
+      if (filterBroker)   payload.broker_id   = filterBroker;
       const res = await apiPost("prepare_orders.php", payload);
       if (res.success) {
         setPreview(res);
@@ -96,7 +145,7 @@ export default function PrepareOrders() {
       console.error("Preview exception:", err);
     }
     setPreviewLoading(false);
-  }, [filterMerchant]);
+  }, [filterMerchant, filterBroker]);
 
   // ── Load batches ──
   const loadBatches = useCallback(async () => {
@@ -220,6 +269,7 @@ export default function PrepareOrders() {
     try {
       const payload = { action: "prepare" };
       if (filterMerchant) payload.merchant_id = filterMerchant;
+      if (filterBroker)   payload.broker_id   = filterBroker;
       const res = await apiPost("prepare_orders.php", payload);
       setPrepareResult(res);
       if (res.success && !res.nothing_to_stage && res.batch_id) {
@@ -589,25 +639,40 @@ export default function PrepareOrders() {
         marginBottom: "1.5rem",
         borderBottom: "1px solid #e2e8f0",
         paddingBottom: "0.5rem",
+        justifyContent: "space-between",
+        alignItems: "center",
       }}>
-        {["preview", "batches"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              padding: "0.5rem 1rem",
-              background: activeTab === tab ? "#6366f1" : "transparent",
-              color: activeTab === tab ? "#fff" : "#64748b",
-              border: "none",
-              borderRadius: "6px",
-              fontWeight: "500",
-              cursor: "pointer",
-              textTransform: "capitalize",
-            }}
-          >
-            {tab === "batches" ? `Batches (${batches.length})` : "Preview"}
-          </button>
-        ))}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {["preview", "batches"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: "0.5rem 1rem",
+                background: activeTab === tab ? "#6366f1" : "transparent",
+                color: activeTab === tab ? "#fff" : "#64748b",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: "500",
+                cursor: "pointer",
+                textTransform: "capitalize",
+              }}
+            >
+              {tab === "batches" ? `Batches (${batches.length})` : "Preview"}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => navigate("/pipeline-cycles")}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: "0.4rem",
+            padding: "0.4rem 0.75rem",
+            background: "none", border: "1px solid #d1d5db", borderRadius: "6px",
+            color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+          }}
+        >
+          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+        </button>
       </div>
 
       {/* ── Prepare result banner ── */}
@@ -673,18 +738,28 @@ export default function PrepareOrders() {
             borderRadius: "8px",
             border: "1px solid #e2e8f0",
           }}>
-            <select
-              value={filterMerchant}
-              onChange={(e) => setFilterMerchant(e.target.value)}
-              style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem" }}
-            >
-              <option value="">All Merchants</option>
-              {(preview?.by_merchant || []).map((m) => (
-                <option key={m.merchant_id} value={m.merchant_id}>
-                  {m.merchant_name || m.merchant_id}
-                </option>
-              ))}
-            </select>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Merchant · Broker
+              </label>
+              <select
+                value={selectedPair}
+                onChange={(e) => setSelectedPair(e.target.value)}
+                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
+              >
+                <option value="">All Active Cycles</option>
+                {cycleOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.merchant_name} · {opt.broker_name}
+                  </option>
+                ))}
+                {urlMerchantId && !cycleOptions.find(o => o.merchant_id === urlMerchantId) && (
+                  <option value={makeKey(urlMerchantId, urlBrokerId)}>
+                    {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
+                  </option>
+                )}
+              </select>
+            </div>
             <button
               onClick={loadPreview}
               disabled={previewLoading}
@@ -704,16 +779,16 @@ export default function PrepareOrders() {
             </button>
             <button
               onClick={showPrepareModal}
-              disabled={preparing || !preview?.eligible_members}
+              disabled={preparing || !preview?.eligible_members || !!activeCycle}
               style={{
                 padding: "0.5rem 1.25rem",
-                background: preparing ? "#94a3b8" : "#10b981",
-                color: "#fff",
+                background: activeCycle ? "#e2e8f0" : preparing ? "#94a3b8" : "#10b981",
+                color: activeCycle ? "#94a3b8" : "#fff",
                 border: "none",
                 borderRadius: "6px",
                 fontWeight: 600,
                 fontSize: "0.85rem",
-                cursor: preparing || !preview?.eligible_members ? "not-allowed" : "pointer",
+                cursor: preparing || !preview?.eligible_members || !!activeCycle ? "not-allowed" : "pointer",
               }}
             >
               {preparing ? "Staging..." : isRefreshMode
@@ -724,6 +799,15 @@ export default function PrepareOrders() {
 
           {/* ── Run Trial block reason ── */}
           {(() => {
+            if (activeCycle) return (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e", fontSize: "0.85rem", fontWeight: 500 }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                <span>
+                  Run Trial is blocked — <strong>{activeCycle.merchant_name || activeCycle.merchant_id_str}</strong> already has an active pipeline cycle (#{activeCycle.id}) with orders approved and in-flight.{" "}
+                  <a href="/#/pipeline-cycles" style={{ color: "#b45309", fontWeight: 700 }}>View in Pipeline Management →</a>
+                </span>
+              </div>
+            );
             if (preparing) return (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", fontSize: "0.85rem", fontWeight: 500 }}>
                 <RefreshCw size={14} style={{ flexShrink: 0 }} />

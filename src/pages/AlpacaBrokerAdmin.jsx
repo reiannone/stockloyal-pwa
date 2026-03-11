@@ -108,6 +108,24 @@ export default function AlpacaBrokerAdmin() {
   // Detail expand
   const [expandedRow, setExpandedRow] = useState(null);
 
+  // Trading account data fetched on expand (cash, long_market_value, etc.)
+  const [tradingData, setTradingData] = useState({});   // { account_id: {...} | "loading" | "error" }
+
+  const fetchTradingAccount = useCallback(async (accountId) => {
+    if (!accountId || tradingData[accountId]) return;
+    setTradingData(prev => ({ ...prev, [accountId]: "loading" }));
+    try {
+      const res = await apiPost("alpaca-broker-admin.php", { action: "account_trading", account_id: accountId });
+      if (res?.success && res.trading) {
+        setTradingData(prev => ({ ...prev, [accountId]: res.trading }));
+      } else {
+        setTradingData(prev => ({ ...prev, [accountId]: "error" }));
+      }
+    } catch {
+      setTradingData(prev => ({ ...prev, [accountId]: "error" }));
+    }
+  }, [tradingData]);
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -328,7 +346,11 @@ export default function AlpacaBrokerAdmin() {
                   <React.Fragment key={a.id || a._member_id || i}>
                     <tr
                       style={{ cursor: "pointer", background: expandedRow === (a.id || a._member_id) ? "#f0f9ff" : undefined }}
-                      onClick={() => setExpandedRow(expandedRow === (a.id || a._member_id) ? null : (a.id || a._member_id))}
+                      onClick={() => {
+                        const rowKey = a.id || a._member_id;
+                        if (expandedRow !== rowKey) fetchTradingAccount(a.id);
+                        setExpandedRow(expandedRow === rowKey ? null : rowKey);
+                      }}
                     >
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.id}</td>
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.account_number || "—"}</td>
@@ -339,31 +361,74 @@ export default function AlpacaBrokerAdmin() {
                       <td style={{ fontSize: "0.8rem" }}>{fmtDate(a.created_at)}</td>
                       <td>{expandedRow === (a.id || a._member_id) ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</td>
                     </tr>
-                    {expandedRow === (a.id || a._member_id) && (
-                      <tr>
-                        <td colSpan={8} style={{ background: "#f8fafc", padding: "12px 16px" }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px 24px" }}>
-                            {[
-                              ["Member ID",        a._member_id],
-                              ["Currency",         a.currency],
-                              ["Last Equity",      fmt$(a.last_equity)],
-                              ["Trading Type",     a.trading_type],
-                              ["Crypto Status",    a.crypto_status],
-                              ["Account Type",     a.account_type],
-                              ["Enabled Assets",   (a.enabled_assets || []).join(", ")],
-                              ["Country",          a.identity?.country_of_citizenship || a.identity?.country_of_tax_residence],
-                              ["Email",            a.contact?.email_address],
-                              ["Updated",          fmtDt(a.updated_at)],
-                            ].map(([label, val]) => (
-                              <div key={label}>
-                                <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase" }}>{label}</div>
-                                <div style={{ fontSize: "0.85rem" }}>{val ?? "—"}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
+                    {expandedRow === (a.id || a._member_id) && (() => {
+                      const td = tradingData[a.id];
+                      const isLoading = td === "loading";
+                      const isError   = td === "error";
+                      const t = (!isLoading && !isError && td) ? td : null;
+                      return (
+                        <tr>
+                          <td colSpan={8} style={{ background: "#f8fafc", padding: "12px 16px" }}>
+
+                            {/* ── Equity breakout stat cards ── */}
+                            <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                              {[
+                                { label: "Last Equity",    value: t ? fmt$(t.last_equity)       : fmt$(a.last_equity), color: "#2563eb", tip: "Total account value as of last market close (cash + positions)" },
+                                { label: "Position Value", value: t ? fmt$(t.long_market_value) : null,                color: "#059669", tip: "Current market value of all long equity positions" },
+                                { label: "Cash Balance",   value: t ? fmt$(t.cash)              : null,                color: "#d97706", tip: "Settled cash available in the account" },
+                              ].map(({ label, value, color, tip }) => (
+                                <div key={label} title={tip} style={{
+                                  flex: "1 1 160px", padding: "10px 14px",
+                                  background: "#fff", borderRadius: 8,
+                                  border: "1px solid #e2e8f0", borderLeft: `4px solid ${color}`,
+                                  position: "relative",
+                                }}>
+                                  <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>{label}</div>
+                                  {isLoading && value === null ? (
+                                    <div style={{ fontSize: "0.85rem", color: "#94a3b8" }}>Loading…</div>
+                                  ) : isError && value === null ? (
+                                    <div style={{ fontSize: "0.85rem", color: "#ef4444" }}>—</div>
+                                  ) : (
+                                    <div style={{ fontSize: "1.1rem", fontWeight: 700, color: value ? "#1e293b" : "#94a3b8" }}>
+                                      {value ?? (isLoading ? "…" : "—")}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              {isError && (
+                                <div style={{ alignSelf: "center", fontSize: "0.75rem", color: "#ef4444" }}>
+                                  Could not load trading account data
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ── Detail grid ── */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px 24px" }}>
+                              {[
+                                ["Member ID",        a._member_id],
+                                ["Currency",         a.currency],
+                                ["Last Equity",      t ? fmt$(t.last_equity)       : fmt$(a.last_equity)],
+                                ["Position Value",   t ? fmt$(t.long_market_value) : (isLoading ? "…" : "—")],
+                                ["Cash Balance",     t ? fmt$(t.cash)              : (isLoading ? "…" : "—")],
+                                ["Buying Power",     t ? fmt$(t.buying_power)      : (isLoading ? "…" : "—")],
+                                ["Trading Type",     a.trading_type],
+                                ["Crypto Status",    a.crypto_status],
+                                ["Account Type",     a.account_type],
+                                ["Enabled Assets",   (a.enabled_assets || []).join(", ")],
+                                ["Country",          a.identity?.country_of_citizenship || a.identity?.country_of_tax_residence],
+                                ["Email",            a.contact?.email_address],
+                                ["Updated",          fmtDt(a.updated_at)],
+                              ].map(([label, val]) => (
+                                <div key={label}>
+                                  <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase" }}>{label}</div>
+                                  <div style={{ fontSize: "0.85rem" }}>{val ?? "—"}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </React.Fragment>
                 ))}
               </tbody>

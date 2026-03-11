@@ -7,8 +7,30 @@ import {
   Timer, Play, Activity, Server, CalendarClock, BarChart3,
   CircleDot, CircleOff, Wifi, WifiOff,
 } from "lucide-react";
-import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
+import OrderPipeline from "../components/OrderPipeline";
+
+// ── Pipeline merchants hook ──────────────────────────────────────────────────
+function usePipelineMerchants() {
+  const [merchants, setMerchants] = useState([]);
+  useEffect(() => {
+    apiPost("pipeline-cycles.php", { action: "list" })
+      .then((res) => {
+        if (!res.success) return;
+        const seen = new Set();
+        const list = [];
+        for (const c of res.cycles || []) {
+          if (c.status === "open" && !seen.has(c.merchant_id)) {
+            seen.add(c.merchant_id);
+            list.push({ merchant_id: c.merchant_id, merchant_name: c.merchant_name || c.merchant_id });
+          }
+        }
+        setMerchants(list);
+      })
+      .catch(() => {});
+  }, []);
+  return merchants;
+}
 
 /**
  * BrokerExecAdmin — Broker Trade Execution + Cron Monitoring
@@ -21,150 +43,37 @@ import ConfirmModal from "../components/ConfirmModal";
 
 export default function BrokerExecAdmin() {
   const [activeTab, setActiveTab] = useState("placed");
-  const [loading, setLoading] = useState(true);
-  const [placedOrders, setPlacedOrders] = useState([]);
-  const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
-  const [executing, setExecuting] = useState(false);
-  const [lastResult, setLastResult] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [refreshPlaced, setRefreshPlaced] = useState(0);
 
-  // Modal state
-  const [modal, setModal] = useState({
-    show: false, title: "", message: "", details: null,
-    icon: <Zap size={20} color="#f59e0b" />,
-    confirmText: "Execute", confirmColor: "#059669", data: null,
-  });
-  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
-
-  // Load placed orders (flat array, frontend groups into hierarchy)
-  const loadPlacedOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await apiPost("broker-execute.php", { action: "preview" });
-      if (res.success) {
-        const flat = [];
-        for (const bg of (res.brokers || [])) {
-          for (const bk of (bg.baskets || [])) {
-            for (const o of (bk.orders || [])) {
-              flat.push({ ...o, merchant_name: bk.merchant_name || bk.merchant_id });
-            }
-          }
-        }
-        setPlacedOrders(flat);
-        setSummary(res.summary || null);
-      } else {
-        console.error("Preview error:", res.error);
-      }
-    } catch (err) {
-      console.error("Failed to load placed orders:", err);
-    }
-    setLoading(false);
-  }, []);
-
-  // Load execution history
-  const loadHistory = useCallback(async () => {
-    try {
-      const res = await apiPost("broker-execute.php", { action: "history", limit: 30 });
-      if (res.success) {
-        setHistory(res.history || []);
-      } else {
-        console.error("History load error:", res.error);
-      }
-    } catch (err) {
-      console.error("Failed to load history:", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadPlacedOrders();
-    loadHistory();
-  }, [loadPlacedOrders, loadHistory]);
-
-  // ── Execute actions ──
-
-  const doExecute = async (action, params = {}) => {
-    closeModal();
-    setExecuting(true);
-    setLastResult(null);
-    try {
-      const res = await apiPost("broker-execute.php", { action, ...params });
-      setLastResult(res);
-      await loadPlacedOrders();
-      await loadHistory();
-    } catch (err) {
-      console.error("Execution failed:", err);
-      setLastResult({ success: false, error: err.message });
-    }
-    setExecuting(false);
-  };
-
-  const confirmExecuteAll = () => {
-    setModal({
-      show: true,
-      title: "Execute All Orders",
-      message: `Execute all ${summary?.total_orders || 0} placed orders?`,
-      details: summary ? (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <span>Orders: <strong>{summary.total_orders}</strong></span>
-          <span>Amount: <strong>{formatCurrency(summary.total_amount)}</strong></span>
-          <span>Brokers: <strong>{summary.broker_count}</strong></span>
-        </div>
-      ) : null,
-      icon: <Zap size={20} color="#f59e0b" />,
-      confirmText: "Execute All", confirmColor: "#059669",
-      data: { type: "all" },
-    });
-  };
-
-  const confirmExecuteMerchant = (merchantId, merchantName, count, amount) => {
-    setModal({
-      show: true,
-      title: "Execute Merchant Orders",
-      message: `Execute all placed orders for ${merchantName || merchantId}?`,
-      details: (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <span>Orders: <strong>{count}</strong></span>
-          <span>Amount: <strong>{formatCurrency(amount)}</strong></span>
-        </div>
-      ),
-      icon: <Store size={20} color="#8b5cf6" />,
-      confirmText: "Execute Merchant", confirmColor: "#059669",
-      data: { type: "merchant", merchantId },
-    });
-  };
-
-  const confirmExecuteBasket = (basketId, count) => {
-    setModal({
-      show: true,
-      title: "Execute Basket",
-      message: `Execute basket ${basketId} with ${count || "?"} order(s)?`,
-      icon: <ShoppingBasket size={20} color="#d97706" />,
-      confirmText: "Execute Basket", confirmColor: "#059669",
-      data: { type: "basket", basketId },
-    });
-  };
-
-  const handleModalConfirm = () => {
-    const d = modal.data;
-    if (d?.type === "all") doExecute("execute");
-    else if (d?.type === "merchant") doExecute("execute_merchant", { merchant_id: d.merchantId });
-    else if (d?.type === "basket") doExecute("execute_basket", { basket_id: d.basketId });
-  };
+  const pipelineMerchants = usePipelineMerchants();
 
   const formatCurrency = (amt) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amt || 0);
   const formatDate = (d) => (d ? new Date(d).toLocaleString() : "-");
 
+  // Load execution history
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await apiPost("broker-execute.php", { action: "history", limit: 30 });
+      if (res.success) setHistory(res.history || []);
+    } catch (err) {
+      console.error("Failed to load history:", err);
+    }
+    setHistoryLoading(false);
+  }, []);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
+
+  const handleRefresh = () => {
+    setRefreshPlaced(n => n + 1);
+    loadHistory();
+  };
+
   return (
     <div className="app-container app-content">
-      {/* Confirm Modal */}
-      <ConfirmModal
-        show={modal.show} title={modal.title} message={modal.message}
-        details={modal.details} icon={modal.icon}
-        confirmText={modal.confirmText} confirmColor={modal.confirmColor}
-        onConfirm={handleModalConfirm} onCancel={closeModal}
-      />
-
       {/* Header */}
       <h1 className="page-title">Broker Trade Execution</h1>
       <p className="page-deck">
@@ -204,112 +113,46 @@ export default function BrokerExecAdmin() {
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem" }}>
-          <button
-            onClick={() => { loadPlacedOrders(); loadHistory(); }}
-            disabled={loading}
-            style={{
-              padding: "0.625rem 1.25rem", background: "#f1f5f9", color: "#475569",
-              border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.875rem", cursor: "pointer",
-            }}
-          >
-            <RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh
-          </button>
-          {activeTab === "placed" && (
-            <button
-              onClick={confirmExecuteAll}
-              disabled={executing || !summary?.total_orders}
-              style={{
-                padding: "0.625rem 1.25rem",
-                background: executing ? "#94a3b8" : (!summary?.total_orders ? "#e2e8f0" : "#059669"),
-                color: "#fff", border: "none", borderRadius: "6px",
-                fontSize: "0.875rem", fontWeight: 600,
-                cursor: summary?.total_orders ? "pointer" : "not-allowed",
-                opacity: executing ? 0.7 : 1,
-              }}
-            >
-              {executing
-                ? <><Hourglass size={14} style={{ verticalAlign: "middle" }} /> Executing...</>
-                : <><Zap size={14} style={{ verticalAlign: "middle" }} /> Execute All Trades</>
-              }
-            </button>
-          )}
-        </div>
+        <button
+          onClick={handleRefresh}
+          style={{
+            padding: "0.625rem 1.25rem", background: "#f1f5f9", color: "#475569",
+            border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.875rem", cursor: "pointer",
+          }}
+        >
+          <RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh
+        </button>
       </div>
-
-      {/* Summary Stats */}
-      {activeTab === "placed" && summary && (
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "1rem", marginBottom: "1.5rem",
-        }}>
-          <StatCard label="Placed Orders" value={summary.total_orders} subtext="Awaiting execution" color="#f59e0b" />
-          <StatCard label="Total Amount" value={formatCurrency(summary.total_amount)} subtext="Investment value" color="#3b82f6" />
-          <StatCard label="Brokers" value={summary.broker_count} subtext="Processing" color="#8b5cf6" />
-          <StatCard label="Baskets" value={summary.basket_count} subtext="Member orders" color="#06b6d4" />
-        </div>
-      )}
-
-      {/* Execution Result Banner */}
-      {lastResult && (
-        <div style={{
-          padding: "1rem", marginBottom: "1.5rem", borderRadius: "8px",
-          background: lastResult.success ? "#d1fae5" : "#fee2e2",
-          border: `1px solid ${lastResult.success ? "#10b981" : "#ef4444"}`,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong>
-              {lastResult.success
-                ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Trades Executed</>
-                : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Execution Failed</>
-              }
-            </strong>
-            {lastResult.exec_id && (
-              <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#64748b" }}>
-                {lastResult.exec_id}
-              </span>
-            )}
-          </div>
-          {lastResult.success && (
-            <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-              <span><TrendingUp size={12} style={{ verticalAlign: "middle" }} /> Executed: <strong>{lastResult.orders_executed || 0}</strong></span>
-              <span><XCircle size={12} style={{ verticalAlign: "middle" }} /> Failed: <strong>{lastResult.orders_failed || 0}</strong></span>
-              <span><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Baskets: <strong>{lastResult.baskets_processed || 0}</strong></span>
-              <span><Clock size={12} style={{ verticalAlign: "middle" }} /> Duration: <strong>{lastResult.duration_seconds || 0}s</strong></span>
-            </div>
-          )}
-          {lastResult.error && !lastResult.success && (
-            <div style={{ marginTop: "0.5rem", color: "#dc2626" }}>{lastResult.error}</div>
-          )}
-        </div>
-      )}
 
       {/* ── PLACED TAB ── */}
       {activeTab === "placed" && (
         <>
-          {loading ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>Loading placed orders...</div>
-          ) : placedOrders.length === 0 ? (
+          {pipelineMerchants.length === 0 ? (
             <div style={{
               textAlign: "center", padding: "3rem", background: "#fff",
               borderRadius: "8px", border: "1px solid #e2e8f0", color: "#94a3b8",
             }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}><CheckCircle2 size={32} color="#10b981" /></div>
-              <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#475569" }}>No Placed Orders</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "#475569" }}>No Active Pipeline Cycles</div>
               <div style={{ fontSize: "0.875rem", marginTop: "0.25rem" }}>
-                Run a sweep first to move pending orders to placed status.
+                Open a cycle in{" "}
+                <a href="/#/pipeline-cycles" style={{ color: "#059669" }}>Pipeline Management</a>{" "}
+                and run a sweep to generate placed orders.
               </div>
             </div>
           ) : (
-            <ExecHierarchy
-              orders={placedOrders}
-              formatCurrency={formatCurrency}
-              formatDate={formatDate}
-              executing={executing}
-              onExecuteMerchant={confirmExecuteMerchant}
-              onExecuteBasket={confirmExecuteBasket}
-              mode="placed"
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {pipelineMerchants.map((m) => (
+                <MerchantExecPanel
+                  key={m.merchant_id}
+                  merchant={m}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                  refreshSignal={refreshPlaced}
+                  onExecuted={() => { setRefreshPlaced(n => n + 1); loadHistory(); }}
+                />
+              ))}
+            </div>
           )}
         </>
       )}
@@ -317,7 +160,9 @@ export default function BrokerExecAdmin() {
       {/* ── HISTORY TAB ── */}
       {activeTab === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {history.length === 0 ? (
+          {historyLoading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>Loading history...</div>
+          ) : history.length === 0 ? (
             <div style={{
               padding: "2rem", textAlign: "center", color: "#94a3b8",
               background: "#fff", borderRadius: "8px", border: "1px solid #e2e8f0",
@@ -354,6 +199,197 @@ export default function BrokerExecAdmin() {
         orders to <code>confirmed</code>. On early close days (e.g. day before Thanksgiving, close at 1:00 PM),
         the cron respects the shortened window. Manual triggers bypass market-hour checks.
       </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MerchantExecPanel — Per-merchant placed orders + execute controls
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal, onExecuted }) {
+  const [orders, setOrders] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [executing, setExecuting] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [modal, setModal] = useState({ show: false, title: "", message: "", details: null, data: null });
+
+  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+
+  const loadOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiPost("broker-execute.php", { action: "preview", merchant_id: merchant.merchant_id });
+      if (res.success) {
+        const flat = [];
+        for (const bg of (res.brokers || [])) {
+          for (const bk of (bg.baskets || [])) {
+            for (const o of (bk.orders || [])) {
+              flat.push({ ...o, merchant_name: merchant.merchant_name });
+            }
+          }
+        }
+        setOrders(flat);
+        setSummary(res.summary || null);
+      }
+    } catch (err) {
+      console.error("Preview error:", err);
+    }
+    setLoading(false);
+  }, [merchant.merchant_id, merchant.merchant_name]);
+
+  useEffect(() => { loadOrders(); }, [loadOrders, refreshSignal]);
+
+  const doExecute = async (action, params = {}) => {
+    closeModal();
+    setExecuting(true);
+    setLastResult(null);
+    try {
+      const res = await apiPost("broker-execute.php", { action, ...params });
+      setLastResult(res);
+      await loadOrders();
+      onExecuted?.();
+    } catch (err) {
+      setLastResult({ success: false, error: err.message });
+    }
+    setExecuting(false);
+  };
+
+  const confirmExecuteMerchant = () => {
+    setModal({
+      show: true,
+      title: `Execute ${merchant.merchant_name}`,
+      message: `Execute all ${summary?.total_orders || 0} placed orders for ${merchant.merchant_name}?`,
+      details: summary ? (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <span>Orders: <strong>{summary.total_orders}</strong></span>
+          <span>Amount: <strong>{formatCurrency(summary.total_amount)}</strong></span>
+        </div>
+      ) : null,
+      data: { type: "merchant" },
+    });
+  };
+
+  const confirmExecuteBasket = (basketId, count) => {
+    setModal({
+      show: true,
+      title: "Execute Basket",
+      message: `Execute basket ${basketId} with ${count || "?"} order(s)?`,
+      data: { type: "basket", basketId },
+    });
+  };
+
+  const handleModalConfirm = () => {
+    const d = modal.data;
+    if (d?.type === "merchant") doExecute("execute_merchant", { merchant_id: merchant.merchant_id });
+    else if (d?.type === "basket") doExecute("execute_basket", { basket_id: d.basketId });
+  };
+
+  const orderCount = summary?.total_orders || 0;
+  const totalAmt = summary?.total_amount || 0;
+
+  return (
+    <div style={{ background: "#fff", borderRadius: "8px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+      <ConfirmModal
+        show={modal.show} title={modal.title} message={modal.message}
+        details={modal.details}
+        icon={<Zap size={20} color="#f59e0b" />}
+        confirmText="Execute" confirmColor="#059669"
+        onConfirm={handleModalConfirm} onCancel={closeModal}
+      />
+
+      {/* Panel header */}
+      <div style={{
+        padding: "0.75rem 1rem", background: "#f8fafc",
+        borderBottom: collapsed ? "none" : "1px solid #e2e8f0",
+        display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap",
+      }}>
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "#94a3b8" }}
+        >
+          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
+        <Store size={16} color="#8b5cf6" />
+        <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1e293b" }}>
+          {merchant.merchant_name}
+        </span>
+        {!loading && (
+          <>
+            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+              {orderCount} order{orderCount !== 1 ? "s" : ""} · {formatCurrency(totalAmt)}
+            </span>
+          </>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); loadOrders(); }}
+            disabled={loading}
+            style={{
+              padding: "0.3rem 0.6rem", background: "#f1f5f9", color: "#475569",
+              border: "1px solid #cbd5e1", borderRadius: "5px", fontSize: "0.75rem", cursor: "pointer",
+            }}
+          >
+            <RefreshCw size={11} style={{ verticalAlign: "middle" }} />
+          </button>
+          <button
+            onClick={confirmExecuteMerchant}
+            disabled={executing || !orderCount}
+            style={{
+              padding: "0.3rem 0.75rem",
+              background: executing ? "#94a3b8" : (!orderCount ? "#e2e8f0" : "#059669"),
+              color: "#fff", border: "none", borderRadius: "5px",
+              fontSize: "0.75rem", fontWeight: 600,
+              cursor: orderCount && !executing ? "pointer" : "not-allowed",
+            }}
+          >
+            {executing
+              ? <><Hourglass size={11} style={{ verticalAlign: "middle" }} /> Executing...</>
+              : <><Zap size={11} style={{ verticalAlign: "middle" }} /> Execute Merchant</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {/* Result banner */}
+      {lastResult && !collapsed && (
+        <div style={{
+          padding: "0.6rem 1rem", fontSize: "0.8rem",
+          background: lastResult.success ? "#d1fae5" : "#fee2e2",
+          borderBottom: "1px solid #e2e8f0",
+        }}>
+          {lastResult.success
+            ? <><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Executed {lastResult.orders_executed || 0} orders · {lastResult.duration_seconds || 0}s</>
+            : <><XCircle size={12} style={{ verticalAlign: "middle" }} color="#dc2626" /> {lastResult.error}</>
+          }
+        </div>
+      )}
+
+      {/* Orders */}
+      {!collapsed && (
+        <div style={{ padding: "0.75rem" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>Loading placed orders...</div>
+          ) : orders.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "1.5rem", color: "#94a3b8", fontSize: "0.875rem" }}>
+              No placed orders for this merchant.
+            </div>
+          ) : (
+            <ExecHierarchy
+              orders={orders}
+              formatCurrency={formatCurrency}
+              formatDate={formatDate}
+              executing={executing}
+              onExecuteMerchant={() => confirmExecuteMerchant()}
+              onExecuteBasket={confirmExecuteBasket}
+              mode="placed"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,9 +1,29 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiPost } from "../api"; // Use existing api helper
-import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown } from "lucide-react";
-import OrderPipeline, { usePipelineStatus } from "../components/OrderPipeline";
+import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown, GitBranch } from "lucide-react";
+import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
+
+// ── Pipeline merchants (open cycles only) ───────────────────────────────────
+function usePipelineMerchants() {
+  const [merchants, setMerchants] = useState(null);
+  useEffect(() => {
+    apiPost("pipeline-cycles.php", { action: "list" }).then(res => {
+      if (res?.success && Array.isArray(res.cycles)) {
+        const seen = new Set(); const out = [];
+        for (const c of res.cycles) {
+          if (c.status === "open" && !seen.has(c.merchant_id)) {
+            seen.add(c.merchant_id);
+            out.push({ merchant_id: c.merchant_id, merchant_name: c.merchant_name || c.cycle_label || c.merchant_id });
+          }
+        }
+        setMerchants(out);
+      } else { setMerchants([]); }
+    }).catch(() => setMerchants([]));
+  }, []);
+  return merchants;
+}
 
 /**
  * SweepAdmin - Admin page for managing the sweep process (order entry to broker)
@@ -18,6 +38,7 @@ import { LineageLink } from "../components/LineagePopup";
  */
 
 export default function SweepAdmin() {
+  const pipelineMerchants = usePipelineMerchants();
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
@@ -731,55 +752,77 @@ export default function SweepAdmin() {
                 </div>
               )}
 
-              {/* Pending by Merchant */}
-              <h3 style={{ marginBottom: "0.75rem" }}>Pending Orders by Merchant</h3>
-              <div style={{ 
-                background: "#fff", 
-                borderRadius: "8px", 
-                border: "1px solid #e2e8f0",
-                overflow: "hidden"
-              }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc" }}>
-                      <th style={thStyle}>Merchant</th>
-                      <th style={thStyle}>Sweep Day</th>
-                      <th style={thStyle}>Pending Orders</th>
-                      <th style={thStyle}>Amount</th>
-                      <th style={thStyle}>Oldest Order</th>
-                      <th style={thStyle}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overview.pending_by_merchant?.map((m) => (
-                      <tr key={m.merchant_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                        <td style={tdStyle}>{m.merchant_name || m.merchant_id}</td>
-                        <td style={tdStyle}>{getSweepDayDisplay(m.sweep_day)}</td>
-                        <td style={tdStyle}>{m.pending_orders}</td>
-                        <td style={tdStyle}>{formatCurrency(m.pending_amount)}</td>
-                        <td style={tdStyle}>{formatDate(m.oldest_order)}</td>
-                        <td style={tdStyle}>
-                          <button
-                            onClick={() => showSweepModal(m.merchant_id)}
-                            disabled={sweepRunning || hasUnfundedOrders}
-                            style={{...smallBtnStyle, ...(hasUnfundedOrders ? { background: "#94a3b8", cursor: "not-allowed" } : {})}}
-                            title={hasUnfundedOrders ? "Complete journal funding before sweeping" : ""}
-                          >
-                            Run Sweep
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(!overview.pending_by_merchant || overview.pending_by_merchant.length === 0) && (
-                      <tr>
-                        <td colSpan={6} style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>
-                          No pending orders
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              {/* Pending by Merchant — pipeline merchant cards */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                <h3 style={{ margin: 0 }}>Pending Orders by Merchant</h3>
+                {pipelineMerchants !== null && (
+                  <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                    <GitBranch size={12} style={{ verticalAlign: "middle" }} /> {pipelineMerchants.length} active pipeline cycle(s)
+                  </span>
+                )}
               </div>
+              {(() => {
+                // Build a merged list: pipeline merchants first, then any others with pending orders
+                const pipelineIds = new Set((pipelineMerchants || []).map(m => m.merchant_id));
+                const allPending = overview.pending_by_merchant || [];
+                const pendingMap = Object.fromEntries(allPending.map(m => [m.merchant_id, m]));
+                // Pipeline merchants
+                const cards = (pipelineMerchants || []).map(pm => ({
+                  ...pm,
+                  ...(pendingMap[pm.merchant_id] || {}),
+                  inPipeline: true,
+                }));
+                // Other merchants with pending orders not in pipeline
+                for (const m of allPending) {
+                  if (!pipelineIds.has(m.merchant_id)) cards.push({ ...m, inPipeline: false });
+                }
+                if (cards.length === 0) {
+                  return <div style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>No pipeline merchants or pending orders.</div>;
+                }
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {cards.map(m => {
+                      const hasPending = (m.pending_orders || 0) > 0;
+                      const canSweep = !sweepRunning && hasPending && !hasUnfundedOrders;
+                      return (
+                        <div key={m.merchant_id} style={{ background: "#fff", borderRadius: 8, border: `1px solid ${hasPending ? "#e2e8f0" : "#e2e8f0"}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: hasPending ? "1px solid #f1f5f9" : "none" }}>
+                            <Store size={16} color="#8b5cf6" />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
+                                {m.merchant_name || m.merchant_id}
+                                {m.inPipeline && <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "#dbeafe", color: "#1d4ed8" }}>Pipeline Active</span>}
+                              </div>
+                              <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: 2 }}>
+                                {hasPending ? `${m.pending_orders} orders · ${formatCurrency(m.pending_amount)} · oldest: ${formatDate(m.oldest_order)}` : "No pending orders"}
+                                {m.sweep_day != null && ` · Sweep: ${getSweepDayDisplay(m.sweep_day)}`}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              {hasPending && (
+                                <>
+                                  <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#10b981" }}>{formatCurrency(m.pending_amount)}</span>
+                                  <span style={{ fontSize: "0.72rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#faf5ff", color: "#7c3aed" }}>{m.pending_orders} orders</span>
+                                </>
+                              )}
+                              <button onClick={() => showSweepModal(m.merchant_id)} disabled={!canSweep}
+                                title={hasUnfundedOrders ? "Complete journal funding before sweeping" : hasPending ? "" : "No pending orders"}
+                                style={{ padding: "6px 14px", background: canSweep ? "#4ECDC4" : "#94a3b8", color: "#fff", border: "none", borderRadius: 6, fontSize: "0.8rem", fontWeight: 600, cursor: canSweep ? "pointer" : "not-allowed" }}>
+                                <Play size={12} style={{ verticalAlign: "middle" }} /> Run Sweep
+                              </button>
+                            </div>
+                          </div>
+                          {hasPending && hasUnfundedOrders && (
+                            <div style={{ padding: "6px 16px", background: "#fef3c7", fontSize: "0.75rem", color: "#92400e" }}>
+                              <AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Journal funding incomplete — complete the Journal step before sweeping.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {/* Upcoming Schedule */}
               {overview.upcoming_schedule?.length > 0 && (
@@ -815,234 +858,66 @@ export default function SweepAdmin() {
           {/* Pending Orders Tab */}
           {activeTab === "pending" && (
             <div>
-              {/* View Toggle + Filters */}
+              {/* View Toggle */}
               <div style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-                {/* View toggle */}
-                <div style={{
-                  display: "inline-flex",
-                  borderRadius: "6px",
-                  border: "1px solid #d1d5db",
-                  overflow: "hidden",
-                }}>
+                <div style={{ display: "inline-flex", borderRadius: "6px", border: "1px solid #d1d5db", overflow: "hidden" }}>
                   {[
                     { key: "webhook", label: <><Radio size={12} style={{ verticalAlign: "middle" }} /> Broker View</> },
                     { key: "basket", label: <><ShoppingBasket size={12} style={{ verticalAlign: "middle" }} /> Basket View</> },
-                  ].map((v) => (
-                    <button
-                      key={v.key}
-                      onClick={() => setPendingView(v.key)}
-                      style={{
-                        padding: "0.4rem 0.75rem",
-                        background: pendingView === v.key ? "#4ECDC4" : "#fff",
-                        color: pendingView === v.key ? "#fff" : "#374151",
-                        border: "none",
-                        fontSize: "0.8rem",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
+                  ].map(v => (
+                    <button key={v.key} onClick={() => setPendingView(v.key)}
+                      style={{ padding: "0.4rem 0.75rem", background: pendingView === v.key ? "#4ECDC4" : "#fff", color: pendingView === v.key ? "#fff" : "#374151", border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}>
                       {v.label}
                     </button>
                   ))}
                 </div>
-
-                <select
-                  value={selectedMerchant}
-                  onChange={(e) => {
-                    setSelectedMerchant(e.target.value);
-                    loadPendingOrders(e.target.value || null);
-                    setExpandedBaskets({});
-                  }}
-                  style={{
-                    padding: "0.5rem",
-                    borderRadius: "6px",
-                    border: "1px solid #d1d5db"
-                  }}
-                >
-                  <option value="">All Merchants</option>
-                  {schedules.map((s) => (
-                    <option key={s.merchant_id} value={s.merchant_id}>
-                      {s.merchant_name || s.merchant_id}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ color: "#64748b" }}>
-                  {pendingOrders.length} order(s)
-                  {pendingView === "basket"
-                    ? ` in ${Object.keys(groupOrdersByBasket(pendingOrders)).length} basket(s)`
-                    : ` across ${Object.keys(groupOrdersByMerchantBroker(pendingOrders)).length} broker feed(s)`}
-                </span>
+                <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{pendingOrders.length} order(s) total</span>
               </div>
 
               {pendingOrders.length === 0 ? (
-                <div
-                  style={{
-                    backgroundColor: "#d1fae5",
-                    border: "2px solid #10b981",
-                    borderRadius: "8px",
-                    padding: "1rem 1.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.75rem",
-                  }}
-                >
+                <div style={{ backgroundColor: "#d1fae5", border: "2px solid #10b981", borderRadius: "8px", padding: "1rem 1.5rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
                   <CheckCircle size={24} color="#10b981" />
-                  <span style={{ fontSize: "1rem", fontWeight: "600", color: "#065f46" }}>
-                    No pending orders to display.
-                  </span>
+                  <span style={{ fontSize: "1rem", fontWeight: "600", color: "#065f46" }}>No pending orders to display.</span>
                 </div>
-              ) : pendingView === "webhook" ? (
-                /* ═══════════════════════════════════════════════════════ */
-                /* WEBHOOK VIEW — Merchant → Broker → Basket → Orders    */
-                /* ═══════════════════════════════════════════════════════ */
-                <SweepHierarchy
-                  orders={pendingOrders}
-                  buildWebhookPayload={buildWebhookPayload}
-                  groupOrdersByMerchantBroker={groupOrdersByMerchantBroker}
-                  formatCurrency={formatCurrency}
-                  jsonViewMode={jsonViewMode}
-                  JsonToggle={JsonToggle}
-                  JsonBlock={JsonBlock}
-                />
-              ) : (
-                /* ═══════════════════════════════════════════════════════ */
-                /* BASKET VIEW — Original grouping by basket_id           */
-                /* ═══════════════════════════════════════════════════════ */
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                  <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                    <button
-                      onClick={() => {
-                        const baskets = groupOrdersByBasket(pendingOrders);
-                        const allExpanded = Object.keys(baskets).every(k => expandedBaskets[k]);
-                        if (allExpanded) {
-                          setExpandedBaskets({});
-                        } else {
-                          const newExpanded = {};
-                          Object.keys(baskets).forEach(k => newExpanded[k] = true);
-                          setExpandedBaskets(newExpanded);
-                        }
-                      }}
-                      style={{
-                        padding: "0.375rem 0.75rem",
-                        background: "#f3f4f6",
-                        color: "#374151",
-                        border: "1px solid #d1d5db",
-                        borderRadius: "6px",
-                        fontSize: "0.8rem",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {Object.keys(groupOrdersByBasket(pendingOrders)).every(k => expandedBaskets[k]) ? "Collapse All" : "Expand All"}
-                    </button>
+              ) : (() => {
+                // Build merchant sections: pipeline merchants first, then others
+                const pipelineIds = new Set((pipelineMerchants || []).map(m => m.merchant_id));
+                const ordersByMerchant = {};
+                for (const o of pendingOrders) {
+                  const mid = o.merchant_id || "unknown";
+                  if (!ordersByMerchant[mid]) ordersByMerchant[mid] = { merchant_id: mid, merchant_name: o.merchant_name || mid, orders: [], inPipeline: pipelineIds.has(mid) };
+                  ordersByMerchant[mid].orders.push(o);
+                }
+                const sections = [
+                  ...((pipelineMerchants || []).map(pm => ordersByMerchant[pm.merchant_id] || { merchant_id: pm.merchant_id, merchant_name: pm.merchant_name, orders: [], inPipeline: true })),
+                  ...Object.values(ordersByMerchant).filter(g => !pipelineIds.has(g.merchant_id)),
+                ];
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                    {sections.map(section => (
+                      <MerchantPendingSection
+                        key={section.merchant_id}
+                        section={section}
+                        pendingView={pendingView}
+                        expandedBaskets={expandedBaskets}
+                        setExpandedBaskets={setExpandedBaskets}
+                        sweepRunning={sweepRunning}
+                        hasUnfundedOrders={hasUnfundedOrders}
+                        showSweepModal={showSweepModal}
+                        buildWebhookPayload={buildWebhookPayload}
+                        groupOrdersByMerchantBroker={groupOrdersByMerchantBroker}
+                        groupOrdersByBasket={groupOrdersByBasket}
+                        formatCurrency={formatCurrency}
+                        formatDate={formatDate}
+                        jsonViewMode={jsonViewMode}
+                        JsonToggle={JsonToggle}
+                        JsonBlock={JsonBlock}
+                      />
+                    ))}
                   </div>
-                  {Object.entries(groupOrdersByBasket(pendingOrders)).map(([basketId, basketOrders]) => {
-                    const isExpanded = expandedBaskets[basketId];
-                    const totalAmount = basketOrders.reduce((sum, o) => sum + parseFloat(o.amount || 0), 0);
-                    const totalShares = basketOrders.reduce((sum, o) => sum + parseFloat(o.shares || 0), 0);
-                    const broker = basketOrders[0]?.broker || "-";
-                    const merchant = basketOrders[0]?.merchant_id || "-";
-
-                    return (
-                      <div
-                        key={basketId}
-                        style={{
-                          background: "#fff",
-                          borderRadius: "8px",
-                          border: `1px solid ${isExpanded ? "#4ECDC4" : "#e2e8f0"}`,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {/* Basket Header - Clickable */}
-                        <div
-                          onClick={() => setExpandedBaskets(prev => ({ ...prev, [basketId]: !prev[basketId] }))}
-                          style={{
-                            padding: "0.75rem 1rem",
-                            cursor: "pointer",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            background: isExpanded ? "#f0fdfa" : "#fff",
-                            transition: "background 0.15s",
-                          }}
-                        >
-                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.85rem", color: "#1e293b" }}>
-                                <ShoppingBasket size={14} style={{ verticalAlign: "middle" }} /> <LineageLink id={basketId} type="basket">{basketId}</LineageLink>
-                              </span>
-                              <span style={{
-                                padding: "2px 8px",
-                                background: "#fef3c7",
-                                color: "#92400e",
-                                borderRadius: "999px",
-                                fontSize: "0.7rem",
-                                fontWeight: 600,
-                              }}>
-                                {basketOrders.length} orders
-                              </span>
-                              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                                Broker: <strong>{broker}</strong>
-                              </span>
-                              <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                                Merchant: <strong>{merchant}</strong>
-                              </span>
-                            </div>
-                            <div style={{ display: "flex", gap: "16px", fontSize: "0.8rem", color: "#475569" }}>
-                              <span>Amount: <strong>{formatCurrency(totalAmount)}</strong></span>
-                              <span>Shares: <strong>{totalShares.toFixed(4)}</strong></span>
-                            </div>
-                          </div>
-                          <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </span>
-                        </div>
-
-                        {/* Expanded Orders Table */}
-                        {isExpanded && (
-                          <div style={{ borderTop: "1px solid #e2e8f0", overflow: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                              <thead>
-                                <tr style={{ background: "#f8fafc" }}>
-                                  <th style={thStyle}>Order ID</th>
-                                  <th style={thStyle}>Member</th>
-                                  <th style={thStyle}>Symbol</th>
-                                  <th style={thStyle}>Shares</th>
-                                  <th style={thStyle}>Amount</th>
-                                  <th style={thStyle}>Status</th>
-                                  <th style={thStyle}>Placed At</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {basketOrders.map((o) => (
-                                  <tr key={o.order_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                    <td style={tdStyle}><LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink></td>
-                                    <td style={tdStyle}>{o.member_id}</td>
-                                    <td style={{ ...tdStyle, fontWeight: "600" }}>{o.symbol}</td>
-                                    <td style={tdStyle}>{parseFloat(o.shares).toFixed(4)}</td>
-                                    <td style={tdStyle}>{formatCurrency(o.amount)}</td>
-                                    <td style={tdStyle}>
-                                      <span style={{
-                                        padding: "0.125rem 0.5rem",
-                                        background: "#fef3c7",
-                                        color: "#92400e",
-                                        borderRadius: "999px",
-                                        fontSize: "0.7rem"
-                                      }}>
-                                        {o.status}
-                                      </span>
-                                    </td>
-                                    <td style={tdStyle}>{formatDate(o.placed_at)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 
@@ -1127,6 +1002,100 @@ export default function SweepAdmin() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MerchantPendingSection — one section per pipeline merchant in pending tab
+// ═══════════════════════════════════════════════════════════════════════════
+
+function MerchantPendingSection({ section, pendingView, expandedBaskets, setExpandedBaskets, sweepRunning, hasUnfundedOrders, showSweepModal, buildWebhookPayload, groupOrdersByMerchantBroker, groupOrdersByBasket, formatCurrency, formatDate, jsonViewMode, JsonToggle, JsonBlock }) {
+  const [expanded, setExpanded] = useState(true);
+  const { merchant_id, merchant_name, orders, inPipeline } = section;
+  const totalAmount = orders.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
+  const canSweep = !sweepRunning && orders.length > 0 && !hasUnfundedOrders;
+
+  return (
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      {/* Header */}
+      <div onClick={() => setExpanded(!expanded)}
+        style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: expanded ? "#f8fafc" : "#fff", cursor: "pointer", borderBottom: expanded && orders.length > 0 ? "1px solid #e2e8f0" : "none" }}>
+        <Store size={16} color="#8b5cf6" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
+            {merchant_name}
+            {inPipeline && <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "#dbeafe", color: "#1d4ed8" }}>Pipeline Active</span>}
+          </div>
+          <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: 2 }}>
+            {orders.length > 0 ? `${orders.length} orders · ${formatCurrency(totalAmount)}` : "No pending orders"}
+          </div>
+        </div>
+        {orders.length > 0 && (
+          <button onClick={e => { e.stopPropagation(); showSweepModal(merchant_id); }} disabled={!canSweep}
+            title={hasUnfundedOrders ? "Complete journal funding before sweeping" : ""}
+            style={{ padding: "6px 14px", background: canSweep ? "#4ECDC4" : "#94a3b8", color: "#fff", border: "none", borderRadius: 6, fontSize: "0.8rem", fontWeight: 600, cursor: canSweep ? "pointer" : "not-allowed" }}>
+            <Play size={12} style={{ verticalAlign: "middle" }} /> Run Sweep
+          </button>
+        )}
+        {expanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+      </div>
+
+      {/* Content */}
+      {expanded && orders.length > 0 && (
+        <div style={{ padding: "12px" }}>
+          {pendingView === "webhook" ? (
+            <SweepHierarchy orders={orders} buildWebhookPayload={buildWebhookPayload} groupOrdersByMerchantBroker={groupOrdersByMerchantBroker} formatCurrency={formatCurrency} jsonViewMode={jsonViewMode} JsonToggle={JsonToggle} JsonBlock={JsonBlock} />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {Object.entries(groupOrdersByBasket(orders)).map(([basketId, basketOrders]) => {
+                const isExp = expandedBaskets[basketId];
+                const amt = basketOrders.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
+                const shares = basketOrders.reduce((s, o) => s + parseFloat(o.shares || 0), 0);
+                return (
+                  <div key={basketId} style={{ background: "#fff", borderRadius: 8, border: `1px solid ${isExp ? "#4ECDC4" : "#e2e8f0"}`, overflow: "hidden" }}>
+                    <div onClick={() => setExpandedBaskets(p => ({ ...p, [basketId]: !p[basketId] }))}
+                      style={{ padding: "0.75rem 1rem", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: isExp ? "#f0fdfa" : "#fff" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.85rem", color: "#1e293b" }}><ShoppingBasket size={14} style={{ verticalAlign: "middle" }} /> <LineageLink id={basketId} type="basket">{basketId}</LineageLink></span>
+                        <span style={{ padding: "2px 8px", background: "#fef3c7", color: "#92400e", borderRadius: "999px", fontSize: "0.7rem", fontWeight: 600 }}>{basketOrders.length} orders</span>
+                        <span style={{ fontSize: "0.75rem", color: "#64748b" }}>Broker: <strong>{basketOrders[0]?.broker || "-"}</strong></span>
+                        <span style={{ fontSize: "0.75rem", color: "#475569" }}>Amount: <strong>{formatCurrency(amt)}</strong> · Shares: <strong>{shares.toFixed(4)}</strong></span>
+                      </div>
+                      {isExp ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                    </div>
+                    {isExp && (
+                      <div style={{ borderTop: "1px solid #e2e8f0", overflow: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead><tr style={{ background: "#f8fafc" }}>{["Order ID","Member","Symbol","Shares","Amount","Status","Placed At"].map(h => <th key={h} style={{ padding: "0.5rem 0.75rem", textAlign: "left", fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", borderBottom: "1px solid #e2e8f0" }}>{h}</th>)}</tr></thead>
+                          <tbody>
+                            {basketOrders.map(o => (
+                              <tr key={o.order_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}><LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink></td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>{o.member_id}</td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem", fontWeight: 600 }}>{o.symbol}</td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>{parseFloat(o.shares).toFixed(4)}</td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>{formatCurrency(o.amount)}</td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}><span style={{ padding: "0.125rem 0.5rem", background: "#fef3c7", color: "#92400e", borderRadius: "999px", fontSize: "0.7rem" }}>{o.status}</span></td>
+                                <td style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>{formatDate(o.placed_at)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {expanded && orders.length === 0 && (
+        <div style={{ padding: "1.5rem", textAlign: "center", background: "#f0fdf4", fontSize: "0.85rem", color: "#16a34a" }}>
+          <CheckCircle2 size={18} color="#10b981" style={{ marginBottom: 4 }} /><br />No pending orders for this merchant.
+        </div>
       )}
     </div>
   );

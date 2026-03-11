@@ -17,17 +17,16 @@ import { useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import {
   ClipboardCheck, CreditCard, ArrowRightLeft, Repeat2, Zap,
-  CheckCircle2, Lock, Unlock, LayoutDashboard, RefreshCw,
-  AlertTriangle, Building2,
+  CheckCircle2, RefreshCw,
 } from "lucide-react";
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 export const PIPELINE_STEPS = [
   { step: 1, key: "prepare",   to: "/prepare-orders",      label: "Prepare Orders",   sub: "Stage baskets",       icon: ClipboardCheck, color: "#8b5cf6" },
   { step: 2, key: "payment",   to: "/payments-processing", label: "Fund IB Sweep",    sub: "Merchant → SL Sweep", icon: CreditCard,     color: "#f59e0b" },
-  { step: 3, key: "journal",   to: "/journal-admin",       label: "Journal Funds",    sub: "SL Sweep → Members",  icon: ArrowRightLeft, color: "#10b981" },
-  { step: 4, key: "sweep",     to: "/sweep-admin",         label: "Order Sweep",      sub: "Submit to broker",    icon: Repeat2,        color: "#6366f1" },
-  { step: 5, key: "execution", to: "/admin-broker-exec",   label: "Broker Execution", sub: "Confirm trades",      icon: Zap,            color: "#3b82f6" },
+  { step: 3, key: "journal",   to: "/journal",             label: "Journal Funds",    sub: "SL Sweep → Members",  icon: ArrowRightLeft, color: "#10b981" },
+  { step: 4, key: "sweep",     to: "/sweep",               label: "Order Sweep",      sub: "Submit to broker",    icon: Repeat2,        color: "#6366f1" },
+  { step: 5, key: "execution", to: "/broker-exec",         label: "Broker Execution", sub: "Confirm trades",      icon: Zap,            color: "#3b82f6" },
 ];
 
 // ── Shared status context (optional — for pages that want to consume it) ──────
@@ -74,115 +73,52 @@ function stepCount(step, status) {
   return s.count ?? 0;
 }
 
-// ── Lock state from merchant_batches ─────────────────────────────────────────
-function deriveLockState(status) {
-  const batches = status?.merchant_batches || [];
-  const inflight = batches.filter(mb =>
-    +mb.cnt_approved + +mb.cnt_funded + +mb.cnt_placed + +mb.cnt_submitted > 0
-  );
-  return {
-    locked: inflight.length > 0,
-    inflight,
-    activeBatchId:
-      status?.stages?.prepare?.staged_batch?.batch_id ||
-      status?.stages?.prepare?.approved_batch?.batch_id ||
-      inflight[0]?.batch_id || null,
-  };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-//  LOCK BANNER — the most prominent UI element; shown on every pipeline page
+//  MAIN EXPORT — OrderPipeline component
 // ─────────────────────────────────────────────────────────────────────────────
-function LockBanner({ lockState, navigate }) {
-  const { locked, inflight, activeBatchId } = lockState;
+export default function OrderPipeline({
+  currentStep,
+  status: statusProp = null,
+  title    = "IB Order Processing Pipeline",
+  subtitle = "StockLoyal as Introducing Broker — fund IB sweep → fund members → trade",
+}) {
+  const navigate = useNavigate();
+  const own = useFetch();
+  const status = statusProp ?? own.status;
 
   return (
-    <div style={{
-      borderRadius: "10px 10px 0 0",
-      background: locked
-        ? "linear-gradient(135deg, #92400e 0%, #b45309 100%)"
-        : "linear-gradient(135deg, #14532d 0%, #15803d 100%)",
-      padding: "12px 18px",
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      flexWrap: "wrap", gap: 10,
-    }}>
-
-      {/* Left — icon + status + message */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <PipelineContext.Provider value={{ status, loading: own.loading, reload: own.reload }}>
+      <div style={{
+        marginBottom: 24, borderRadius: 10,
+        border: "1px solid #e2e8f0",
+        background: "#fff", overflow: "hidden",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+      }}>
+        {/* Title row */}
         <div style={{
-          width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-          background: "rgba(255,255,255,0.15)",
-          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "12px 24px 0",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          {locked
-            ? <Lock size={18} color="#fcd34d" />
-            : <Unlock size={18} color="#86efac" />}
+          <div>
+            <h3 style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: "#1e293b" }}>
+              {title}
+            </h3>
+            <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{subtitle}</p>
+          </div>
+          {own.loading && (
+            <RefreshCw size={13} color="#94a3b8"
+              style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+          )}
         </div>
 
-        <div>
-          <div style={{
-            fontSize: "0.82rem", fontWeight: 800, letterSpacing: "0.08em",
-            color: locked ? "#fef3c7" : "#dcfce7",
-            textTransform: "uppercase",
-          }}>
-            {locked ? "⚠ Cycle in progress — batch locked" : "✓ Ready for new cycle"}
-          </div>
-          <div style={{ fontSize: "0.73rem", color: "rgba(255,255,255,0.72)", marginTop: 2 }}>
-            {locked
-              ? `${inflight.length} merchant batch${inflight.length > 1 ? "es" : ""} must fully settle before a new batch can be approved`
-              : "All orders settled — you may prepare and approve a new batch"
-            }
-          </div>
-        </div>
+        {/* Subway stepper */}
+        <Stepper currentStep={currentStep} status={status} navigate={navigate} />
+
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
-
-      {/* Right — batch pill + blocked merchants + dashboard link */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {activeBatchId && (
-          <span style={{
-            fontSize: "0.72rem", fontFamily: "monospace",
-            background: "rgba(255,255,255,0.12)", color: "#fff",
-            border: "1px solid rgba(255,255,255,0.25)",
-            padding: "3px 9px", borderRadius: 5,
-          }}>
-            {activeBatchId}
-          </span>
-        )}
-
-        {locked && inflight.map((mb, i) => (
-          <span key={i} style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            fontSize: "0.7rem", fontWeight: 700,
-            background: "#fef3c7", color: "#92400e",
-            border: "1px solid #fcd34d",
-            padding: "2px 8px", borderRadius: 12,
-          }}>
-            <Lock size={10} /> {mb.merchant_id}
-          </span>
-        ))}
-
-        <button
-          onClick={() => navigate("/pipeline-dashboard")}
-          style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "5px 12px", borderRadius: 7,
-            border: "1px solid rgba(255,255,255,0.3)",
-            background: "rgba(255,255,255,0.1)",
-            color: "#fff", fontSize: "0.75rem", fontWeight: 600,
-            cursor: "pointer", whiteSpace: "nowrap",
-          }}
-        >
-          <LayoutDashboard size={13} />
-          Pipeline Dashboard
-        </button>
-      </div>
-    </div>
+    </PipelineContext.Provider>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  SUBWAY STEPPER
-// ─────────────────────────────────────────────────────────────────────────────
 function Stepper({ currentStep, status, navigate }) {
   return (
     <div style={{ padding: "18px 24px 20px", position: "relative" }}>
@@ -272,57 +208,5 @@ function Stepper({ currentStep, status, navigate }) {
         })}
       </div>
     </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  MAIN EXPORT — OrderPipeline component
-// ─────────────────────────────────────────────────────────────────────────────
-export default function OrderPipeline({
-  currentStep,
-  status: statusProp = null,         // pass from usePipelineStatus() to avoid double-fetch
-  title    = "IB Order Processing Pipeline",
-  subtitle = "StockLoyal as Introducing Broker — fund IB sweep → fund members → trade",
-}) {
-  const navigate = useNavigate();
-  const own = useFetch();   // always runs; if statusProp provided we just prefer it
-  const status   = statusProp ?? own.status;
-  const lockState = deriveLockState(status);
-
-  return (
-    <PipelineContext.Provider value={{ status, loading: own.loading, reload: own.reload }}>
-      <div style={{
-        marginBottom: 24, borderRadius: 10,
-        border: `2px solid ${lockState.locked ? "#fcd34d" : "#86efac"}`,
-        background: "#fff", overflow: "hidden",
-        boxShadow: lockState.locked ? "0 2px 12px #f59e0b1a" : "0 2px 8px #10b9811a",
-      }}>
-
-        {/* Prominent lock banner — always first */}
-        <LockBanner lockState={lockState} navigate={navigate} />
-
-        {/* Title row */}
-        <div style={{
-          padding: "12px 24px 0",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <h3 style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 700, color: "#1e293b" }}>
-              {title}
-            </h3>
-            <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{subtitle}</p>
-          </div>
-          {own.loading && (
-            <RefreshCw size={13} color="#94a3b8"
-              style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-          )}
-        </div>
-
-        {/* Subway stepper */}
-        <Stepper currentStep={currentStep} status={status} navigate={navigate} />
-
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    </PipelineContext.Provider>
   );
 }

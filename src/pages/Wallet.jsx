@@ -332,6 +332,9 @@ export default function Wallet() {
                 setAlpacaAccount(alpacaData.account);
 
                 const liveValue = alpacaData.account?.equity || alpacaData.portfolio_value || 0;
+                // Position value only (matches body display) — long_market_value, fallback to equity - cash
+                const positionValue = alpacaData.account?.long_market_value
+                  ?? (parseFloat(alpacaData.account?.equity || 0) - parseFloat(alpacaData.account?.cash || 0));
 
                 // Update wallet state with live equity
                 setWallet(prev => ({
@@ -342,7 +345,7 @@ export default function Wallet() {
                 // Show notification if value changed from DB
                 const dbValue = Number(w?.portfolio_value || 0);
                 if (Math.abs(liveValue - dbValue) > 0.01) {
-                  setNewPortfolioValue(liveValue);
+                  setNewPortfolioValue(positionValue);
                   setPortfolioUpdated(true);
                   setTimeout(() => setPortfolioUpdated(false), 5000);
                 }
