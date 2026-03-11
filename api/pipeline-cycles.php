@@ -46,6 +46,7 @@ set_error_handler(function (int $errno, string $errstr, string $errfile, int $er
 require_once __DIR__ . '/cors.php';
 require_once __DIR__ . '/config.php';          // provides $conn
 require_once __DIR__ . '/pipeline-guard.php';  // checkPipelineBlocked(), buildBlockMessage(), checkCycleOpen()
+require_once __DIR__ . '/PipelineOrchestrator.php'; // stage execution
 
 // Discard anything cors.php / config.php may have echo'd
 ob_clean();
@@ -176,19 +177,7 @@ if ($action === 'open') {
         );
     }
 
-    // 4. Guard: check for in-flight orders that would block a new cycle
-    $guard = checkPipelineBlocked($conn, $merchant['merchant_id']);
-    if ($guard['blocked']) {
-        echo json_encode([
-            'success' => false,
-            'blocked' => true,
-            'error'   => buildBlockMessage($guard),
-            'details' => $guard['merchants'],
-        ]);
-        exit;
-    }
-
-    // 5. All clear — insert new cycle
+    // 4. All clear — insert new cycle
     $stmt = $conn->prepare("
         INSERT INTO pipeline_cycles
             (merchant_record_id, broker_id, merchant_id_str, broker_name,
@@ -337,19 +326,19 @@ if ($action === 'update_counts') {
 
     $counts = $conn->prepare("
         SELECT
-            COUNT(*)                                                        AS orders_total,
-            SUM(status = 'approved')                                        AS orders_approved,
-            SUM(status = 'funded')                                          AS orders_funded,
-            SUM(status = 'placed')                                          AS orders_placed,
-            SUM(status = 'submitted')                                       AS orders_submitted,
-            SUM(status = 'settled')                                         AS orders_settled,
-            SUM(status = 'failed')                                          AS orders_failed,
-            SUM(status = 'cancelled')                                       AS orders_cancelled,
-            COALESCE(SUM(investment_amount), 0)                             AS amount_total,
-            COALESCE(SUM(CASE WHEN status IN ('funded','placed','submitted','settled')
-                              THEN investment_amount END), 0)               AS amount_funded,
-            COALESCE(SUM(CASE WHEN status = 'settled'
-                              THEN investment_amount END), 0)               AS amount_settled
+            COUNT(*)                                                                     AS orders_total,
+            COUNT(DISTINCT member_id)                                                    AS baskets_total,
+            SUM(status = 'approved')                                                     AS orders_approved,
+            SUM(status = 'funded')                                                       AS orders_funded,
+            SUM(status IN ('placed','submitted','confirmed','executed'))                  AS orders_placed,
+            SUM(status IN ('submitted','confirmed','executed'))                           AS orders_submitted,
+            SUM(status = 'settled')                                                      AS orders_settled,
+            SUM(status = 'failed')                                                       AS orders_failed,
+            SUM(status = 'cancelled')                                                    AS orders_cancelled,
+            COALESCE(SUM(amount), 0)                                                     AS amount_total,
+            COALESCE(SUM(CASE WHEN status IN ('funded','placed','submitted','confirmed','executed','settled')
+                              THEN amount END), 0)                                       AS amount_funded,
+            COALESCE(SUM(CASE WHEN status = 'settled' THEN amount END), 0)               AS amount_settled
         FROM orders
         WHERE batch_id = ?
     ");
@@ -359,6 +348,7 @@ if ($action === 'update_counts') {
     $upd = $conn->prepare("
         UPDATE pipeline_cycles SET
             orders_total     = :orders_total,
+            baskets_total    = :baskets_total,
             orders_approved  = :orders_approved,
             orders_funded    = :orders_funded,
             orders_placed    = :orders_placed,
@@ -374,6 +364,7 @@ if ($action === 'update_counts') {
     ");
     $upd->execute([
         ':orders_total'     => (int)$c['orders_total'],
+            ':baskets_total'    => (int)$c['baskets_total'],
         ':orders_approved'  => (int)$c['orders_approved'],
         ':orders_funded'    => (int)$c['orders_funded'],
         ':orders_placed'    => (int)$c['orders_placed'],
@@ -411,6 +402,95 @@ if ($action === 'get_cycle') {
 
     if (!$cycle) fail("Cycle not found.", 404);
     ok(['cycle' => $cycle]);
+}
+
+// =============================================================================
+//  run_stage -- orchestrated stage execution
+// =============================================================================
+if ($action === 'run_stage') {
+    req($body, ['cycle_id', 'stage']);
+
+    $cycleId = (int)$body['cycle_id'];
+    $stage   = $body['stage'];
+
+    $validStages = ['baskets_orders','baskets','orders','payment','funding','journal',
+                    'placement','submission','execution','settlement'];
+    if (!in_array($stage, $validStages)) fail("Invalid stage: {$stage}");
+
+    // Load full cycle row (include merchant_id for orchestrator calls)
+    $cycleStmt = $conn->prepare("
+        SELECT pc.*,
+               m.merchant_name,
+               m.merchant_id  AS merchant_code
+        FROM   pipeline_cycles pc
+        LEFT JOIN merchant m ON m.record_id = pc.merchant_record_id
+        WHERE  pc.id = ?
+    ");
+    $cycleStmt->execute([$cycleId]);
+    $cycle = $cycleStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$cycle) fail("Cycle not found.", 404);
+    if (!in_array($cycle['status'], ['open','locked'])) {
+        fail("Cycle is '{$cycle['status']}' — only open/locked cycles can be run.");
+    }
+
+    $orchestrator = new PipelineOrchestrator($conn);
+    $result       = $orchestrator->runStage($cycle, $stage, $body);
+
+    // runStage never throws — always returns a result array with success bool.
+    // Emit success:false for hard failures and waiting states so the React
+    // UI can display the right banner without reloading the full cycle list.
+    if (!($result['success'] ?? false)) {
+        http_response_code(200); // keep 200 — it's a business-logic outcome, not a server error
+        echo json_encode([
+            'success' => false,
+            'waiting' => $result['waiting'] ?? false,
+            'stage'   => $stage,
+            'error'   => $result['error']   ?? 'Stage did not complete.',
+            'message' => $result['message'] ?? $result['error'] ?? '',
+        ]);
+        exit;
+    }
+
+    ok([
+        'stage'   => $stage,
+        'waiting' => false,
+        'result'  => $result,
+        'message' => $result['message'] ?? '',
+    ]);
+}
+
+// =============================================================================
+//  get_options -- merchants + brokers for dropdowns
+// =============================================================================
+if ($action === 'get_options') {
+    $merchants = $conn->query("
+        SELECT record_id, merchant_id, merchant_name
+        FROM   merchant
+        WHERE  active_status = 1
+        ORDER  BY merchant_name ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $brokers = $conn->query("
+        SELECT broker_id, broker_name
+        FROM   broker_master
+        WHERE  is_active = 1
+        ORDER  BY broker_name ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    // Build merchant_id (varchar) → [broker_id, ...] map from merchant_brokers table.
+    // The JSX uses this to down-select the broker dropdown after merchant is chosen.
+    $mbRows = $conn->query("
+        SELECT merchant_id, broker_id
+        FROM   merchant_brokers
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $merchantBrokers = [];
+    foreach ($mbRows as $row) {
+        $merchantBrokers[$row['merchant_id']][] = $row['broker_id'];
+    }
+
+    ok(['merchants' => $merchants, 'brokers' => $brokers, 'merchant_brokers' => $merchantBrokers]);
 }
 
 // =============================================================================

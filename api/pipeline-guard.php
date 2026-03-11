@@ -76,12 +76,12 @@ function checkPipelineBlocked(PDO $conn, $merchantId, ?string $excludeBatchId = 
             o.batch_id,
             o.merchant_id,
             COUNT(*)                            AS inflight_count,
-            GROUP_CONCAT(DISTINCT o.status)     AS statuses,
-            MIN(o.created_at)                   AS oldest_order,
-            MAX(o.updated_at)                   AS last_updated
+            GROUP_CONCAT(DISTINCT o.status)     AS statuses
         FROM orders o
         WHERE o.merchant_id   = ?
-          AND o.status        IN ('approved','funded','placed','submitted')
+          AND o.status        IN ('approved','funded','placed','submitted','confirmed','executed')
+          AND o.batch_id      IS NOT NULL
+          AND o.batch_id      != ''
           {$excludeClause}
         GROUP BY o.batch_id, o.merchant_id
         ORDER BY o.batch_id
@@ -127,7 +127,8 @@ function buildBlockMessage(array $guard): string
     $count   = $guard['inflight_count'];
 
     return "Pipeline blocked: {$count} in-flight order(s) must settle before a new cycle "
-         . "can be opened. Blocking batch(es): {$batches}";
+         . "can be opened. Blocking batch(es): {$batches}. "
+         . "To override, pass force=true in the request.";
 }
 
 // ---------------------------------------------------------------------------

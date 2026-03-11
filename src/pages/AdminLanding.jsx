@@ -106,7 +106,7 @@ export default function AdminLanding() {
       bgColor: "#ecfeff",
     },
     {
-      to: "/pipeline",
+      to: "/pipeline-dashboard",
       label: "Pipeline Dashboard",
       icon: <SquareGanttChart size={32} />,
       color: "#6366f1",

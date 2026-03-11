@@ -410,6 +410,7 @@ class PrepareOrdersProcess
 
         // Step A — cancel stale pending orders (symbol removed from picks)
         try {
+            $merchantClauseA = $merchantId ? "AND o.merchant_id = " . $this->conn->quote($merchantId) : "";
             $cancelStaleStmt = $this->conn->prepare("
                 UPDATE orders o
                 LEFT JOIN member_stock_picks msp
@@ -419,6 +420,7 @@ class PrepareOrdersProcess
                 SET o.status = 'cancelled', o.updated_at = NOW()
                 WHERE LOWER(o.status) = 'pending'
                   AND msp.member_id IS NULL
+                  {$merchantClauseA}
             ");
             $cancelStaleStmt->execute();
             $cancelledStale = $cancelStaleStmt->rowCount();
@@ -435,6 +437,7 @@ class PrepareOrdersProcess
             $sweepPts = $this->sweepPointsExpr();
             $pcSub    = $this->pickCountSubquery();
 
+            $merchantClauseB = $merchantId ? "AND o.merchant_id = " . $this->conn->quote($merchantId) : "";
             $refreshStmt = $this->conn->prepare("
                 UPDATE orders o
                 JOIN wallet w
@@ -454,6 +457,7 @@ class PrepareOrdersProcess
                     o.batch_id    = ?,
                     o.updated_at  = NOW()
                 WHERE LOWER(o.status) = 'pending'
+                  {$merchantClauseB}
             ");
             $refreshStmt->execute([$batchId]);
             $refreshed = $refreshStmt->rowCount();

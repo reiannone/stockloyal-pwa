@@ -16,9 +16,17 @@ import { apiPost } from "../api";
 import {
   Activity, AlertCircle, AlertTriangle, ArrowRightLeft, CheckCircle2,
   ChevronDown, ChevronRight, Clock, CreditCard, ExternalLink, Filter,
-  Lock, Plus, RefreshCw, ShoppingBasket, TrendingUp, Unlock, X,
-  Zap, ClipboardCheck, Repeat2, Building2, Landmark,
+  Loader2, Lock, Play, Plus, RefreshCw, ShoppingBasket, TrendingUp,
+  Unlock, X, Zap, ClipboardCheck, Repeat2, Building2, Landmark,
 } from "lucide-react";
+
+// Inject spin keyframe for loading spinner (once)
+if (typeof document !== 'undefined' && !document.getElementById('__pc-spin-style')) {
+  const s = document.createElement('style');
+  s.id = '__pc-spin-style';
+  s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+  document.head.appendChild(s);
+}
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const fmt$ = v => new Intl.NumberFormat("en-US", {
@@ -37,8 +45,7 @@ const fmtDate = d => d ? new Date(d).toLocaleString() : "—";
 
 // ── Stage definitions ─────────────────────────────────────────────────────────
 const STAGES = [
-  { key: "baskets",    label: "Baskets",    icon: ShoppingBasket,  color: "#10b981", desc: "Loyalty point collection & basket build" },
-  { key: "orders",     label: "Orders",     icon: ClipboardCheck,  color: "#f59e0b", desc: "Order prepare & approval batch" },
+  { key: "baskets_orders", label: "Baskets & Orders", icon: ShoppingBasket, color: "#10b981", desc: "Loyalty baskets built & orders prepared, priced and approved" },
   { key: "payment",    label: "Payment",    icon: CreditCard,      color: "#06b6d4", desc: "Merchant ACH / bank payment initiated" },
   { key: "funding",    label: "Funding",    icon: Landmark,        color: "#8b5cf6", desc: "StockLoyal journal funding to member accounts" },
   { key: "journal",    label: "Journal",    icon: ArrowRightLeft,  color: "#ec4899", desc: "Journal entries recorded & reconciled" },
@@ -47,6 +54,18 @@ const STAGES = [
   { key: "execution",  label: "Execution",  icon: Activity,        color: "#f97316", desc: "Market orders filled by broker" },
   { key: "settlement", label: "Settlement", icon: CheckCircle2,    color: "#14b8a6", desc: "Trade settlement complete (T+1 / T+2)" },
 ];
+
+// stage key → { path, label, param? }
+const STAGE_LINKS = {
+  baskets_orders: { path: "/prepare-orders",       label: "Prepare Orders" },
+  payment:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
+  funding:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
+  journal:    { path: "/journal",              label: "Journal" },
+  placement:  { path: "/sweep",               label: "Sweep" },
+  submission: { path: "/broker-exec",          label: "Broker Exec" },
+  execution:  { path: "/broker-exec",          label: "Broker Exec" },
+  settlement: { path: "/broker-exec",          label: "Broker Exec" },
+};
 
 const STAGE_STATUS_COLORS = {
   pending:     { bg: "#f8fafc", fg: "#94a3b8", border: "#e2e8f0" },
@@ -116,11 +135,14 @@ function StageProgressBar({ cycle }) {
 }
 
 // ── Cycle card (open / locked) ────────────────────────────────────────────────
-function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
-  const [expanded, setExpanded] = useState(false);
-  const [advancing, setAdvancing] = useState(null);
+function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate }) {
+  const [expanded,    setExpanded]    = useState(false);
+  const [advancing,   setAdvancing]   = useState(null);  // stage key being manually advanced
+  const [running,     setRunning]     = useState(null);  // stage key being orchestrated
+  const [runResults,  setRunResults]  = useState({});    // stage key → last run result
 
   const statusCol = CYCLE_STATUS_COLORS[cycle.status] || CYCLE_STATUS_COLORS.open;
+  const isActive  = ['open', 'locked'].includes(cycle.status);
 
   const handleAdvance = async (stageKey, stageStatus) => {
     setAdvancing(stageKey);
@@ -128,6 +150,19 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
       await onAdvance(cycle.id, stageKey, stageStatus);
     } finally {
       setAdvancing(null);
+    }
+  };
+
+  const handleRun = async (stageKey) => {
+    setRunning(stageKey);
+    setRunResults(r => ({ ...r, [stageKey]: null })); // clear previous
+    try {
+      const res = await onRun(cycle.id, stageKey);
+      setRunResults(r => ({ ...r, [stageKey]: res }));
+    } catch (e) {
+      setRunResults(r => ({ ...r, [stageKey]: { success: false, waiting: false, error: e.message, message: e.message } }));
+    } finally {
+      setRunning(null);
     }
   };
 
@@ -160,7 +195,7 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
           </div>
           <div>
             <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "#fff" }}>
-              {cycle.merchant_name || cycle.merchant_id_str || `Merchant #${cycle.merchant_record_id}`}
+              {cycle.merchant_name || `Merchant #${cycle.merchant_id}`}
             </div>
             <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.65)", marginTop: 2 }}>
               {cycle.broker_name || `Broker #${cycle.broker_id}`}
@@ -210,12 +245,12 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
         background: "#fafafa",
       }}>
         {[
-          { label: "Total Orders", value: fmtN(cycle.orders_total), color: "#374151" },
-          { label: "Settled",      value: fmtN(cycle.orders_settled), color: "#059669" },
-          { label: "In Flight",    value: fmtN((+cycle.orders_approved||0) + (+cycle.orders_funded||0) + (+cycle.orders_placed||0) + (+cycle.orders_submitted||0)), color: "#d97706" },
-          { label: "Failed",       value: fmtN(cycle.orders_failed), color: cycle.orders_failed > 0 ? "#dc2626" : "#94a3b8" },
-          { label: "Amount",       value: fmt$(cycle.amount_total), color: "#1d4ed8" },
-          { label: "Settled $",    value: fmt$(cycle.amount_settled), color: "#059669" },
+          { label: "Total Baskets", value: fmtN(cycle.baskets_total), color: "#374151" },
+          { label: "Total Orders",  value: fmtN(cycle.orders_total),  color: "#374151" },
+          { label: "In Flight",     value: fmtN((+cycle.orders_approved||0) + (+cycle.orders_funded||0) + (+cycle.orders_placed||0) + (+cycle.orders_submitted||0)), color: "#d97706" },
+          { label: "Failed",        value: fmtN(cycle.orders_failed), color: cycle.orders_failed > 0 ? "#dc2626" : "#94a3b8" },
+          { label: "Amount",        value: fmt$(cycle.amount_total),  color: "#1d4ed8" },
+          { label: "Settled $",     value: fmt$(cycle.amount_settled), color: "#059669" },
         ].map(stat => (
           <div key={stat.label}>
             <div style={{ fontSize: "0.6rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{stat.label}</div>
@@ -245,26 +280,45 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
             {STAGES.map(stg => {
-              const stageStatus = cycle[`stage_${stg.key}`] || 'pending';
+              // Combined baskets_orders: derive status from worst of the two DB stages
+              const isCombined = stg.key === 'baskets_orders';
+              const stageStatus = isCombined
+                ? (() => {
+                    const b = cycle.stage_baskets || 'pending';
+                    const o = cycle.stage_orders  || 'pending';
+                    const rank = { failed: 0, blocked: 1, in_progress: 2, pending: 3, skipped: 4, completed: 5 };
+                    // return worst status (lowest rank), but if baskets done show orders status
+                    if (b === 'completed') return o;
+                    return (rank[b] ?? 3) <= (rank[o] ?? 3) ? b : o;
+                  })()
+                : cycle[`stage_${stg.key}`] || 'pending';
+
               const col   = STAGE_STATUS_COLORS[stageStatus];
               const Icon  = stg.icon;
               const isAdv = advancing === stg.key;
+              const isRun = running   === stg.key;
+              const runResult = runResults[stg.key];
 
+              // Manual status-advance actions (always available regardless of orchestrator)
               const NEXT_ACTIONS = {
                 pending:     [['in_progress', 'Start'], ['skipped', 'Skip']],
-                in_progress: [['completed', 'Complete'], ['failed', 'Mark Failed'], ['blocked', 'Block']],
-                blocked:     [['in_progress', 'Unblock'], ['failed', 'Mark Failed']],
+                in_progress: [['completed', 'Done'], ['failed', 'Failed'], ['blocked', 'Block']],
+                blocked:     [['in_progress', 'Unblock'], ['failed', 'Failed']],
                 failed:      [['in_progress', 'Retry'], ['skipped', 'Skip']],
                 completed:   [],
                 skipped:     [['pending', 'Reset']],
               };
-              const actions = NEXT_ACTIONS[stageStatus] || [];
+              const manualActions = NEXT_ACTIONS[stageStatus] || [];
+
+              // Run button: show for any non-terminal stage on active cycles
+              const canRun = isActive && !['completed', 'skipped'].includes(stageStatus);
 
               return (
                 <div key={stg.key} style={{
                   borderRadius: 9, border: `1px solid ${col.border}`,
                   background: col.bg, padding: "10px 12px",
                 }}>
+                  {/* Stage header row */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <Icon size={13} color={stg.color} />
@@ -272,30 +326,149 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
                     </div>
                     <StagePill stageKey={stg.key} status={stageStatus} />
                   </div>
+
+                  {/* Description */}
                   <div style={{ fontSize: "0.63rem", color: "#6b7280", marginBottom: 8, lineHeight: 1.4 }}>{stg.desc}</div>
 
-                  {/* Timestamp */}
-                  {(cycle[`${stg.key}_started_at`] || cycle[`${stg.key}_completed_at`]) && (
-                    <div style={{ fontSize: "0.62rem", color: "#94a3b8", marginBottom: 6 }}>
-                      {cycle[`${stg.key}_started_at`] && <div>▶ {fmtDate(cycle[`${stg.key}_started_at`])}</div>}
-                      {cycle[`${stg.key}_completed_at`] && <div>✓ {fmtDate(cycle[`${stg.key}_completed_at`])}</div>}
+                  {/* Combined sub-status badges */}
+                  {isCombined && (
+                    <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                      {[["Baskets", cycle.stage_baskets], ["Orders", cycle.stage_orders]].map(([lbl, s]) => {
+                        const sc = STAGE_STATUS_COLORS[s || "pending"];
+                        return (
+                          <span key={lbl} style={{
+                            fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4,
+                            background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg,
+                          }}>{lbl}: {s || "pending"}</span>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* Action buttons */}
-                  {actions.length > 0 && (
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {actions.map(([nextStatus, btnLabel]) => (
+                  {/* Timestamps */}
+                  {isCombined ? (
+                    (cycle.baskets_started_at || cycle.orders_completed_at) && (
+                      <div style={{ fontSize: "0.62rem", color: "#94a3b8", marginBottom: 6 }}>
+                        {cycle.baskets_started_at  && <div>▶ {fmtDate(cycle.baskets_started_at)}</div>}
+                        {cycle.orders_completed_at && <div>✓ {fmtDate(cycle.orders_completed_at)}</div>}
+                      </div>
+                    )
+                  ) : (
+                  (cycle[`${stg.key}_started_at`] || cycle[`${stg.key}_completed_at`]) && (
+                    <div style={{ fontSize: "0.62rem", color: "#94a3b8", marginBottom: 6 }}>
+                      {cycle[`${stg.key}_started_at`]   && <div>▶ {fmtDate(cycle[`${stg.key}_started_at`])}</div>}
+                      {cycle[`${stg.key}_completed_at`] && <div>✓ {fmtDate(cycle[`${stg.key}_completed_at`])}</div>}
+                    </div>
+                  )
+                  )}
+
+                  {/* Always-visible deep-link */}
+                  {STAGE_LINKS[stg.key] && (() => {
+                    const lnk = STAGE_LINKS[stg.key];
+                    const qs  = lnk.param ? lnk.param(cycle) : '';
+                    return (
+                      <button
+                        onClick={() => navigate(lnk.path + qs)}
+                        style={{
+                          marginTop: 6, padding: "2px 7px", borderRadius: 5,
+                          fontSize: "0.62rem", fontWeight: 600, cursor: "pointer",
+                          background: "transparent", border: "1px solid #e2e8f0",
+                          color: "#94a3b8",
+                          display: "inline-flex", alignItems: "center", gap: 3,
+                        }}
+                      >
+                        <ExternalLink size={9} /> {lnk.label}
+                      </button>
+                    );
+                  })()}
+
+                  {/* ── RUN button (orchestrator) ── */}
+                  {canRun && (
+                    <div style={{ marginBottom: manualActions.length ? 6 : 0 }}>
+                      <button
+                        disabled={isRun || !!running || !!advancing}
+                        onClick={() => handleRun(stg.key)}
+                        style={{
+                          width: "100%", padding: "5px 0", borderRadius: 6,
+                          fontSize: "0.72rem", fontWeight: 700, cursor: (isRun || running || advancing) ? "not-allowed" : "pointer",
+                          background: isRun ? "#e0e7ff" : stg.color,
+                          color: isRun ? "#4338ca" : "#fff",
+                          border: "none",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                          opacity: (!isRun && (running || advancing)) ? 0.5 : 1,
+                        }}
+                      >
+                        {isRun
+                          ? <><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> Running…</>
+                          : <><Play size={11} /> Run {stg.label}</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── Run result panel ── */}
+                  {runResult && (
+                    <div style={{
+                      marginBottom: manualActions.length ? 6 : 0,
+                      padding: "6px 8px", borderRadius: 6,
+                      background: runResult.success ? "#f0fdf4" : runResult.waiting ? "#fffbeb" : "#fef2f2",
+                      border: `1px solid ${runResult.success ? "#bbf7d0" : runResult.waiting ? "#fde68a" : "#fecaca"}`,
+                      fontSize: "0.63rem",
+                      color:  runResult.success ? "#15803d" : runResult.waiting ? "#92400e" : "#dc2626",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 4, lineHeight: 1.4 }}>
+                        {runResult.success
+                          ? <CheckCircle2 size={10} style={{ flexShrink: 0, marginTop: 1 }} />
+                          : runResult.waiting
+                            ? <Clock size={10} style={{ flexShrink: 0, marginTop: 1 }} />
+                            : <AlertCircle size={10} style={{ flexShrink: 0, marginTop: 1 }} />}
+                        <span>{runResult.message || runResult.error}</span>
+                      </div>
+                      {/* Key metrics from result */}
+                      {runResult.success && runResult.result && (() => {
+                        const r = runResult.result;
+                        const pills = [
+                          r.eligible_members && `${r.eligible_members} eligible`,
+                          r.orders_created  && `${r.orders_created} created`,
+                          r.orders_skipped  && `${r.orders_skipped} skipped`,
+                          r.orders_flagged  && `${r.orders_flagged} flagged`,
+                          r.orders_approved && `${r.orders_approved} approved`,
+                          r.batch_id        && `Batch: ${r.batch_id}`,
+                          r.members_funded  && `${r.members_funded} members`,
+                          r.journals_created && `${r.journals_created} journals`,
+                          r.orders_placed   && `${r.orders_placed} placed`,
+                          r.orders_executed && `${r.orders_executed} executed`,
+                          r.orders_settled  && `${r.orders_settled} settled`,
+                          r.total_amount    && `$${Number(r.total_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                        ].filter(Boolean);
+                        return pills.length > 0 ? (
+                          <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>
+                            {pills.map((p, i) => (
+                              <span key={i} style={{ background: "rgba(0,0,0,0.07)", padding: "1px 5px", borderRadius: 4 }}>{p}</span>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
+                      {runResult.waiting && (
+                        <div style={{ marginTop: 3, opacity: 0.75 }}>Re-run to check again.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Manual advance buttons (secondary) ── */}
+                  {manualActions.length > 0 && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {manualActions.map(([nextStatus, btnLabel]) => (
                         <button
                           key={nextStatus}
-                          disabled={isAdv}
+                          disabled={isAdv || !!running}
                           onClick={() => handleAdvance(stg.key, nextStatus)}
                           style={{
-                            padding: "3px 9px", borderRadius: 6, fontSize: "0.68rem", fontWeight: 600,
-                            cursor: isAdv ? "not-allowed" : "pointer",
-                            border: `1px solid ${stg.color}40`,
-                            background: stg.color + "15",
-                            color: stg.color,
+                            padding: "2px 7px", borderRadius: 5, fontSize: "0.62rem", fontWeight: 600,
+                            cursor: (isAdv || running) ? "not-allowed" : "pointer",
+                            border: `1px solid ${stg.color}35`,
+                            background: "transparent",
+                            color: "#6b7280",
+                            opacity: (isAdv || running) ? 0.5 : 0.8,
                           }}
                         >
                           {isAdv ? "…" : btnLabel}
@@ -351,10 +524,12 @@ function CycleCard({ cycle, onAdvance, onClose, onRefreshCounts }) {
   );
 }
 
-// ── Open-cycle modal ──────────────────────────────────────────────────────────
+// ── Open-cycle modal ─────────────────────────────────────────────────────────
 function OpenCycleModal({ onOpen, onClose }) {
-  // merchant_record_id = merchant.record_id (INT)
-  // broker_id          = broker_master.broker_id (VARCHAR)
+  const [merchants,        setMerchants]        = useState([]);
+  const [brokers,          setBrokers]          = useState([]);
+  const [merchantBrokers,  setMerchantBrokers]  = useState({}); // merchant_id (varchar) → [broker_id]
+  const [optLoading,       setOptLoading]       = useState(true);
   const [merchantRecordId, setMerchantRecordId] = useState('');
   const [brokerId,         setBrokerId]         = useState('');
   const [fundingMethod,    setFundingMethod]    = useState('plaid');
@@ -362,11 +537,46 @@ function OpenCycleModal({ onOpen, onClose }) {
   const [busy,             setBusy]             = useState(false);
   const [err,              setErr]              = useState(null);
 
+  // Load merchants + brokers on mount
+  useEffect(() => {
+    apiPost("pipeline-cycles.php", { action: "get_options" })
+      .then(res => {
+        if (res?.success) {
+          setMerchants(res.merchants || []);
+          setBrokers(res.brokers || []);
+          setMerchantBrokers(res.merchant_brokers || {});
+        }
+      })
+      .finally(() => setOptLoading(false));
+  }, []);
+
+  // Derive which brokers are available for the selected merchant.
+  // Falls back to all active brokers if no merchant_brokers row exists (e.g. new merchant).
+  const selectedMerchant = merchants.find(x => String(x.record_id) === String(merchantRecordId));
+  const linkedBrokerIds  = selectedMerchant ? (merchantBrokers[selectedMerchant.merchant_id] ?? null) : null;
+  const filteredBrokers  = linkedBrokerIds
+    ? brokers.filter(b => linkedBrokerIds.includes(b.broker_id))
+    : brokers; // no merchant selected yet — show all (placeholder state)
+
+  // Auto-generate label when merchant or broker selection changes
+  useEffect(() => {
+    const m = merchants.find(x => String(x.record_id) === String(merchantRecordId));
+    const b = brokers.find(x => x.broker_id === brokerId);
+    if (m && b) {
+      const d   = new Date();
+      const mon = d.toLocaleString('en-US', { month: 'short' });
+      const yr  = d.getFullYear();
+      setLabel(`${m.merchant_name} – ${b.broker_name} – ${mon} ${yr}`);
+    } else {
+      setLabel('');
+    }
+  }, [merchantRecordId, brokerId, merchants, brokers]);
+
   const handleSubmit = async () => {
-    if (!merchantRecordId || !brokerId.trim()) return setErr("Merchant record_id and Broker ID are required.");
+    if (!merchantRecordId || !brokerId) return setErr("Please select a merchant and broker.");
     setBusy(true); setErr(null);
     try {
-      await onOpen({ merchantRecordId, brokerId: brokerId.trim(), fundingMethod, label });
+      await onOpen({ merchantRecordId, brokerId, fundingMethod, label });
       onClose();
     } catch (e) {
       setErr(e.message || "Failed to open cycle.");
@@ -375,10 +585,13 @@ function OpenCycleModal({ onOpen, onClose }) {
     }
   };
 
-  const inputStyle = {
+  const selectStyle = {
     width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid #d1d5db",
-    fontSize: "0.85rem", outline: "none", boxSizing: "border-box",
+    fontSize: "0.85rem", outline: "none", boxSizing: "border-box", background: "#fff",
+    cursor: "pointer",
   };
+  const inputStyle  = { ...selectStyle, cursor: "text" };
+  const labelStyle  = { fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: 5 };
 
   return (
     <div style={{
@@ -386,7 +599,7 @@ function OpenCycleModal({ onOpen, onClose }) {
       display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
     }}>
       <div style={{
-        background: "#fff", borderRadius: 14, width: "100%", maxWidth: 440,
+        background: "#fff", borderRadius: 14, width: "100%", maxWidth: 460,
         boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
       }}>
         {/* Header */}
@@ -412,58 +625,98 @@ function OpenCycleModal({ onOpen, onClose }) {
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: 5 }}>
-                Merchant record_id <span style={{ color: "#94a3b8", fontWeight: 400 }}>(merchant.record_id INT)</span> *
-              </label>
-              <input
-                type="number"
-                value={merchantRecordId}
-                onChange={e => setMerchantRecordId(e.target.value)}
-                placeholder="e.g. 3"
-                style={inputStyle}
-              />
+          {optLoading ? (
+            <div style={{ textAlign: "center", padding: "28px 0", color: "#94a3b8", fontSize: "0.82rem" }}>
+              <RefreshCw size={20} style={{ animation: "spin 1s linear infinite", display: "block", margin: "0 auto 10px" }} />
+              Loading merchants & brokers…
             </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-            <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: 5 }}>
-                Broker ID <span style={{ color: "#94a3b8", fontWeight: 400 }}>(broker_master.broker_id VARCHAR)</span> *
-              </label>
-              <input
-                type="text"
-                value={brokerId}
-                onChange={e => setBrokerId(e.target.value)}
-                placeholder="e.g. alpaca"
-                style={inputStyle}
-              />
-            </div>
+              {/* Merchant */}
+              <div>
+                <label style={labelStyle}>Merchant *</label>
+                <select
+                  value={merchantRecordId}
+                  onChange={e => { setMerchantRecordId(e.target.value); setBrokerId(''); }}
+                  style={selectStyle}
+                >
+                  <option value="">— Select merchant —</option>
+                  {merchants.map(m => (
+                    <option key={m.record_id} value={m.record_id}>
+                      {m.merchant_name} ({m.merchant_id})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: 5 }}>
-                Funding Method
-              </label>
-              <select value={fundingMethod} onChange={e => setFundingMethod(e.target.value)} style={inputStyle}>
-                <option value="plaid">Plaid ACH</option>
-                <option value="csv">CSV Upload</option>
-                <option value="manual">Manual</option>
-                <option value="wire">Wire Transfer</option>
-              </select>
-            </div>
+              {/* Broker — filtered to linked brokers once merchant is selected */}
+              <div>
+                <label style={labelStyle}>
+                  Broker *
+                  {merchantRecordId && linkedBrokerIds && (
+                    <span style={{ color: "#6b7280", fontWeight: 400, marginLeft: 6 }}>
+                      ({filteredBrokers.length} linked)
+                    </span>
+                  )}
+                </label>
+                {merchantRecordId && linkedBrokerIds && filteredBrokers.length === 0 ? (
+                  <div style={{
+                    padding: "8px 10px", borderRadius: 7, fontSize: "0.82rem",
+                    background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e",
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    <AlertTriangle size={13} />
+                    No brokers linked to this merchant. Add a row to <code>merchant_brokers</code> first.
+                  </div>
+                ) : (
+                  <select
+                    value={brokerId}
+                    onChange={e => setBrokerId(e.target.value)}
+                    style={{ ...selectStyle, ...(!merchantRecordId ? { color: "#9ca3af" } : {}) }}
+                    disabled={!merchantRecordId}
+                  >
+                    <option value="">
+                      {merchantRecordId ? "— Select broker —" : "— Select merchant first —"}
+                    </option>
+                    {filteredBrokers.map(b => (
+                      <option key={b.broker_id} value={b.broker_id}>
+                        {b.broker_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
-            <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#374151", display: "block", marginBottom: 5 }}>
-                Cycle Label <span style={{ color: "#94a3b8", fontWeight: 400 }}>(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={label}
-                onChange={e => setLabel(e.target.value)}
-                placeholder="e.g. March W1 2026"
-                style={inputStyle}
-              />
+              {/* Funding Method */}
+              <div>
+                <label style={labelStyle}>Funding Method</label>
+                <select value={fundingMethod} onChange={e => setFundingMethod(e.target.value)} style={selectStyle}>
+                  <option value="plaid">Plaid ACH</option>
+                  <option value="csv">CSV Upload</option>
+                  <option value="manual">Manual</option>
+                  <option value="wire">Wire Transfer</option>
+                </select>
+              </div>
+
+              {/* Cycle Label — auto-generated, editable */}
+              <div>
+                <label style={labelStyle}>
+                  Cycle Label
+                  <span style={{ color: "#94a3b8", fontWeight: 400, marginLeft: 4 }}>(auto-generated · editable)</span>
+                </label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={e => setLabel(e.target.value)}
+                  placeholder="Select merchant & broker to auto-fill"
+                  style={inputStyle}
+                />
+              </div>
+
+
             </div>
-          </div>
+          )}
 
           <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button
@@ -475,10 +728,10 @@ function OpenCycleModal({ onOpen, onClose }) {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={busy}
+              disabled={busy || optLoading}
               style={{ padding: "8px 18px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 700,
-                       background: busy ? "#d1fae5" : "#059669", color: "#fff",
-                       border: "none", cursor: busy ? "not-allowed" : "pointer" }}
+                       background: (busy || optLoading) ? "#d1fae5" : "#059669", color: "#fff",
+                       border: "none", cursor: (busy || optLoading) ? "not-allowed" : "pointer" }}
             >
               {busy ? "Opening…" : "Open Cycle"}
             </button>
@@ -488,7 +741,6 @@ function OpenCycleModal({ onOpen, onClose }) {
     </div>
   );
 }
-
 // ── History table ─────────────────────────────────────────────────────────────
 function HistoryTable({ cycles }) {
   if (!cycles?.length) return (
@@ -521,7 +773,7 @@ function HistoryTable({ cycles }) {
               >
                 <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#64748b" }}>#{c.id}</td>
                 <td style={{ padding: "8px 12px", fontWeight: 700, color: "#1e293b" }}>
-                  {c.merchant_name || c.merchant_id_str || `M#${c.merchant_record_id}`}
+                  {c.merchant_name || `M#${c.merchant_id}`}
                 </td>
                 <td style={{ padding: "8px 12px", color: "#374151" }}>
                   {c.broker_name || `B#${c.broker_id}`}
@@ -609,7 +861,11 @@ export default function PipelineCyclesAdmin() {
       action: "open", merchant_record_id: merchantRecordId, broker_id: brokerId,
       funding_method: fundingMethod, label,
     });
-    if (!res?.success) throw new Error(res?.error || "Failed");
+    if (!res?.success) {
+      const err = new Error(res?.error || "Failed");
+      err.blocked = res?.blocked === true;
+      throw err;
+    }
     showToast(res.message || "Cycle opened.");
     load(true);
   };
@@ -621,6 +877,21 @@ export default function PipelineCyclesAdmin() {
     if (!res?.success) { showToast(res?.error || "Failed to advance stage.", "error"); return; }
     showToast(`Stage '${stage}' → ${stageStatus}.`);
     load(true);
+  };
+
+  // Orchestrated stage execution — returns result for inline display in CycleCard
+  const handleRunStage = async (cycleId, stage) => {
+    const res = await apiPost("pipeline-cycles.php", {
+      action: "run_stage", cycle_id: cycleId, stage,
+    });
+    // Reload cycle data after any run (success or failure)
+    load(true);
+    if (!res?.success && !res?.waiting) {
+      showToast(res?.error || `Stage '${stage}' failed.`, "error");
+    } else if (res?.success) {
+      showToast(res?.message || `Stage '${stage}' completed.`);
+    }
+    return res;
   };
 
   const handleClose = async (cycleId, newStatus) => {
@@ -760,8 +1031,10 @@ export default function PipelineCyclesAdmin() {
                     key={c.id}
                     cycle={c}
                     onAdvance={handleAdvanceStage}
+                    onRun={handleRunStage}
                     onClose={handleClose}
                     onRefreshCounts={handleRefreshCounts}
+                    navigate={navigate}
                   />
                 ))}
               </div>
