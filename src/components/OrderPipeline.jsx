@@ -24,7 +24,7 @@ import {
 export const PIPELINE_STEPS = [
   { step: 1, key: "prepare",   to: "/prepare-orders",      label: "Prepare Orders",   sub: "Stage baskets",       icon: ClipboardCheck, color: "#8b5cf6" },
   { step: 2, key: "payment",   to: "/payments-processing", label: "Fund IB Sweep",    sub: "Merchant → SL Sweep", icon: CreditCard,     color: "#f59e0b" },
-  { step: 3, key: "journal",   to: "/journal",             label: "Journal Funds",    sub: "SL Sweep → Members",  icon: ArrowRightLeft, color: "#10b981" },
+  { step: 3, key: "journal",   to: "/journal-admin",             label: "Journal Funds",    sub: "SL Sweep → Members",  icon: ArrowRightLeft, color: "#10b981" },
   { step: 4, key: "sweep",     to: "/sweep",               label: "Order Sweep",      sub: "Submit to broker",    icon: Repeat2,        color: "#6366f1" },
   { step: 5, key: "execution", to: "/broker-exec",         label: "Broker Execution", sub: "Confirm trades",      icon: Zap,            color: "#3b82f6" },
 ];

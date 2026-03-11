@@ -58,11 +58,11 @@ const STAGES = [
 
 // stage key → { path, label, param? }
 const STAGE_LINKS = {
-  baskets_orders: { path: "/prepare-orders", label: "Prepare Orders", param: c => `?merchant_id=${encodeURIComponent(c.merchant_id_str || '')}&broker_id=${encodeURIComponent(c.broker_id || '')}` },
+  baskets_orders: { path: "/prepare-orders",   label: "Prepare Orders", param: c => `?merchant_id=${encodeURIComponent(c.merchant_id_str || '')}&broker_id=${encodeURIComponent(c.broker_id || '')}` },
   payment:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
   funding:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
-  journal:    { path: "/journal",              label: "Journal" },
-  placement:  { path: "/sweep",               label: "Sweep" },
+  journal:    { path: "/journal-admin",        label: "Journal" },
+  placement:  { path: "/sweep",                label: "Sweep" },
   submission: { path: "/broker-exec",          label: "Broker Exec" },
   execution:  { path: "/broker-exec",          label: "Broker Exec" },
   settlement: { path: "/broker-exec",          label: "Broker Exec" },
