@@ -1,63 +1,70 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 BACKEND Step 1: SINGLE Endpoint PHP: PowerShell Use this exact working script:
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-prepare_orders_guard_patch.php
-
+prepare_orders_process.php
 
 # 1. Path to your PEM key
 $KEY = "C:\Users\reian\.ssh\stockloyal-pwa-key-pair.pem"
 
 # 2. Local file to upload
-$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\prepare_orders_guard_patch.php"
+$SRC = "C:\xampp\htdocs\stockloyal-pwa\api\prepare_orders_process.php"
 
 # 3. EC2 Host (rename variable so we avoid conflict with $Host)
 $EC2 = "ec2-user@3.150.49.91"
 
 # 4. Destination on remote server
-$DEST = "/home/ec2-user/prepare_orders_guard_patch.php"
+$DEST = "/home/ec2-user/prepare_orders_process.php"
 
 # 5. Upload using scp — THIS WORKS IN POWERSHELL
 scp -i $KEY "$SRC" "${EC2}:${DEST}"
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 BACKEND Step 2: After SINGLE upload, SSH into EC2: (AWS EC2 Connection)
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-sudo mv /home/ec2-user/prepare_orders_guard_patch.php /var/www/html/api/prepare_orders_guard_patch.php
-sudo chown apache:apache /var/www/html/api/prepare_orders_guard_patch.php
-sudo chmod 644 /var/www/html/api/prepare_orders_guard_patch.php
+sudo mv /home/ec2-user/prepare_orders_process.php /var/www/html/api/prepare_orders_process.php
+sudo chown apache:apache /var/www/html/api/prepare_orders_process.php
+sudo chmod 644 /var/www/html/api/prepare_orders_process.php
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 MySQL Commands in AWS EC2
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com \
       -u admin \
       -p'StockLoyal2025!' \
       stockloyal
 
-
 mysql -h stockloyal-db.ctms60ci403w.us-east-2.rds.amazonaws.com -u admin -p stockloyal \
-  -e "SELECT * FROM faq ORDER BY sort_order\G" \
-  > /home/ec2-user/faq_export.txt
+  -e "SELECT * FROM faq ORDER BY sort_order\G" \
+  > /home/ec2-user/faq_export.txt
 
 DELETE FROM orders;
 DELETE FROM prepared_orders;
 DELETE FROM prepare_batches;
 DELETE FROM basket;
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ALPACA FUNDING FIRM SWEEP ACCOUNT 
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Check current firm sweep balance first
 
 Acc ID: 69a54fa7-cbee-37a0-bea2-1af5a4bcada6
 curl -s -X GET "https://broker-api.sandbox.alpaca.markets/v1/trading/accounts/69a54fa7-cbee-37a0-bea2-1af5a4bcada6/account" \
-  -u "8LGAsimulate-merchant-funding
+  -u "8LGAsimulate-merchant-funding
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Robot Execution NPX Commands
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 npx cross-env ROBOT_COUNT=1 ROBOT_API=https://api.stockloyal.com/api ROBOT_MERCHANT=merchant001 ROBOT_SLOW=3000 npx playwright test onboarding-robot.spec.js --headed --workers=1
-

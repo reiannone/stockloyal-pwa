@@ -160,7 +160,7 @@ class PipelineOrchestrator
 
     private function runBaskets(array $cycle): array
     {
-        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         $res = $this->internalPost('prepare_orders.php', [
             'action'      => 'preview',
@@ -204,7 +204,7 @@ class PipelineOrchestrator
      */
     private function runOrders(array $cycle, int $cycleId): array
     {
-        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         // ── Step 1: prepare ──────────────────────────────────────────────────
         $prep = $this->internalPost('prepare_orders.php', [
@@ -265,7 +265,7 @@ class PipelineOrchestrator
      */
     private function runPayment(array $cycle): array
     {
-        $mid    = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid    = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
         $broker = $cycle['broker_id'];
         $method = $cycle['funding_method'] ?? 'manual';
 
@@ -325,7 +325,7 @@ class PipelineOrchestrator
     private function runFunding(array $cycle): array
     {
         $batchId = $cycle['batch_id'] ?? null;
-        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         if (!$batchId) {
             throw new \Exception(
@@ -379,7 +379,7 @@ class PipelineOrchestrator
     private function runJournal(array $cycle): array
     {
         $batchId = $cycle['batch_id'] ?? null;
-        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         // Scope to this batch's members (approved + paid)
         if ($batchId) {
@@ -439,7 +439,7 @@ class PipelineOrchestrator
      */
     private function runPlacement(array $cycle): array
     {
-        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         $res = $this->internalPost('trigger_sweep.php', [
             'action'      => 'run',
@@ -464,7 +464,7 @@ class PipelineOrchestrator
      */
     private function runSubmission(array $cycle): array
     {
-        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         $res = $this->internalPost('broker-execute.php', [
             'action'      => 'execute_merchant',
@@ -507,7 +507,7 @@ class PipelineOrchestrator
     private function runExecution(array $cycle): array
     {
         $batchId = $cycle['batch_id'] ?? null;
-        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         $where = $batchId ? "batch_id = ?" : "merchant_id = ?";
         $param = $batchId ?? $mid;
@@ -566,7 +566,7 @@ class PipelineOrchestrator
     private function runSettlement(array $cycle): array
     {
         $batchId = $cycle['batch_id'] ?? null;
-        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id'] ?? '';
+        $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
         if ($batchId) {
             $stmt = $this->conn->prepare("

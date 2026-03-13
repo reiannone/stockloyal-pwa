@@ -200,8 +200,8 @@ export default function AlpacaBrokerAdmin() {
     if (!journalFilter) return true;
     const q = journalFilter.toLowerCase();
     return (j.id || "").toLowerCase().includes(q)
-      || (j.from_account_id || "").toLowerCase().includes(q)
-      || (j.to_account_id || "").toLowerCase().includes(q)
+      || (j.from_account || j.from_account_id || "").toLowerCase().includes(q)
+      || (j.to_account || j.to_account_id || "").toLowerCase().includes(q)
       || (j.entry_type || "").toLowerCase().includes(q)
       || (j.status || "").toLowerCase().includes(q);
   });
@@ -649,7 +649,7 @@ export default function AlpacaBrokerAdmin() {
                   <th>Type</th>
                   <th style={{ textAlign: "right" }}>Amount</th>
                   <th>Status</th>
-                  <th>Entry Date</th>
+                  <th>Settle Date</th>
                   <th></th>
                 </tr>
               </thead>
@@ -663,8 +663,8 @@ export default function AlpacaBrokerAdmin() {
                       onClick={() => setExpandedRow(expandedRow === j.id ? null : j.id)}
                     >
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{j.id}</td>
-                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{j.from_account_id}</td>
-                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{j.to_account_id}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{j.from_account || j.from_account_id || "—"}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{j.to_account || j.to_account_id || "—"}</td>
                       <td>{j.entry_type || "—"}</td>
                       <td style={{ textAlign: "right" }}>{fmt$(j.net_amount ?? j.amount)}</td>
                       <td><StatusPill status={j.status} /></td>
@@ -683,7 +683,7 @@ export default function AlpacaBrokerAdmin() {
                               ["Description", j.description],
                               ["System Date", fmtDate(j.system_date)],
                               ["Settle Date", fmtDate(j.settle_date)],
-                              ["Entry Date", fmtDate(j.entry_date)],
+                              ["Entry Date", fmtDate(j.entry_date || j.settle_date)],
                             ].map(([label, val]) => (
                               <div key={label}>
                                 <div style={{ fontSize: "0.7rem", color: "#6b7280", textTransform: "uppercase" }}>{label}</div>

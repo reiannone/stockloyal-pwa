@@ -245,47 +245,5 @@ try {
 
 } catch (Throwable $e) {
     error_log('[pipeline-status] ' . $e->getMessage());
-
-    // ── Per-merchant batch pipeline status ───────────────────────────────────
-    // Shows each merchant's active batch and how far it has progressed
-    $merchantBatches = q($conn,
-        "SELECT
-            o.merchant_id,
-            o.batch_id,
-            COUNT(*) AS total_orders,
-            COALESCE(SUM(o.amount), 0) AS total_amount,
-            SUM(CASE WHEN o.status = 'approved'  THEN 1 ELSE 0 END) AS cnt_approved,
-            SUM(CASE WHEN o.status = 'funded'    THEN 1 ELSE 0 END) AS cnt_funded,
-            SUM(CASE WHEN o.status = 'placed'    THEN 1 ELSE 0 END) AS cnt_placed,
-            SUM(CASE WHEN o.status = 'submitted' THEN 1 ELSE 0 END) AS cnt_submitted,
-            SUM(CASE WHEN o.status = 'settled'   THEN 1 ELSE 0 END) AS cnt_settled,
-            SUM(CASE WHEN o.status IN ('failed','cancelled') THEN 1 ELSE 0 END) AS cnt_failed,
-            MIN(o.placed_at) AS batch_started_at,
-            MAX(o.executed_at) AS last_executed_at
-         FROM orders o
-         WHERE o.batch_id IS NOT NULL
-           AND o.status NOT IN ('settled','cancelled','failed')
-         GROUP BY o.merchant_id, o.batch_id
-         ORDER BY o.merchant_id, o.batch_id"
-    );
-
-    // Determine the dominant stage for each merchant batch
-    foreach ($merchantBatches as &$mb) {
-        $total = (int)$mb['total_orders'];
-        if ($total === 0) { $mb['current_stage'] = 'settled'; continue; }
-        if ((int)$mb['cnt_submitted'] > 0) $mb['current_stage'] = 'execution';
-        elseif ((int)$mb['cnt_placed'] > 0) $mb['current_stage'] = 'sweep';
-        elseif ((int)$mb['cnt_funded'] > 0) $mb['current_stage'] = 'journal';
-        elseif ((int)$mb['cnt_approved'] > 0) $mb['current_stage'] = 'payment';
-        else $mb['current_stage'] = 'prepare';
-
-        $mb['pct_settled'] = $total > 0
-            ? round(((int)$mb['cnt_settled'] / $total) * 100)
-            : 0;
-        $mb['is_complete'] = ($mb['cnt_approved'] == 0 && $mb['cnt_funded'] == 0
-                              && $mb['cnt_placed'] == 0 && $mb['cnt_submitted'] == 0);
-    }
-    unset($mb);
-
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

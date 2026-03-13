@@ -353,7 +353,7 @@ class PrepareOrdersProcess
         $isRefresh = false;
         try {
             $exStmt = $this->conn->prepare(
-                "SELECT batch_id, refresh_count FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
+                "SELECT batch_id, refresh_count, filter_merchant FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
             );
             $exStmt->execute();
             $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
@@ -361,7 +361,7 @@ class PrepareOrdersProcess
             // refresh_count column may not exist yet — treat as no existing batch
             try {
                 $exStmt = $this->conn->prepare(
-                    "SELECT batch_id, 0 AS refresh_count FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
+                    "SELECT batch_id, 0 AS refresh_count, filter_merchant FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
                 );
                 $exStmt->execute();
                 $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
@@ -375,6 +375,13 @@ class PrepareOrdersProcess
             $batchId      = $existingBatch['batch_id'];
             $refreshCount = (int) ($existingBatch['refresh_count'] ?? 0) + 1;
             $isRefresh    = true;
+
+            // ── Lock to the original batch's merchant filter so a refresh
+            //    can never bleed across merchant boundaries ──
+            if (!$merchantId && !empty($existingBatch['filter_merchant'])) {
+                $merchantId = $existingBatch['filter_merchant'];
+                $this->log("REFRESH: locked merchant to original filter '{$merchantId}'");
+            }
 
             $this->log(str_repeat('=', 80));
             $this->log("REFRESH START: {$batchId} (refresh #{$refreshCount})");
@@ -553,8 +560,9 @@ class PrepareOrdersProcess
                 foreach ($symStmt->fetchAll(PDO::FETCH_COLUMN) as $s) $symbolSources[$s] = true;
             }
             // Add symbols from pending orders with no shares calculated yet
+            $pendingMerchantW = $merchantId ? "AND merchant_id = " . $this->conn->quote($merchantId) : "";
             $pendingSymStmt = $this->conn->query(
-                "SELECT DISTINCT symbol FROM orders WHERE LOWER(status) = 'pending' AND (shares IS NULL OR shares = 0)"
+                "SELECT DISTINCT symbol FROM orders WHERE LOWER(status) = 'pending' AND (shares IS NULL OR shares = 0) {$pendingMerchantW}"
             );
             foreach ($pendingSymStmt->fetchAll(PDO::FETCH_COLUMN) as $s) $symbolSources[$s] = true;
 
@@ -1413,7 +1421,12 @@ class PrepareOrdersProcess
             $delBaskets->execute([$batchId . '%']);
             $basketsDeleted = $delBaskets->rowCount();
 
-            // 4. Delete the batch record itself
+            // 4. Clear batch_id reference on any pipeline_cycles row pointing to this batch
+            $this->conn->prepare(
+                "UPDATE pipeline_cycles SET batch_id = NULL WHERE batch_id = ?"
+            )->execute([$batchId]);
+
+            // 5. Delete the batch record itself
             $delBatch = $this->conn->prepare(
                 "DELETE FROM prepare_batches WHERE batch_id = ?"
             );
@@ -1423,7 +1436,7 @@ class PrepareOrdersProcess
 
             $this->log("DELETE BATCH: {$batchId} — "
                      . "{$ordersDeleted} orders, {$preparedDeleted} prepared_orders, "
-                     . "{$basketsDeleted} baskets deleted");
+                     . "{$basketsDeleted} baskets deleted, pipeline_cycles batch_id cleared");
 
             return [
                 'success'          => true,
