@@ -116,12 +116,14 @@ try {
 
     $authorization = $auth_response['authorization'];
 
+    $sandbox_bypassed = false;
     if ($authorization['decision'] !== 'approved') {
         $rationale_code = $authorization['decision_rationale']['code'] ?? '';
         $rationale      = $authorization['decision_rationale']['description'] ?? 'Unknown reason';
-        // In sandbox, balance/risk declines are simulated — bypass so pipeline can be tested end-to-end
         if ($plaid->isSandbox()) {
-            error_log("[plaid-initiate-funding] SANDBOX: authorization declined ({$rationale_code}) — overriding for test");
+            // In sandbox, balance/risk declines are simulated — bypass for end-to-end testing
+            error_log("[plaid-initiate-funding] SANDBOX: authorization declined ({$rationale_code}) — bypassing for test");
+            $sandbox_bypassed = true;
         } else {
             http_response_code(400);
             echo json_encode([
@@ -134,15 +136,28 @@ try {
     }
 
     // ── 5. Create the transfer ──
-    $transfer_response = $plaid->createTransfer([
-        'authorization_id' => $authorization['id'],
-        'access_token'     => $access_token,
-        'account_id'       => $mp['account_id'],
-        'amount'           => number_format($total_amount, 2, '.', ''),
-        'description'      => "SL Sweep",
-    ]);
-
-    $transfer = $transfer_response['transfer'];
+    if ($sandbox_bypassed) {
+        // Auth was declined in sandbox — fake the transfer to allow pipeline to proceed
+        $transfer = [
+            'id'                       => 'sandbox-transfer-' . uniqid(),
+            'status'                   => 'pending',
+            'description'              => 'SL Sweep (sandbox simulation)',
+            'created'                  => date('c'),
+            'expected_settlement_date' => date('Y-m-d', strtotime('+2 days')),
+        ];
+        $authorization_id_for_insert = 'sandbox-auth-' . $authorization['id'];
+        error_log("[plaid-initiate-funding] SANDBOX: simulated transfer {$transfer['id']}");
+    } else {
+        $transfer_response = $plaid->createTransfer([
+            'authorization_id' => $authorization['id'],
+            'access_token'     => $access_token,
+            'account_id'       => $mp['account_id'],
+            'amount'           => number_format($total_amount, 2, '.', ''),
+            'description'      => 'SL Sweep',
+        ]);
+        $transfer = $transfer_response['transfer'];
+        $authorization_id_for_insert = $authorization['id'];
+    }
 
     // ── 6. Record in plaid_transfers ──
     $stmt = $conn->prepare("
@@ -153,7 +168,7 @@ try {
         VALUES (?, ?, ?, ?, ?, ?, ?, 'ccd', ?, ?, ?, ?, ?, ?)
     ");
     $stmt->execute([
-        $transfer['id'], $authorization['id'], $batch_id ?: null,
+        $transfer['id'], $authorization_id_for_insert, $batch_id ?: null,
         $merchant_id, $broker ?: null, $total_amount, $network,
         $transfer['description'] ?? null, $transfer['status'] ?? 'pending',
         $idempotency_key, json_encode($order_ids), count($orders),
@@ -181,7 +196,7 @@ try {
     echo json_encode([
         'success'             => true,
         'transfer_id'         => $transfer['id'],
-        'authorization_id'    => $authorization['id'],
+        'authorization_id'    => $authorization_id_for_insert,
         'batch_id'            => $batch_id ?: $idempotency_key,
         'status'              => $transfer['status'] ?? 'pending',
         'amount'              => $total_amount,

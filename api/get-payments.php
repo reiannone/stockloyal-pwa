@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * get-payments.php
  *
- * Returns approved orders awaiting merchant settlement (ACH funding to SL sweep).
+ * Returns all in-flight orders for an active pipeline cycle (approved through confirmed).
  *
  * IB Flow:
  *   Orders start as 'approved' with paid_flag=0 (ready for merchant funding)
@@ -59,8 +59,7 @@ try {
             o.placed_at
         FROM orders o
         WHERE o.merchant_id = ?
-          AND LOWER(o.status) = 'approved'
-          AND (o.paid_flag = 0 OR o.paid_flag IS NULL)
+          AND LOWER(o.status) IN ('approved', 'funded', 'placed', 'submitted', 'confirmed')
         ORDER BY o.basket_id, o.order_id
     ");
     $stmt->execute([$merchantId]);
@@ -81,8 +80,7 @@ try {
         LEFT JOIN broker_master b
             ON o.broker COLLATE utf8mb4_unicode_ci = b.broker_name COLLATE utf8mb4_unicode_ci
         WHERE o.merchant_id = ?
-          AND LOWER(o.status) = 'approved'
-          AND (o.paid_flag = 0 OR o.paid_flag IS NULL)
+          AND LOWER(o.status) IN ('approved', 'funded', 'placed', 'submitted', 'confirmed')
         GROUP BY o.broker, b.broker_id, b.ach_bank_name,
                  b.ach_routing_num, b.ach_account_num, b.ach_account_type
         ORDER BY o.broker

@@ -698,6 +698,7 @@ class PipelineOrchestrator
 
         $cStmt = $this->conn->prepare("
             SELECT
+                COUNT(DISTINCT basket_id)                                                    AS baskets_total,
                 COUNT(*)                                                                       AS orders_total,
                 SUM(status = 'approved')                                                       AS orders_approved,
                 SUM(status = 'funded')                                                         AS orders_funded,
@@ -718,6 +719,7 @@ class PipelineOrchestrator
 
         $upd = $this->conn->prepare("
             UPDATE pipeline_cycles SET
+                baskets_total    = :baskets_total,
                 orders_total     = :orders_total,
                 orders_approved  = :orders_approved,
                 orders_funded    = :orders_funded,
@@ -733,6 +735,7 @@ class PipelineOrchestrator
             WHERE id = :id
         ");
         $upd->execute([
+            ':baskets_total'    => (int)   ($c['baskets_total']    ?? 0),
             ':orders_total'     => (int)   ($c['orders_total']     ?? 0),
             ':orders_approved'  => (int)   ($c['orders_approved']  ?? 0),
             ':orders_funded'    => (int)   ($c['orders_funded']    ?? 0),

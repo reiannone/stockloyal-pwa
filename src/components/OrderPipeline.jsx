@@ -62,32 +62,21 @@ function useFetch() {
   return { status, loading, reload: load };
 }
 
-// ── Derive count for a step from pipeline-status data ─────────────────────────
-function stepCount(step, status) {
-  if (!status?.stages) return null;
-  const s = status.stages[step.key];
-  if (!s) return null;
-  if (step.key === "prepare") {
-    return s.staged_batch?.total_orders ?? s.approved_batch?.total_orders ?? 0;
-  }
-  return s.count ?? 0;
-}
+// ── stepCount removed — subway map is nav-only, no per-step counts ───────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MAIN EXPORT — OrderPipeline component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function OrderPipeline({
   currentStep,
-  status: statusProp = null,
   title    = "IB Order Processing Pipeline",
   subtitle = "StockLoyal as Introducing Broker — fund IB sweep → fund members → trade",
 }) {
   const navigate = useNavigate();
   const own = useFetch();
-  const status = statusProp ?? own.status;
 
   return (
-    <PipelineContext.Provider value={{ status, loading: own.loading, reload: own.reload }}>
+    <PipelineContext.Provider value={{ status: own.status, loading: own.loading, reload: own.reload }}>
       <div style={{
         marginBottom: 24, borderRadius: 10,
         border: "1px solid #e2e8f0",
@@ -112,14 +101,14 @@ export default function OrderPipeline({
         </div>
 
         {/* Subway stepper */}
-        <Stepper currentStep={currentStep} status={status} navigate={navigate} />
+        <Stepper currentStep={currentStep} navigate={navigate} />
 
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </PipelineContext.Provider>
   );
 }
-function Stepper({ currentStep, status, navigate }) {
+function Stepper({ currentStep, navigate }) {
   return (
     <div style={{ padding: "18px 24px 20px", position: "relative" }}>
       {/* Connecting line */}
@@ -136,9 +125,6 @@ function Stepper({ currentStep, status, navigate }) {
         {PIPELINE_STEPS.map((step) => {
           const isActive    = step.step === currentStep;
           const isCompleted = step.step < currentStep;
-          const count       = stepCount(step, status);
-          const hasCount    = count !== null;
-          const isZero      = count === 0;
           const Icon        = step.icon;
 
           const circleColor = isActive || isCompleted ? step.color : "#d1d5db";
@@ -166,30 +152,7 @@ function Stepper({ currentStep, status, navigate }) {
               }}>
                 {isCompleted ? <CheckCircle2 size={20} /> : <Icon size={18} />}
 
-                {/* Red count badge */}
-                {hasCount && !isZero && (
-                  <div style={{
-                    position: "absolute", top: -6, right: -6,
-                    minWidth: 20, height: 20, borderRadius: 10,
-                    background: "#ef4444", color: "white",
-                    fontSize: 11, fontWeight: 700, padding: "0 5px",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    border: "2px solid white",
-                  }}>
-                    {count}
-                  </div>
-                )}
 
-                {/* Green ✓ badge */}
-                {hasCount && isZero && (
-                  <div style={{
-                    position: "absolute", top: -4, right: -4,
-                    width: 18, height: 18, borderRadius: "50%",
-                    background: "#22c55e", color: "white", fontSize: 11,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    border: "2px solid white",
-                  }}>✓</div>
-                )}
               </div>
 
               <div style={{
