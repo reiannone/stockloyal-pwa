@@ -31,7 +31,7 @@ if (typeof document !== 'undefined' && !document.getElementById('__pc-spin-style
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 const fmt$ = v => new Intl.NumberFormat("en-US", {
-  style: "currency", currency: "USD", maximumFractionDigits: 0,
+  style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2,
 }).format(v || 0);
 const fmtN = v => Number(v || 0).toLocaleString();
 const fmtAgo = d => {
@@ -450,7 +450,7 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
                           r.orders_placed   && `${r.orders_placed} placed`,
                           r.orders_executed && `${r.orders_executed} executed`,
                           r.orders_settled  && `${r.orders_settled} settled`,
-                          r.total_amount    && `$${Number(r.total_amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+                          r.total_amount    && `$${Number(r.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                         ].filter(Boolean);
                         return pills.length > 0 ? (
                           <div style={{ marginTop: 4, display: "flex", gap: 5, flexWrap: "wrap" }}>

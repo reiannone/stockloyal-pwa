@@ -173,7 +173,7 @@ export default function AlpacaBrokerAdmin() {
   const filteredAccounts = accounts.filter(a => {
     if (!acctFilter) return true;
     const q = acctFilter.toLowerCase();
-    return (a.id || "").toLowerCase().includes(q)
+    return (String(a._member_id || "")).toLowerCase().includes(q)
       || (a.account_number || "").toLowerCase().includes(q)
       || (a.status || "").toLowerCase().includes(q);
   });
@@ -314,7 +314,7 @@ export default function AlpacaBrokerAdmin() {
               <input
                 className="form-input"
                 style={{ maxWidth: 280 }}
-                placeholder="Account ID, number, or status…"
+                placeholder="Member ID, account number, or status…"
                 value={acctFilter}
                 onChange={e => setAcctFilter(e.target.value)}
               />
@@ -329,19 +329,18 @@ export default function AlpacaBrokerAdmin() {
             <table className="basket-table">
               <thead>
                 <tr>
-                  <th>Account ID</th>
+                  <th>Member ID</th>
                   <th>Account #</th>
                   <th>Status</th>
                   <th>KYC</th>
                   <th style={{ textAlign: "right" }}>Last Equity</th>
-                  <th>Member</th>
                   <th>Created</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAccounts.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: "center", color: "#9ca3af", padding: 32 }}>No accounts found.</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: "center", color: "#9ca3af", padding: 32 }}>No accounts found.</td></tr>
                 ) : filteredAccounts.map((a, i) => (
                   <React.Fragment key={a.id || a._member_id || i}>
                     <tr
@@ -352,12 +351,11 @@ export default function AlpacaBrokerAdmin() {
                         setExpandedRow(expandedRow === rowKey ? null : rowKey);
                       }}
                     >
-                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.id}</td>
+                      <td style={{ fontFamily: "monospace", fontSize: "0.8rem", fontWeight: 600 }}>{a._member_id || "—"}</td>
                       <td style={{ fontFamily: "monospace", fontSize: "0.8rem" }}>{a.account_number || "—"}</td>
                       <td><StatusPill status={a.status} /></td>
                       <td><StatusPill status={a.kyc_results?.summary || "—"} /></td>
                       <td style={{ textAlign: "right" }}>{fmt$(a.last_equity)}</td>
-                      <td style={{ textAlign: "right" }}>{a._member_id || "—"}</td>
                       <td style={{ fontSize: "0.8rem" }}>{fmtDate(a.created_at)}</td>
                       <td>{expandedRow === (a.id || a._member_id) ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</td>
                     </tr>
@@ -368,7 +366,7 @@ export default function AlpacaBrokerAdmin() {
                       const t = (!isLoading && !isError && td) ? td : null;
                       return (
                         <tr>
-                          <td colSpan={8} style={{ background: "#f8fafc", padding: "12px 16px" }}>
+                          <td colSpan={7} style={{ background: "#f8fafc", padding: "12px 16px" }}>
 
                             {/* ── Equity breakout stat cards ── */}
                             <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -406,6 +404,7 @@ export default function AlpacaBrokerAdmin() {
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px 24px" }}>
                               {[
                                 ["Member ID",        a._member_id],
+                                ["Alpaca Account ID", a.id],
                                 ["Currency",         a.currency],
                                 ["Last Equity",      t ? fmt$(t.last_equity)       : fmt$(a.last_equity)],
                                 ["Position Value",   t ? fmt$(t.long_market_value) : (isLoading ? "…" : "—")],

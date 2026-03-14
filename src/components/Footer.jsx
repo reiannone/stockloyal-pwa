@@ -57,7 +57,7 @@ export default function Footer() {
       <OrderTicker />
 
       {/* Bottom footer navigation bar */}
-      <footer className="nav-bar">
+      <footer className="nav-bar" style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
         <div className="nav-inner">
           {mainLinks.map(({ to, icon }) => (
             <Link
@@ -102,6 +102,40 @@ export default function Footer() {
               </div>
             </button>
           )}
+        </div>
+
+        {/* Powered by StockLoyal */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            paddingBottom: "8px",
+            paddingTop: "4px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "9px",
+              letterSpacing: "0.06em",
+              opacity: 0.4,
+              textTransform: "uppercase",
+              fontWeight: 400,
+            }}
+          >
+            Powered by
+          </span>
+          <img
+            src="/logos/stockloyal.png"
+            alt="StockLoyal"
+            style={{
+              height: "16px",
+              width: "auto",
+              opacity: 0.5,
+              objectFit: "contain",
+            }}
+          />
         </div>
       </footer>
 

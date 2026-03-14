@@ -1,28 +1,36 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiPost } from "../api"; // Use existing api helper
-import { CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar, CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle, Package, Store, Building2, Clock, ChevronUp, ChevronDown, GitBranch } from "lucide-react";
+import {
+  CheckCircle, RefreshCw, ClipboardList, Upload, Download, Radio, Calendar,
+  CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle,
+  Package, Store, Building2, Clock, ChevronUp, ChevronDown, GitBranch, ArrowLeft,
+} from "lucide-react";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
 
-// ── Pipeline merchants (open cycles only) ───────────────────────────────────
-function usePipelineMerchants() {
-  const [merchants, setMerchants] = useState(null);
+const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
+
+// ── Pipeline cycle options (merchant + broker pairs, open/locked) ───────────
+function usePipelineCycles() {
+  const [cycleOptions, setCycleOptions] = useState(null);
   useEffect(() => {
-    apiPost("pipeline-cycles.php", { action: "list" }).then(res => {
+    apiPost("pipeline-cycles.php", { action: "list", limit: 100 }).then(res => {
       if (res?.success && Array.isArray(res.cycles)) {
-        const seen = new Set(); const out = [];
-        for (const c of res.cycles) {
-          if (c.status === "open" && !seen.has(c.merchant_id)) {
-            seen.add(c.merchant_id);
-            out.push({ merchant_id: c.merchant_id, merchant_name: c.merchant_name || c.cycle_label || c.merchant_id });
-          }
-        }
-        setMerchants(out);
-      } else { setMerchants([]); }
-    }).catch(() => setMerchants([]));
+        const open = res.cycles.filter(c => ["open", "locked"].includes(c.status));
+        setCycleOptions(open.map(c => ({
+          key:           makeKey(c.merchant_id_str || c.merchant_id, c.broker_id),
+          merchant_id:   c.merchant_id_str || c.merchant_id,
+          broker_id:     c.broker_id,
+          merchant_name: c.merchant_name || c.merchant_id_str || c.merchant_id,
+          broker_name:   c.broker_name   || c.broker_id,
+          cycle:         c,
+        })));
+      } else { setCycleOptions([]); }
+    }).catch(() => setCycleOptions([]));
   }, []);
-  return merchants;
+  return cycleOptions;
 }
 
 /**
@@ -38,8 +46,27 @@ function usePipelineMerchants() {
  */
 
 export default function SweepAdmin() {
-  const pipelineMerchants = usePipelineMerchants();
-  const [activeTab, setActiveTab] = useState("overview");
+  const navigate         = useNavigate();
+  const location         = useLocation();
+  const cycleOptions     = usePipelineCycles();
+
+  // ── URL params (navigated from Pipeline Cycles) ───────────────────────────
+  const params        = new URLSearchParams(location.search);
+  const urlMerchantId = params.get("merchant_id") || "";
+  const urlBrokerId   = params.get("broker_id")   || "";
+
+  // ── Merchant·broker filter (shared across tabs) ───────────────────────────
+  const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+  const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+
+  // Stable pipelineMerchants derived from cycleOptions
+  const pipelineMerchants = useMemo(
+    () => cycleOptions
+      ? cycleOptions.map(o => ({ merchant_id: o.merchant_id, merchant_name: o.merchant_name }))
+      : null,
+    [cycleOptions]
+  );
+  const [activeTab, setActiveTab] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [history, setHistory] = useState([]);
@@ -443,6 +470,35 @@ export default function SweepAdmin() {
       {/* ── Order Pipeline ── */}
       <OrderPipeline currentStep={4} />
 
+      {/* ── Tabs + back button ── */}
+      <div style={{
+        display: "flex", gap: "0.5rem", marginBottom: "1.5rem",
+        borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem",
+        justifyContent: "space-between", alignItems: "center", flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {["pending", "schedules", "history"].map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)} style={{
+              padding: "0.5rem 1rem",
+              background: activeTab === tab ? "#4ECDC4" : "transparent",
+              color: activeTab === tab ? "#fff" : "#64748b",
+              border: "none", borderRadius: "6px", fontWeight: "500",
+              cursor: "pointer", textTransform: "capitalize",
+            }}>
+              {tab}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => navigate("/pipeline-cycles")} style={{
+          display: "inline-flex", alignItems: "center", gap: "0.4rem",
+          padding: "0.4rem 0.75rem", background: "none",
+          border: "1px solid #d1d5db", borderRadius: "6px",
+          color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+        }}>
+          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+        </button>
+      </div>
+
       {/* All Caught Up Message */}
       {!loading && overview && (overview.total_pending_orders || 0) === 0 && (
         <div
@@ -569,32 +625,49 @@ export default function SweepAdmin() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div style={{ 
-        display: "flex", 
-        gap: "0.5rem", 
-        marginBottom: "1.5rem",
-        borderBottom: "1px solid #e2e8f0",
-        paddingBottom: "0.5rem"
+      {/* ── Merchant·broker toolbar ── */}
+      <div style={{
+        display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
+        marginBottom: "1.25rem", padding: "0.75rem 1rem",
+        background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0",
       }}>
-        {["overview", "pending", "schedules", "history"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              padding: "0.5rem 1rem",
-              background: activeTab === tab ? "#4ECDC4" : "transparent",
-              color: activeTab === tab ? "#fff" : "#64748b",
-              border: "none",
-              borderRadius: "6px",
-              fontWeight: "500",
-              cursor: "pointer",
-              textTransform: "capitalize"
-            }}
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Merchant · Broker
+          </label>
+          <select
+            value={selectedPair}
+            onChange={e => setSelectedPair(e.target.value)}
+            style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
           >
-            {tab}
-          </button>
-        ))}
+            <option value="">All Active Cycles</option>
+            {(cycleOptions || []).map(opt => (
+              <option key={opt.key} value={opt.key}>
+                {opt.merchant_name} · {opt.broker_name}
+              </option>
+            ))}
+            {urlMerchantId && !(cycleOptions || []).find(o => o.merchant_id === urlMerchantId) && (
+              <option value={makeKey(urlMerchantId, urlBrokerId)}>
+                {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
+              </option>
+            )}
+          </select>
+        </div>
+        {filterMerchant && (
+          <span style={{ fontSize: "0.75rem", background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            {(cycleOptions || []).find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}
+            <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#92400e", padding: 0, lineHeight: 1, fontSize: "0.9rem" }} title="Clear filter">×</button>
+          </span>
+        )}
+        <button onClick={loadOverview} disabled={loading} style={{
+          padding: "0.5rem 1rem", background: "#4ECDC4", color: "#fff",
+          border: "none", borderRadius: "6px", fontWeight: 600,
+          fontSize: "0.85rem", cursor: loading ? "not-allowed" : "pointer",
+          opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6, marginLeft: "auto",
+        }}>
+          <RefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+          {loading ? "Loading…" : "Refresh"}
+        </button>
       </div>
 
       {/* Last Result Banner */}
@@ -683,178 +756,6 @@ export default function SweepAdmin() {
         </div>
       ) : (
         <>
-          {/* Overview Tab */}
-          {activeTab === "overview" && overview && (
-            <div>
-              {/* Stats Cards */}
-              <div style={{ 
-                display: "grid", 
-                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                gap: "1rem",
-                marginBottom: "1.5rem"
-              }}>
-                <StatCard 
-                  label="Pending Orders" 
-                  value={overview.total_pending_orders || 0}
-                  subtext={formatCurrency(overview.total_pending_amount)}
-                  color="#f59e0b"
-                  tooltip="Total funded orders queued and ready for broker submission across all merchants."
-                />
-                <StatCard 
-                  label="Today's Sweeps" 
-                  value={overview.today?.sweeps_run || 0}
-                  subtext={`${overview.today?.orders_confirmed || 0} confirmed`}
-                  color="#10b981"
-                  tooltip="Number of sweep executions run today. Each sweep submits a batch of funded orders to Alpaca for execution."
-                />
-                <StatCard 
-                  label="Scheduled Today" 
-                  value={overview.today?.scheduled_merchants?.length || 0}
-                  subtext="merchants"
-                  color="#6366f1"
-                  tooltip="Merchants whose sweep schedule is configured to run today based on their sweep day settings."
-                />
-                <StatCard 
-                  label="Failed Today" 
-                  value={overview.today?.orders_failed || 0}
-                  subtext="orders"
-                  color="#ef4444"
-                  tooltip="Orders that were submitted to Alpaca today but returned an error or rejection. Check broker execution logs for details."
-                />
-              </div>
-
-              {/* Today's Scheduled Merchants */}
-              {overview.today?.scheduled_merchants?.length > 0 && (
-                <div style={{ 
-                  background: "#f0fdf4", 
-                  padding: "1rem", 
-                  borderRadius: "8px",
-                  marginBottom: "1.5rem"
-                }}>
-                  <h3 style={{ margin: "0 0 0.5rem", color: "#166534" }}>
-                    <Calendar size={16} style={{ verticalAlign: "middle" }} /> Scheduled for Today ({overview.today.date})
-                  </h3>
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                    {overview.today.scheduled_merchants.map((m) => (
-                      <span 
-                        key={m.merchant_id}
-                        style={{
-                          padding: "0.25rem 0.75rem",
-                          background: "#dcfce7",
-                          borderRadius: "999px",
-                          fontSize: "0.875rem"
-                        }}
-                      >
-                        {m.merchant_name || m.merchant_id}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Pending by Merchant — pipeline merchant cards */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                <h3 style={{ margin: 0 }}>Pending Orders by Merchant</h3>
-                {pipelineMerchants !== null && (
-                  <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
-                    <GitBranch size={12} style={{ verticalAlign: "middle" }} /> {pipelineMerchants.length} active pipeline cycle(s)
-                  </span>
-                )}
-              </div>
-              {(() => {
-                // Build a merged list: pipeline merchants first, then any others with pending orders
-                const pipelineIds = new Set((pipelineMerchants || []).map(m => m.merchant_id));
-                const allPending = overview.pending_by_merchant || [];
-                const pendingMap = Object.fromEntries(allPending.map(m => [m.merchant_id, m]));
-                // Pipeline merchants
-                const cards = (pipelineMerchants || []).map(pm => ({
-                  ...pm,
-                  ...(pendingMap[pm.merchant_id] || {}),
-                  inPipeline: true,
-                }));
-                // Other merchants with pending orders not in pipeline
-                for (const m of allPending) {
-                  if (!pipelineIds.has(m.merchant_id)) cards.push({ ...m, inPipeline: false });
-                }
-                if (cards.length === 0) {
-                  return <div style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>No pipeline merchants or pending orders.</div>;
-                }
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                    {cards.map(m => {
-                      const hasPending = (m.pending_orders || 0) > 0;
-                      const canSweep = !sweepRunning && hasPending && !hasUnfundedOrders;
-                      return (
-                        <div key={m.merchant_id} style={{ background: "#fff", borderRadius: 8, border: `1px solid ${hasPending ? "#e2e8f0" : "#e2e8f0"}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)", overflow: "hidden" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", borderBottom: hasPending ? "1px solid #f1f5f9" : "none" }}>
-                            <Store size={16} color="#8b5cf6" />
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
-                                {m.merchant_name || m.merchant_id}
-                                {m.inPipeline && <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "#dbeafe", color: "#1d4ed8" }}>Pipeline Active</span>}
-                              </div>
-                              <div style={{ fontSize: "0.72rem", color: "#64748b", marginTop: 2 }}>
-                                {hasPending ? `${m.pending_orders} orders · ${formatCurrency(m.pending_amount)} · oldest: ${formatDate(m.oldest_order)}` : "No pending orders"}
-                                {m.sweep_day != null && ` · Sweep: ${getSweepDayDisplay(m.sweep_day)}`}
-                              </div>
-                            </div>
-                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                              {hasPending && (
-                                <>
-                                  <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#10b981" }}>{formatCurrency(m.pending_amount)}</span>
-                                  <span style={{ fontSize: "0.72rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#faf5ff", color: "#7c3aed" }}>{m.pending_orders} orders</span>
-                                </>
-                              )}
-                              <button onClick={() => showSweepModal(m.merchant_id)} disabled={!canSweep}
-                                title={hasUnfundedOrders ? "Complete journal funding before sweeping" : hasPending ? "" : "No pending orders"}
-                                style={{ padding: "6px 14px", background: canSweep ? "#4ECDC4" : "#94a3b8", color: "#fff", border: "none", borderRadius: 6, fontSize: "0.8rem", fontWeight: 600, cursor: canSweep ? "pointer" : "not-allowed" }}>
-                                <Play size={12} style={{ verticalAlign: "middle" }} /> Run Sweep
-                              </button>
-                            </div>
-                          </div>
-                          {hasPending && hasUnfundedOrders && (
-                            <div style={{ padding: "6px 16px", background: "#fef3c7", fontSize: "0.75rem", color: "#92400e" }}>
-                              <AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> Journal funding incomplete — complete the Journal step before sweeping.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-
-              {/* Upcoming Schedule */}
-              {overview.upcoming_schedule?.length > 0 && (
-                <div style={{ marginTop: "1.5rem" }}>
-                  <h3 style={{ marginBottom: "0.75rem" }}><CalendarDays size={16} style={{ verticalAlign: "middle" }} /> Upcoming Sweeps (Next 7 Days)</h3>
-                  <div style={{ display: "flex", gap: "1rem", overflowX: "auto", paddingBottom: "0.5rem" }}>
-                    {overview.upcoming_schedule.map((day) => (
-                      <div 
-                        key={day.date}
-                        style={{
-                          minWidth: "150px",
-                          padding: "1rem",
-                          background: day.date === overview.today.date ? "#ecfdf5" : "#f8fafc",
-                          borderRadius: "8px",
-                          border: day.date === overview.today.date ? "2px solid #10b981" : "1px solid #e2e8f0"
-                        }}
-                      >
-                        <div style={{ fontWeight: "600", marginBottom: "0.25rem" }}>{day.day_name}</div>
-                        <div style={{ fontSize: "0.875rem", color: "#64748b", marginBottom: "0.5rem" }}>
-                          {day.date} (Day {day.day_of_month})
-                        </div>
-                        <div style={{ fontSize: "0.75rem" }}>
-                          {day.merchants.map((m) => m.merchant_name || m.merchant_id).join(", ")}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Pending Orders Tab */}
           {activeTab === "pending" && (
             <div>
@@ -885,11 +786,14 @@ export default function SweepAdmin() {
                 const ordersByMerchant = {};
                 for (const o of pendingOrders) {
                   const mid = o.merchant_id || "unknown";
+                  if (filterMerchant && mid !== filterMerchant) continue;
                   if (!ordersByMerchant[mid]) ordersByMerchant[mid] = { merchant_id: mid, merchant_name: o.merchant_name || mid, orders: [], inPipeline: pipelineIds.has(mid) };
                   ordersByMerchant[mid].orders.push(o);
                 }
                 const sections = [
-                  ...((pipelineMerchants || []).map(pm => ordersByMerchant[pm.merchant_id] || { merchant_id: pm.merchant_id, merchant_name: pm.merchant_name, orders: [], inPipeline: true })),
+                  ...((pipelineMerchants || [])
+                    .filter(pm => !filterMerchant || pm.merchant_id === filterMerchant)
+                    .map(pm => ordersByMerchant[pm.merchant_id] || { merchant_id: pm.merchant_id, merchant_name: pm.merchant_name, orders: [], inPipeline: true })),
                   ...Object.values(ordersByMerchant).filter(g => !pipelineIds.has(g.merchant_id)),
                 ];
 
@@ -899,6 +803,7 @@ export default function SweepAdmin() {
                       <MerchantPendingSection
                         key={section.merchant_id}
                         section={section}
+                        cycleOptions={cycleOptions}
                         pendingView={pendingView}
                         expandedBaskets={expandedBaskets}
                         setExpandedBaskets={setExpandedBaskets}
@@ -1011,11 +916,13 @@ export default function SweepAdmin() {
 // MerchantPendingSection — one section per pipeline merchant in pending tab
 // ═══════════════════════════════════════════════════════════════════════════
 
-function MerchantPendingSection({ section, pendingView, expandedBaskets, setExpandedBaskets, sweepRunning, hasUnfundedOrders, showSweepModal, buildWebhookPayload, groupOrdersByMerchantBroker, groupOrdersByBasket, formatCurrency, formatDate, jsonViewMode, JsonToggle, JsonBlock }) {
+function MerchantPendingSection({ section, cycleOptions, pendingView, expandedBaskets, setExpandedBaskets, sweepRunning, hasUnfundedOrders, showSweepModal, buildWebhookPayload, groupOrdersByMerchantBroker, groupOrdersByBasket, formatCurrency, formatDate, jsonViewMode, JsonToggle, JsonBlock }) {
   const [expanded, setExpanded] = useState(true);
   const { merchant_id, merchant_name, orders, inPipeline } = section;
   const totalAmount = orders.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
-  const canSweep = !sweepRunning && orders.length > 0 && !hasUnfundedOrders;
+  const cycleForM = (cycleOptions || []).find(o => o.merchant_id === merchant_id);
+  const isPlacementDone = cycleForM?.cycle?.stage_placement === "completed";
+  const canSweep = !sweepRunning && orders.length > 0 && !hasUnfundedOrders && !isPlacementDone;
 
   return (
     <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
@@ -1033,9 +940,17 @@ function MerchantPendingSection({ section, pendingView, expandedBaskets, setExpa
           </div>
         </div>
         {orders.length > 0 && (
-          <button onClick={e => { e.stopPropagation(); showSweepModal(merchant_id); }} disabled={!canSweep}
-            title={hasUnfundedOrders ? "Complete journal funding before sweeping" : ""}
-            style={{ padding: "6px 14px", background: canSweep ? "#4ECDC4" : "#94a3b8", color: "#fff", border: "none", borderRadius: 6, fontSize: "0.8rem", fontWeight: 600, cursor: canSweep ? "pointer" : "not-allowed" }}>
+          <button
+            onClick={isPlacementDone ? undefined : e => { e.stopPropagation(); showSweepModal(merchant_id); }}
+            disabled={!canSweep}
+            title={isPlacementDone ? "Placement stage already completed" : hasUnfundedOrders ? "Complete journal funding before sweeping" : ""}
+            style={{
+              padding: "6px 14px", color: "#fff", border: "none", borderRadius: 6,
+              fontSize: "0.8rem", fontWeight: 600,
+              background: isPlacementDone ? "#6b7280" : canSweep ? "#4ECDC4" : "#94a3b8",
+              cursor: canSweep ? "pointer" : "not-allowed",
+              opacity: isPlacementDone ? 0.55 : 1,
+            }}>
             <Play size={12} style={{ verticalAlign: "middle" }} /> Run Sweep
           </button>
         )}

@@ -294,10 +294,13 @@ export default function PaymentsProcessing() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing, setModal, closeModal }) {
+  const cycle         = cycleOpt.cycle;
+  const isFundingDone = cycle?.stage_payment === "completed" && cycle?.stage_funding === "completed";
+
   const [orders, setOrders]                 = useState([]);
   const [summary, setSummary]               = useState([]);
   const [loading, setLoading]               = useState(false);
-  const [expanded, setExpanded]             = useState(true);
+  const [expanded, setExpanded]             = useState(!isFundingDone);
   const [processResults, setProcessResults] = useState([]);
 
   const mid    = cycleOpt.merchant_id;
@@ -362,8 +365,6 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
   const confirmBroker = (broker, count, amount) => setModal({ show: true, title: isPlaid ? "Plaid ACH Debit — Broker" : "Fund Broker to IB Sweep", message: `Process ${count} orders (${fmtMoney(amount)}) for broker "${broker}" under ${cycleOpt.merchant_name}.`, icon: isPlaid ? <Zap size={20} color="#f59e0b" /> : <Building2 size={20} color="#f59e0b" />, confirmText: "Confirm & Process", confirmColor: "#f59e0b", onConfirm: () => doProcess(broker) });
 
   // Stage status pills from cycle data
-  const cycle         = cycleOpt.cycle;
-  const isFundingDone = cycle?.stage_payment === "completed" && cycle?.stage_funding === "completed";
   const stageBadge    = (label, status) => {
     const c = { pending: { bg: "#f8fafc", fg: "#94a3b8", bd: "#e2e8f0" }, in_progress: { bg: "#eff6ff", fg: "#2563eb", bd: "#bfdbfe" }, completed: { bg: "#f0fdf4", fg: "#16a34a", bd: "#bbf7d0" }, failed: { bg: "#fef2f2", fg: "#dc2626", bd: "#fecaca" } }[status] || { bg: "#f8fafc", fg: "#94a3b8", bd: "#e2e8f0" };
     return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 12, fontSize: "0.68rem", fontWeight: 700, background: c.bg, color: c.fg, border: `1px solid ${c.bd}`, whiteSpace: "nowrap" }}>{label}: {status}</span>;
@@ -420,6 +421,7 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
               orders={orders}
               brokerDetailsMap={brokerDetailsMap}
               processing={processing}
+              isFundingDone={isFundingDone}
               onProcessAll={confirmAll}
               onProcessBroker={(broker, count, amount) => confirmBroker(broker, count, amount)}
             />
@@ -435,7 +437,7 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
 // PaymentsHierarchy — Broker → Basket → Orders (merchant already scoped by panel)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProcessAll, onProcessBroker }) {
+function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, isFundingDone, onProcessAll, onProcessBroker }) {
   const [expandedBrokers, setExpandedBrokers] = useState(new Set());
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
   const [showAch, setShowAch]                 = useState(new Set());
@@ -477,7 +479,18 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, onProces
       {/* Header */}
       <div style={{ padding: "0.5rem 0.75rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.8rem", borderBottom: "1px solid #e2e8f0", color: "#374151", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span>{Object.keys(hierarchy).length} broker(s) · {orders.length} orders</span>
-        <button onClick={onProcessAll} disabled={processing} style={{ ...smallBtnStyle, background: "#10b981", padding: "3px 12px" }}>
+        <button
+          onClick={isFundingDone ? undefined : onProcessAll}
+          disabled={processing || isFundingDone}
+          title={isFundingDone ? "Stage already completed" : undefined}
+          style={{
+            ...smallBtnStyle,
+            padding: "3px 12px",
+            background: isFundingDone ? "#6b7280" : "#10b981",
+            cursor: isFundingDone ? "not-allowed" : "pointer",
+            opacity: isFundingDone ? 0.55 : 1,
+          }}
+        >
           <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Fund All
         </button>
       </div>

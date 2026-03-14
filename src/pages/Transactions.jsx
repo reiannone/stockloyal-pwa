@@ -860,12 +860,44 @@ export default function Transactions() {
                   </DetailField>
                 </Section>
 
-                {/* META SECTION */}
-                <Section title="Meta">
-                  <DetailField label="Member Timezone">
-                    {selectedTx.member_timezone ?? memberTimezone ?? detectedTz}
-                  </DetailField>
-                </Section>
+                {/* BASKET SECTION */}
+                {(() => {
+                  const basket = basketRollup.find(b => String(b.basket_id) === String(selectedTx.basket_id));
+                  if (!basket) return null;
+                  return (
+                    <Section title={`Basket · ${basket.basket_id}`}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>{basket.orders.length} order{basket.orders.length !== 1 ? "s" : ""}</span>
+                        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>·</span>
+                        <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#111827" }}>{formatDollars(basket.totalAmount)}</span>
+                        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>·</span>
+                        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>{basket.totalPoints.toLocaleString()} pts</span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {basket.orders.map((o, i) => {
+                          const isSelected = String(o.order_id) === String(selectedTx.order_id);
+                          return (
+                            <div
+                              key={o.order_id || i}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 10,
+                                padding: "8px 10px",
+                                borderRadius: 8,
+                                background: isSelected ? "#eff6ff" : "#fff",
+                                border: `1px solid ${isSelected ? "#bfdbfe" : "#e5e7eb"}`,
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, fontSize: "0.9rem", minWidth: 48, color: "#111827" }}>{o.symbol}</span>
+                              <span style={{ flex: 1, fontSize: "0.8rem", color: "#6b7280" }}>{parseFloat(o.shares || 0).toFixed(4)} shares</span>
+                              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#111827" }}>{formatDollars(o.amount)}</span>
+                              <span style={getStatusPillStyle(o.status)}>{o.status}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Section>
+                  );
+                })()}
               </div>
             </div>
 

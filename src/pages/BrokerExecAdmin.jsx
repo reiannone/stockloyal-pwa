@@ -1,35 +1,37 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiPost } from "../api";
 import {
   Package, RefreshCw, CheckCircle2, XCircle, TrendingUp,
   ShoppingBasket, Clock, Landmark, ChevronUp, ChevronDown,
   Zap, Hourglass, Info, Store, Building2, ClipboardList, AlertTriangle,
   Timer, Play, Activity, Server, CalendarClock, BarChart3,
-  CircleDot, CircleOff, Wifi, WifiOff,
+  CircleDot, CircleOff, Wifi, WifiOff, ArrowLeft,
 } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 import OrderPipeline from "../components/OrderPipeline";
 
-// ── Pipeline merchants hook ──────────────────────────────────────────────────
-function usePipelineMerchants() {
-  const [merchants, setMerchants] = useState([]);
+const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
+
+function usePipelineCycles() {
+  const [cycleOptions, setCycleOptions] = useState(null);
   useEffect(() => {
-    apiPost("pipeline-cycles.php", { action: "list" })
+    apiPost("pipeline-cycles.php", { action: "list", limit: 100 })
       .then((res) => {
-        if (!res.success) return;
-        const seen = new Set();
-        const list = [];
-        for (const c of res.cycles || []) {
-          if (c.status === "open" && !seen.has(c.merchant_id)) {
-            seen.add(c.merchant_id);
-            list.push({ merchant_id: c.merchant_id, merchant_name: c.merchant_name || c.merchant_id });
-          }
-        }
-        setMerchants(list);
+        if (!res.success) { setCycleOptions([]); return; }
+        const open = (res.cycles || []).filter(c => ["open", "locked"].includes(c.status));
+        setCycleOptions(open.map(c => ({
+          key:           makeKey(c.merchant_id_str || c.merchant_id, c.broker_id),
+          merchant_id:   c.merchant_id_str || c.merchant_id,
+          broker_id:     c.broker_id,
+          merchant_name: c.merchant_name || c.merchant_id_str || c.merchant_id,
+          broker_name:   c.broker_name   || c.broker_id,
+          cycle:         c,
+        })));
       })
-      .catch(() => {});
+      .catch(() => setCycleOptions([]));
   }, []);
-  return merchants;
+  return cycleOptions;
 }
 
 /**
@@ -42,12 +44,30 @@ function usePipelineMerchants() {
  */
 
 export default function BrokerExecAdmin() {
+  const navigate     = useNavigate();
+  const location     = useLocation();
+  const cycleOptions = usePipelineCycles();
+
+  // ── URL params ────────────────────────────────────────────────────────────
+  const params        = new URLSearchParams(location.search);
+  const urlMerchantId = params.get("merchant_id") || "";
+  const urlBrokerId   = params.get("broker_id")   || "";
+
+  // ── Merchant·broker filter ────────────────────────────────────────────────
+  const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+  const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+
+  const pipelineMerchants = useMemo(
+    () => cycleOptions
+      ? cycleOptions.map(o => ({ merchant_id: o.merchant_id, merchant_name: o.merchant_name }))
+      : [],
+    [cycleOptions]
+  );
+
   const [activeTab, setActiveTab] = useState("placed");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [refreshPlaced, setRefreshPlaced] = useState(0);
-
-  const pipelineMerchants = usePipelineMerchants();
 
   const formatCurrency = (amt) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amt || 0);
@@ -83,45 +103,81 @@ export default function BrokerExecAdmin() {
       {/* ── Order Pipeline ── */}
       <OrderPipeline currentStep={5} />
 
-      {/* Action Bar */}
+      {/* ── Tabs + back button ── */}
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap",
+        display: "flex", gap: "0.5rem", marginBottom: "1.5rem",
+        borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem",
+        justifyContent: "space-between", alignItems: "center", flexWrap: "wrap",
       }}>
-        {/* Tabs */}
-        <div style={{
-          display: "inline-flex", borderRadius: "6px",
-          border: "1px solid #d1d5db", overflow: "hidden",
-        }}>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
           {[
-            { key: "placed", label: <><Zap size={12} style={{ verticalAlign: "middle" }} /> Placed</> },
-            { key: "history", label: <><Clock size={12} style={{ verticalAlign: "middle" }} /> History</> },
-            { key: "cron", label: <><Timer size={12} style={{ verticalAlign: "middle" }} /> Cron Runs</> },
+            { key: "placed",  label: <><Zap     size={12} style={{ verticalAlign: "middle" }} /> Placed</> },
+            { key: "history", label: <><Clock   size={12} style={{ verticalAlign: "middle" }} /> History</> },
+            { key: "cron",    label: <><Timer   size={12} style={{ verticalAlign: "middle" }} /> Cron Runs</> },
           ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              style={{
-                padding: "0.4rem 0.75rem",
-                background: activeTab === t.key ? "#059669" : "#fff",
-                color: activeTab === t.key ? "#fff" : "#374151",
-                border: "none", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer",
-              }}
-            >
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              padding: "0.5rem 1rem",
+              background: activeTab === t.key ? "#059669" : "transparent",
+              color: activeTab === t.key ? "#fff" : "#64748b",
+              border: "none", borderRadius: "6px", fontWeight: "500", cursor: "pointer",
+            }}>
               {t.label}
             </button>
           ))}
         </div>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button onClick={handleRefresh} style={{
+            padding: "0.4rem 0.75rem", background: "#f1f5f9", color: "#475569",
+            border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.8rem", cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: 5,
+          }}>
+            <RefreshCw size={13} /> Refresh
+          </button>
+          <button onClick={() => navigate("/pipeline-cycles")} style={{
+            display: "inline-flex", alignItems: "center", gap: "0.4rem",
+            padding: "0.4rem 0.75rem", background: "none",
+            border: "1px solid #d1d5db", borderRadius: "6px",
+            color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+          }}>
+            <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+          </button>
+        </div>
+      </div>
 
-        <button
-          onClick={handleRefresh}
-          style={{
-            padding: "0.625rem 1.25rem", background: "#f1f5f9", color: "#475569",
-            border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.875rem", cursor: "pointer",
-          }}
-        >
-          <RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh
-        </button>
+      {/* ── Merchant·broker toolbar ── */}
+      <div style={{
+        display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
+        marginBottom: "1.25rem", padding: "0.75rem 1rem",
+        background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0",
+      }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Merchant · Broker
+          </label>
+          <select
+            value={selectedPair}
+            onChange={e => setSelectedPair(e.target.value)}
+            style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
+          >
+            <option value="">All Active Cycles</option>
+            {(cycleOptions || []).map(opt => (
+              <option key={opt.key} value={opt.key}>
+                {opt.merchant_name} · {opt.broker_name}
+              </option>
+            ))}
+            {urlMerchantId && !(cycleOptions || []).find(o => o.merchant_id === urlMerchantId) && (
+              <option value={makeKey(urlMerchantId, urlBrokerId)}>
+                {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
+              </option>
+            )}
+          </select>
+        </div>
+        {filterMerchant && (
+          <span style={{ fontSize: "0.75rem", background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            {(cycleOptions || []).find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}
+            <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#92400e", padding: 0, lineHeight: 1, fontSize: "0.9rem" }} title="Clear filter">×</button>
+          </span>
+        )}
       </div>
 
       {/* ── PLACED TAB ── */}
@@ -142,10 +198,13 @@ export default function BrokerExecAdmin() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {pipelineMerchants.map((m) => (
+              {pipelineMerchants
+                .filter(m => !filterMerchant || m.merchant_id === filterMerchant)
+                .map((m) => (
                 <MerchantExecPanel
                   key={m.merchant_id}
                   merchant={m}
+                  cycleOptions={cycleOptions}
                   formatCurrency={formatCurrency}
                   formatDate={formatDate}
                   refreshSignal={refreshPlaced}
@@ -208,7 +267,7 @@ export default function BrokerExecAdmin() {
 // MerchantExecPanel — Per-merchant placed orders + execute controls
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal, onExecuted }) {
+function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate, refreshSignal, onExecuted }) {
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -216,6 +275,9 @@ function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal
   const [lastResult, setLastResult] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [modal, setModal] = useState({ show: false, title: "", message: "", details: null, data: null });
+
+  const cycleForM = (cycleOptions || []).find(o => o.merchant_id === merchant.merchant_id);
+  const isExecutionDone = cycleForM?.cycle?.stage_execution === "completed";
 
   const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
@@ -317,6 +379,11 @@ function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal
         <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1e293b" }}>
           {merchant.merchant_name}
         </span>
+        {isExecutionDone && (
+          <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>
+            ✓ Execution Complete
+          </span>
+        )}
         {!loading && (
           <>
             <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
@@ -336,14 +403,16 @@ function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal
             <RefreshCw size={11} style={{ verticalAlign: "middle" }} />
           </button>
           <button
-            onClick={confirmExecuteMerchant}
-            disabled={executing || !orderCount}
+            onClick={isExecutionDone ? undefined : confirmExecuteMerchant}
+            disabled={executing || !orderCount || isExecutionDone}
+            title={isExecutionDone ? "Execution stage already completed" : undefined}
             style={{
               padding: "0.3rem 0.75rem",
-              background: executing ? "#94a3b8" : (!orderCount ? "#e2e8f0" : "#059669"),
+              background: isExecutionDone ? "#6b7280" : executing ? "#94a3b8" : (!orderCount ? "#e2e8f0" : "#059669"),
               color: "#fff", border: "none", borderRadius: "5px",
               fontSize: "0.75rem", fontWeight: 600,
-              cursor: orderCount && !executing ? "pointer" : "not-allowed",
+              cursor: (orderCount && !executing && !isExecutionDone) ? "pointer" : "not-allowed",
+              opacity: isExecutionDone ? 0.55 : 1,
             }}
           >
             {executing
@@ -383,6 +452,7 @@ function MerchantExecPanel({ merchant, formatCurrency, formatDate, refreshSignal
               formatCurrency={formatCurrency}
               formatDate={formatDate}
               executing={executing}
+              isExecutionDone={isExecutionDone}
               onExecuteMerchant={() => confirmExecuteMerchant()}
               onExecuteBasket={confirmExecuteBasket}
               mode="placed"
@@ -979,7 +1049,7 @@ function ExecHistoryCard({ h, formatCurrency, formatDate }) {
 // Supports both "placed" (with execute buttons) and "confirmed" (read-only)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecuteMerchant, onExecuteBasket, mode = "placed" }) {
+function ExecHierarchy({ orders, formatCurrency, formatDate, executing, isExecutionDone, onExecuteMerchant, onExecuteBasket, mode = "placed" }) {
   const [expandedMerchants, setExpandedMerchants] = useState(new Set());
   const [expandedBrokers, setExpandedBrokers] = useState(new Set());
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
@@ -1079,7 +1149,7 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecut
               {badge(`${Object.keys(m.brokers).length} broker(s)`, "#e0e7ff", "#3730a3")}
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                 {pills(m)}
-                {!isConfirmed && (
+                {!isConfirmed && !isExecutionDone && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onExecuteMerchant(mId, m.merchant_name, m.orders.length, m.totalAmount); }}
                     disabled={executing}
@@ -1135,7 +1205,7 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, onExecut
                           <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                             {badge(`${bk.orders.length} orders`, "#faf5ff", "#7c3aed")}
                             {badge(formatCurrency(bk.totalAmount), "#f0fdf4", "#15803d")}
-                            {!isConfirmed && (
+                            {!isConfirmed && !isExecutionDone && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); onExecuteBasket(bkId, bk.orders.length); }}
                                 disabled={executing}

@@ -1,6 +1,6 @@
 // src/pages/JournalAdmin.jsx
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowRightLeft, RefreshCw, Play, CheckCircle2, AlertCircle, AlertTriangle,
   Clock, DollarSign, Users, Building2, ChevronDown, ChevronRight, ArrowLeft,
@@ -33,24 +33,27 @@ function StatusBadge({ status }) {
   return <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", backgroundColor: s.bg, color: s.fg }}>{s.label}</span>;
 }
 
-// ── Pipeline merchants ──
-function usePipelineMerchants() {
-  const [merchants, setMerchants] = useState(null);
+const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
+
+// ── Pipeline cycle options (merchant + broker pairs) ──
+function usePipelineCycles() {
+  const [cycleOptions, setCycleOptions] = useState(null);
   useEffect(() => {
-    apiPost("pipeline-cycles.php", { action: "list" }).then(res => {
+    apiPost("pipeline-cycles.php", { action: "list", limit: 100 }).then(res => {
       if (res?.success && Array.isArray(res.cycles)) {
-        const seen = new Set(); const out = [];
-        for (const c of res.cycles) {
-          if (c.status === "open" && !seen.has(c.merchant_id)) {
-            seen.add(c.merchant_id);
-            out.push({ merchant_id: c.merchant_id, merchant_name: c.merchant_name || c.cycle_label || c.merchant_id });
-          }
-        }
-        setMerchants(out);
-      } else { setMerchants([]); }
-    }).catch(() => setMerchants([]));
+        const open = res.cycles.filter(c => ["open", "locked"].includes(c.status));
+        setCycleOptions(open.map(c => ({
+          key:           makeKey(c.merchant_id_str || c.merchant_id, c.broker_id),
+          merchant_id:   c.merchant_id_str || c.merchant_id,
+          broker_id:     c.broker_id,
+          merchant_name: c.merchant_name || c.merchant_id_str || c.merchant_id,
+          broker_name:   c.broker_name   || c.broker_id,
+          cycle:         c,
+        })));
+      } else { setCycleOptions([]); }
+    }).catch(() => setCycleOptions([]));
   }, []);
-  return merchants;
+  return cycleOptions;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -58,13 +61,34 @@ function usePipelineMerchants() {
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function JournalAdmin() {
   const navigate = useNavigate();
-  const pipelineMerchants = usePipelineMerchants();
+  const location = useLocation();
+
+  // ── URL params (navigated from Pipeline Cycles) ───────────────────────────
+  const params       = new URLSearchParams(location.search);
+  const urlMerchantId = params.get("merchant_id") || "";
+  const urlBrokerId   = params.get("broker_id")   || "";
+
+  const cycleOptions      = usePipelineCycles();
+  const pipelineMerchants = useMemo(
+    () => cycleOptions
+      ? cycleOptions.map(o => ({ merchant_id: o.merchant_id, merchant_name: o.merchant_name }))
+      : null,
+    [cycleOptions]
+  );
+
+  // ── Merchant·broker filter ────────────────────────────────────────────────
+  const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+  const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState("active");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const [firmBalance, setFirmBalance] = useState(null);
   const [memberSummary, setMemberSummary] = useState([]);
+  const [cycleMemberSummary, setCycleMemberSummary] = useState([]);
   const [recentJournals, setRecentJournals] = useState([]);
   const [pendingJournals, setPendingJournals] = useState([]);
   const [checkingStatus, setCheckingStatus] = useState(false);
@@ -84,6 +108,7 @@ export default function JournalAdmin() {
         setPendingJournals(res.pending || []);
         setRecentJournals(res.recent_journals || []);
         setMemberSummary(res.member_summary || []);
+        setCycleMemberSummary(res.cycle_member_summary || []);
       } else { setError(res.error || "Failed to load journal data"); }
     } catch (err) { setError("Network error: " + err.message); }
     finally { setLoading(false); }
@@ -112,22 +137,21 @@ export default function JournalAdmin() {
   // Determine which merchants to show: pipeline merchants first, then any others with pending members
   const displayMerchants = useMemo(() => {
     if (!pipelineMerchants) return [];
-    const pipelineIds = new Set(pipelineMerchants.map(m => m.merchant_id));
     const shown = new Set();
     const out = [];
-    // Pipeline merchants first
     for (const pm of pipelineMerchants) {
+      if (filterMerchant && pm.merchant_id !== filterMerchant) continue;
       shown.add(pm.merchant_id);
       out.push({ merchant_id: pm.merchant_id, merchant_name: pm.merchant_name, inPipeline: true });
     }
-    // Any others with pending members
     for (const [mid, g] of Object.entries(merchantGroups)) {
       if (!shown.has(mid) && g.members.length > 0) {
+        if (filterMerchant && mid !== filterMerchant) continue;
         out.push({ merchant_id: mid, merchant_name: g.merchant_name, inPipeline: false });
       }
     }
     return out;
-  }, [pipelineMerchants, merchantGroups]);
+  }, [pipelineMerchants, merchantGroups, filterMerchant]);
 
   const totalPending = pendingJournals.reduce((s, o) => s + parseFloat(o.amount || 0), 0);
   const balanceKnown = firmBalance !== null && firmBalance !== undefined;
@@ -136,7 +160,11 @@ export default function JournalAdmin() {
   const hasPendingJournals = recentJournals.some(j => !["executed"].includes((j.journal_status || "").toLowerCase()));
 
   // Per-merchant helpers
-  const getMerchantMembers = (mid) => merchantGroups[mid]?.members || [];
+  const getMerchantMembers     = (mid) => merchantGroups[mid]?.members || [];
+  const getCycleMembersForMerchant = (mid) => {
+    const entry = cycleMemberSummary.find(c => String(c.merchant_id) === String(mid));
+    return entry?.members || [];
+  };
   const getMerchantSelected = (mid) => selectedByMerchant[mid] || new Set();
   const toggleMember = (mid, memberId) => {
     setSelectedByMerchant(prev => {
@@ -214,22 +242,45 @@ export default function JournalAdmin() {
   const toggleExpandMerchant = (mid) => setExpandedMerchants(prev => { const n = new Set(prev); n.has(mid) ? n.delete(mid) : n.add(mid); return n; });
 
   return (
-    <div style={{ maxWidth: "1100px", margin: "0 auto", padding: "16px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-        <button onClick={() => navigate("/admin")} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", color: "#6b7280" }}><ArrowLeft size={20} /></button>
-        <div>
-          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "700", color: "#111827" }}>
-            <ArrowRightLeft size={22} style={{ verticalAlign: "text-bottom", marginRight: "8px", color: "#10b981" }} />
-            Journal Funds
-          </h2>
-          <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#6b7280" }}>Transfer funded amounts from StockLoyal IB sweep → individual member broker accounts — split by pipeline merchant</p>
-        </div>
-      </div>
+    <div className="app-container app-content">
+      {/* ── Header ── */}
+      <h1 className="page-title">Journal Funds</h1>
+      <p className="page-deck">
+        Transfer funded amounts from StockLoyal IB sweep → individual member broker accounts — split by pipeline merchant.
+      </p>
 
       <OrderPipeline currentStep={3} />
 
-      {/* Banners */}
+      {/* ── Tabs + back button ── */}
+      <div style={{
+        display: "flex", gap: "0.5rem", marginBottom: "1.5rem",
+        borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem",
+        justifyContent: "space-between", alignItems: "center",
+      }}>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {[
+            { key: "active",  label: <><ArrowRightLeft size={12} style={{ verticalAlign: "middle" }} /> Active</> },
+            { key: "history", label: <><CheckCircle2   size={12} style={{ verticalAlign: "middle" }} /> History</> },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              padding: "0.5rem 1rem",
+              background: activeTab === t.key ? "#10b981" : "transparent",
+              color: activeTab === t.key ? "#fff" : "#64748b",
+              border: "none", borderRadius: "6px", fontWeight: "500", cursor: "pointer",
+            }}>{t.label}</button>
+          ))}
+        </div>
+        <button onClick={() => navigate("/pipeline-cycles")} style={{
+          display: "inline-flex", alignItems: "center", gap: "0.4rem",
+          padding: "0.4rem 0.75rem", background: "none",
+          border: "1px solid #d1d5db", borderRadius: "6px",
+          color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+        }}>
+          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+        </button>
+      </div>
+
+      {/* ── Banners ── */}
       {error && (
         <div style={{ padding: "12px 16px", backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#991b1b", fontSize: "13px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
           <AlertCircle size={16} />{error}
@@ -243,14 +294,57 @@ export default function JournalAdmin() {
         </div>
       )}
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "60px 0", color: "#6b7280" }}>
-          <Loader2 size={28} style={{ animation: "spin 1s linear infinite" }} />
-          <p style={{ marginTop: "8px", fontSize: "13px" }}>Loading journal data…</p>
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        </div>
-      ) : (
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ACTIVE TAB                                                            */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "active" && (
         <>
+          {/* Toolbar */}
+          <div style={{
+            display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
+            marginBottom: "1.25rem", padding: "0.75rem 1rem",
+            background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0",
+          }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Merchant · Broker
+              </label>
+              <select
+                value={selectedPair}
+                onChange={e => setSelectedPair(e.target.value)}
+                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
+              >
+                <option value="">All Active Cycles</option>
+                {(cycleOptions || []).map(opt => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.merchant_name} · {opt.broker_name}
+                  </option>
+                ))}
+                {urlMerchantId && !(cycleOptions || []).find(o => o.merchant_id === urlMerchantId) && (
+                  <option value={makeKey(urlMerchantId, urlBrokerId)}>
+                    {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
+                  </option>
+                )}
+              </select>
+            </div>
+            <button onClick={loadData} disabled={loading} style={{
+              padding: "0.5rem 1rem", background: "#10b981", color: "#fff",
+              border: "none", borderRadius: "6px", fontWeight: 600,
+              fontSize: "0.85rem", cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <RefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
+              {loading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "#6b7280" }}>
+            <Loader2 size={28} style={{ animation: "spin 1s linear infinite" }} />
+            <p style={{ marginTop: "8px", fontSize: "13px" }}>Loading journal data…</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        ) : (
+          <>
           {/* ── Summary Cards ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", marginBottom: "20px" }}>
             <div style={{ padding: "16px", borderRadius: "10px", border: insufficientForAll ? "1px solid #fca5a5" : "1px solid #e5e7eb", backgroundColor: insufficientForAll ? "#fef2f2" : "#fff" }}>
@@ -312,6 +406,8 @@ export default function JournalAdmin() {
             const selectedTotal = getMerchantTotal(mid);
             const insufficientMerchant = balanceKnown && merchantTotal > 0 && firmBalance < merchantTotal;
             const isJournaling = journaling === mid;
+            const cycleForMerchant = (cycleOptions || []).find(o => o.merchant_id === mid);
+            const isJournalDone = cycleForMerchant?.cycle?.stage_journal === "completed";
 
             return (
               <div key={mid} style={{ backgroundColor: "#fff", borderRadius: "10px", border: "1px solid #e5e7eb", overflow: "hidden", marginBottom: "16px" }}>
@@ -323,20 +419,29 @@ export default function JournalAdmin() {
                     <div style={{ fontWeight: 700, fontSize: "14px", color: "#111827", display: "flex", alignItems: "center", gap: 8 }}>
                       {pm.merchant_name}
                       {pm.inPipeline && <span style={{ fontSize: "10px", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#dbeafe", color: "#1d4ed8" }}>Pipeline Active</span>}
+                      {isJournalDone && <span style={{ fontSize: "10px", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>✓ Journal Complete</span>}
                       {members.length === 0 && <span style={{ fontSize: "10px", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#f3f4f6", color: "#9ca3af" }}>No pending</span>}
                     </div>
                     <div style={{ fontSize: "11px", color: "#6b7280", marginTop: 2 }}>{members.length} member(s) · {fmt(merchantTotal)}{selected.size > 0 ? ` · ${selected.size} selected (${fmt(selectedTotal)})` : ""}</div>
                   </div>
                   {members.length > 0 && !isJournaling && (
                     <div style={{ display: "flex", gap: 8 }} onClick={e => e.stopPropagation()}>
-                      <button onClick={() => runJournalAllForMerchant(mid)}
-                        disabled={isJournaling || journaling !== null || members.filter(m => m.broker_account_id).length === 0 || insufficientMerchant}
-                        style={{ display: "flex", alignItems: "center", gap: "5px", padding: "6px 14px", borderRadius: "6px", border: "none", backgroundColor: insufficientMerchant ? "#e5e7eb" : "#10b981", color: insufficientMerchant ? "#9ca3af" : "white", fontWeight: "600", fontSize: "12px", cursor: "pointer" }}>
+                      <button
+                        onClick={isJournalDone ? undefined : () => runJournalAllForMerchant(mid)}
+                        disabled={isJournaling || journaling !== null || members.filter(m => m.broker_account_id).length === 0 || insufficientMerchant || isJournalDone}
+                        title={isJournalDone ? "Journal stage already completed" : undefined}
+                        style={{ display: "flex", alignItems: "center", gap: "5px", padding: "6px 14px", borderRadius: "6px", border: "none",
+                          backgroundColor: isJournalDone ? "#6b7280" : insufficientMerchant ? "#e5e7eb" : "#10b981",
+                          color: insufficientMerchant ? "#9ca3af" : "white",
+                          fontWeight: "600", fontSize: "12px",
+                          cursor: isJournalDone ? "not-allowed" : "pointer",
+                          opacity: isJournalDone ? 0.55 : 1,
+                        }}>
                         {insufficientMerchant ? <ShieldAlert size={12} /> : <Play size={12} />} Journal All
                       </button>
                       {selected.size > 0 && (
                         <button onClick={() => runJournalForMerchant(mid)}
-                          disabled={journaling !== null}
+                          disabled={journaling !== null || isJournalDone}
                           style={{ display: "flex", alignItems: "center", gap: "5px", padding: "6px 14px", borderRadius: "6px", border: "1px solid #d1d5db", backgroundColor: "#fff", color: "#374151", fontWeight: "500", fontSize: "12px", cursor: "pointer" }}>
                           <ArrowRightLeft size={12} /> Journal ({selected.size})
                         </button>
@@ -349,12 +454,92 @@ export default function JournalAdmin() {
 
                 {/* Member table */}
                 {isExpanded && (
-                  members.length === 0 ? (
-                    <div style={{ padding: "2rem", textAlign: "center", background: "#f0fdf4" }}>
-                      <CheckCircle2 size={24} color="#16a34a" style={{ marginBottom: 4 }} />
-                      <div style={{ fontSize: "13px", fontWeight: "600", color: "#166534" }}>No paid orders awaiting journal for this merchant.</div>
-                    </div>
-                  ) : (
+                  <>
+                    {members.length === 0 && (
+                      <>
+                        <div style={{ padding: "10px 16px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: 8, fontSize: "13px", color: "#166534" }}>
+                          <CheckCircle2 size={15} color="#16a34a" />
+                          <span>No paid orders awaiting journal for this merchant.</span>
+                        </div>
+                        {/* Cycle order detail — all paid orders with journal status */}
+                        {(() => {
+                          const cycleMembers = getCycleMembersForMerchant(mid);
+                          if (cycleMembers.length === 0) return (
+                            <div style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+                              No cycle orders found for this merchant.
+                            </div>
+                          );
+                          return (
+                            <div>
+                              <div style={{ padding: "8px 16px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", fontSize: "11px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                Cycle Orders — {cycleMembers.length} member{cycleMembers.length !== 1 ? "s" : ""}
+                              </div>
+                              {/* Member header */}
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 100px 90px", padding: "8px 16px", background: "#fafafa", borderBottom: "1px solid #f3f4f6", fontSize: "10px", fontWeight: "600", color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                <div>Member</div><div style={{ textAlign: "right" }}>Amount</div><div style={{ textAlign: "center" }}>Orders</div><div style={{ textAlign: "center" }}>Broker Acct</div><div style={{ textAlign: "center" }}>Journal</div>
+                              </div>
+                              {cycleMembers.map(m => {
+                                const isExpMember = expandedMember === `cycle::${mid}::${m.member_id}`;
+                                const allJournaled = m.orders.every(o => o.journal_status === 'executed' || o.status === 'funded');
+                                const someJournaled = m.orders.some(o => o.journal_status === 'executed' || o.status === 'funded');
+                                const journalLabel = allJournaled ? 'executed' : someJournaled ? 'partial' : 'pending';
+                                const jColors = { executed: { bg: "#dcfce7", fg: "#166534" }, partial: { bg: "#fef3c7", fg: "#92400e" }, pending: { bg: "#f3f4f6", fg: "#6b7280" } }[journalLabel];
+                                return (
+                                  <React.Fragment key={m.member_id}>
+                                    <div
+                                      onClick={() => setExpandedMember(isExpMember ? null : `cycle::${mid}::${m.member_id}`)}
+                                      style={{ display: "grid", gridTemplateColumns: "1fr 120px 80px 100px 90px", padding: "10px 16px", borderBottom: "1px solid #f3f4f6", alignItems: "center", cursor: "pointer", background: isExpMember ? "#f0f9ff" : "transparent" }}
+                                      onMouseEnter={e => { if (!isExpMember) e.currentTarget.style.background = "#f8fafc"; }}
+                                      onMouseLeave={e => { if (!isExpMember) e.currentTarget.style.background = "transparent"; }}
+                                    >
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        {isExpMember ? <ChevronDown size={13} color="#6b7280" /> : <ChevronRight size={13} color="#6b7280" />}
+                                        <div>
+                                          <div style={{ fontSize: "13px", fontWeight: "600", color: "#111827" }}>{m.member_name || m.member_id}</div>
+                                          <div style={{ fontSize: "11px", color: "#9ca3af" }}>{m.member_id}</div>
+                                        </div>
+                                      </div>
+                                      <div style={{ textAlign: "right", fontSize: "13px", fontWeight: "600", color: "#111827" }}>{fmt(m.total_amount)}</div>
+                                      <div style={{ textAlign: "center", fontSize: "13px", color: "#374151" }}>{m.order_count}</div>
+                                      <div style={{ textAlign: "center" }}>{m.broker_account_id ? <span style={{ fontSize: "11px", color: "#16a34a", fontWeight: "500" }}>✓ Linked</span> : <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: "500" }}>✗ None</span>}</div>
+                                      <div style={{ textAlign: "center" }}>
+                                        <span style={{ fontSize: "11px", fontWeight: "600", padding: "2px 8px", borderRadius: 10, background: jColors.bg, color: jColors.fg }}>{journalLabel}</span>
+                                      </div>
+                                    </div>
+                                    {isExpMember && (
+                                      <div style={{ padding: "10px 16px 10px 48px", background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px 100px 120px", gap: 4, fontSize: "10px", fontWeight: "600", color: "#9ca3af", textTransform: "uppercase", marginBottom: 4 }}>
+                                          <div>Symbol</div><div style={{ textAlign: "right" }}>Amount</div><div style={{ textAlign: "center" }}>Basket</div><div style={{ textAlign: "center" }}>Status</div><div style={{ textAlign: "center" }}>Journal</div>
+                                        </div>
+                                        {m.orders.map((o, i) => (
+                                          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 110px 100px 120px", gap: 4, padding: "5px 0", fontSize: "12px", color: "#374151", borderBottom: "1px solid #f3f4f6", alignItems: "center" }}>
+                                            <div style={{ fontWeight: "500" }}>{o.symbol}</div>
+                                            <div style={{ textAlign: "right" }}>{fmt(o.amount)}</div>
+                                            <div style={{ textAlign: "center", color: "#6b7280", fontFamily: "monospace", fontSize: "11px" }}>{o.basket_id}</div>
+                                            <div style={{ textAlign: "center" }}><StatusBadge status={o.status} /></div>
+                                            <div style={{ textAlign: "center" }}>
+                                              {o.journal_status
+                                                ? <StatusBadge status={o.journal_status} />
+                                                : <span style={{ fontSize: "11px", color: "#9ca3af" }}>—</span>}
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {m.broker_account_id && (
+                                          <div style={{ marginTop: 8, fontSize: "11px", color: "#6b7280" }}>
+                                            Broker Account: <code style={{ fontSize: "10px" }}>{m.broker_account_id}</code>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+                    {members.length > 0 && (
                     <>
                       {/* Select all bar */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", fontSize: "12px", color: "#6b7280" }}>
@@ -407,20 +592,42 @@ export default function JournalAdmin() {
                         );
                       })}
                     </>
-                  )
+                    )}
+                  </>
                 )}
               </div>
             );
           })}
 
-          {/* ── Recent Journal History ── */}
-          {recentJournals.length > 0 && (
-            <div style={{ marginTop: "24px" }}>
+          {/* ── Recent Journal History moved to History tab ── */}
+          </>
+        )}
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* HISTORY TAB                                                           */}
+      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "history" && (
+        <div>
+          {recentJournals.length === 0 && !loading ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8", background: "#f8fafc", borderRadius: 8, border: "2px dashed #cbd5e1" }}>
+              <CheckCircle2 size={28} color="#94a3b8" style={{ marginBottom: 8 }} />
+              <div style={{ fontWeight: 600, color: "#64748b" }}>No recent journal transactions</div>
+              <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginTop: 4 }}>Journals will appear here after running the Journal step.</div>
+            </div>
+          ) : (
+            <>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
                 <h3 style={{ fontSize: "15px", fontWeight: "600", color: "#374151", margin: 0 }}>Recent Journal Transactions</h3>
-                <button onClick={checkJournalStatuses} disabled={checkingStatus} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 14px", fontSize: "12px", fontWeight: "600", background: checkingStatus ? "#e5e7eb" : "#f0fdf4", color: checkingStatus ? "#9ca3af" : "#166534", border: `1px solid ${checkingStatus ? "#d1d5db" : "#86efac"}`, borderRadius: "6px", cursor: "pointer" }}>
-                  {checkingStatus ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Checking…</> : <><RefreshCw size={12} /> Check Alpaca Status</>}
-                </button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button onClick={loadData} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", fontSize: "12px", fontWeight: "600", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: "6px", cursor: "pointer" }}>
+                    <RefreshCw size={12} /> Refresh
+                  </button>
+                  <button onClick={checkJournalStatuses} disabled={checkingStatus} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 14px", fontSize: "12px", fontWeight: "600", background: checkingStatus ? "#e5e7eb" : "#f0fdf4", color: checkingStatus ? "#9ca3af" : "#166534", border: `1px solid ${checkingStatus ? "#d1d5db" : "#86efac"}`, borderRadius: "6px", cursor: "pointer" }}>
+                    {checkingStatus ? <><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> Checking…</> : <><RefreshCw size={12} /> Check Alpaca Status</>}
+                  </button>
+                </div>
               </div>
               {hasPendingJournals && (
                 <div style={{ backgroundColor: "#fef3c7", border: "2px solid #f59e0b", borderRadius: "8px", padding: "12px 16px", marginBottom: "12px", display: "flex", alignItems: "flex-start", gap: "10px" }}>
@@ -448,10 +655,12 @@ export default function JournalAdmin() {
                   </div>
                 ))}
               </div>
-            </div>
+            </>
           )}
-        </>
+        </div>
       )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   );
 }

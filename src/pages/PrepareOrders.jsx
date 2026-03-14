@@ -894,8 +894,9 @@ export default function PrepareOrders() {
                   border: "1px solid #e2e8f0",
                   overflow: "auto",
                 }}>
-                  <div style={{ padding: "0.75rem 1rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.85rem", borderBottom: "1px solid #e2e8f0" }}>
-                    By Merchant
+                  <div style={{ padding: "0.75rem 1rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.85rem", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>By Merchant</span>
+                    <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: 400 }}>Click a row to view batches</span>
                   </div>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
@@ -907,8 +908,22 @@ export default function PrepareOrders() {
                     </thead>
                     <tbody>
                       {preview.by_merchant.map((m, i) => (
-                        <tr key={i} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                          <td style={{ ...tdStyle, fontWeight: 600 }}>{m.merchant_name || m.merchant_id}</td>
+                        <tr
+                          key={i}
+                          style={{ borderBottom: "1px solid #e2e8f0", cursor: "pointer" }}
+                          title={`View batches for ${m.merchant_name || m.merchant_id}`}
+                          onClick={() => {
+                            const matchingOpt = cycleOptions.find(o => String(o.merchant_id) === String(m.merchant_id));
+                            setSelectedPair(matchingOpt ? matchingOpt.key : String(m.merchant_id));
+                            setActiveTab("batches");
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = "#f0f9ff")}
+                          onMouseLeave={e => (e.currentTarget.style.background = "")}
+                        >
+                          <td style={{ ...tdStyle, fontWeight: 600, color: "#4f46e5", display: "flex", alignItems: "center", gap: 6 }}>
+                            {m.merchant_name || m.merchant_id}
+                            <Package size={13} color="#a5b4fc" />
+                          </td>
                           <td style={tdStyle}>{fmtN(m.members)}</td>
                           <td style={tdStyle}>{fmtN(m.picks)}</td>
                         </tr>
@@ -928,49 +943,74 @@ export default function PrepareOrders() {
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {activeTab === "batches" && (
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <h3 style={{ margin: 0, color: "#1e293b" }}>Preparation Batches</h3>
-            <button
-              onClick={loadBatches}
-              disabled={batchesLoading}
-              style={{
-                padding: "0.375rem 0.75rem",
-                background: "#6366f1",
-                color: "#fff",
-                border: "none",
-                borderRadius: "4px",
-                fontSize: "0.75rem",
-                cursor: "pointer",
-              }}
-            >
-              {batchesLoading ? "..." : "Refresh"}
-            </button>
+          {/* ── Batches toolbar (mirrors Preview filter) ── */}
+          <div style={{
+            display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
+            marginBottom: "1.25rem", padding: "0.75rem 1rem",
+            background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0",
+          }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Merchant · Broker
+              </label>
+              <select
+                value={selectedPair}
+                onChange={(e) => setSelectedPair(e.target.value)}
+                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
+              >
+                <option value="">All Batches</option>
+                {cycleOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key}>
+                    {opt.merchant_name} · {opt.broker_name}
+                  </option>
+                ))}
+                {urlMerchantId && !cycleOptions.find(o => o.merchant_id === urlMerchantId) && (
+                  <option value={makeKey(urlMerchantId, urlBrokerId)}>
+                    {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
+                  </option>
+                )}
+              </select>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+              {filterMerchant && (
+                <span style={{ fontSize: "0.75rem", background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                  {cycleOptions.find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}
+                  <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#92400e", padding: 0, lineHeight: 1, fontSize: "0.9rem" }} title="Clear filter">×</button>
+                </span>
+              )}
+              <button onClick={loadBatches} disabled={batchesLoading} style={{ padding: "0.375rem 0.75rem", background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                <RefreshCw size={12} style={{ animation: batchesLoading ? "spin 1s linear infinite" : "none" }} />
+                {batchesLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
           </div>
 
           {batchesError && (
-            <div style={{
-              padding: "1rem",
-              marginBottom: "1rem",
-              borderRadius: "8px",
-              background: "#fee2e2",
-              border: "1px solid #ef4444",
-              color: "#991b1b",
-              fontSize: "0.875rem",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}>
+            <div style={{ padding: "1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fee2e2", border: "1px solid #ef4444", color: "#991b1b", fontSize: "0.875rem", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Batches Error</strong>
               <div style={{ marginTop: "0.5rem" }}>{batchesError}</div>
             </div>
           )}
 
-          {batches.length === 0 && !batchesError ? (
-            <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
-              No batches yet. Use the Preview tab to stage orders.
-            </div>
-          ) : (
+          {(() => {
+            const visibleBatches = filterMerchant
+              ? batches.filter(b => String(b.filter_merchant || b.merchant_id || "").toLowerCase() === String(filterMerchant).toLowerCase())
+              : batches;
+
+            if (batches.length === 0 && !batchesError) return (
+              <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
+                No batches yet. Use the Preview tab to stage orders.
+              </div>
+            );
+            if (visibleBatches.length === 0) return (
+              <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
+                No batches found for <strong>{cycleOptions.find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}</strong>.{" "}
+                <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontWeight: 600, padding: 0 }}>Clear filter</button>
+              </div>
+            );
+            return (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {batches.map((b) => {
+              {visibleBatches.map((b) => {
                 const isActive = activeBatchId === b.batch_id;
 
                 return (
@@ -1115,7 +1155,8 @@ export default function PrepareOrders() {
                 );
               })}
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>
