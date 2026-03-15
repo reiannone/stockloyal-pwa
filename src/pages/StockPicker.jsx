@@ -100,6 +100,11 @@ export default function StockPicker() {
   const [modal, setModal] = useState({ show: false, title: "", message: "" });
   const closeModal = () => setModal(m => ({ ...m, show: false }));
 
+  // ── Active batch detection ──────────────────────────────────────────────────
+  // If the merchant has a cycle with an in-progress batch (orders approved → completed)
+  // the member's basket will go into the NEXT monthly cycle, not the current one.
+  const [activeBatchInProgress, setActiveBatchInProgress] = useState(false);
+
   // --- Stock categories state ---
   const [category, setCategory] = useState("");
   const [results, setResults] = useState([]);
@@ -454,7 +459,26 @@ export default function StockPicker() {
     })();
   }, [memberId]);
 
-  // ✅ Use member's tier-specific conversion rate from wallet (mirrors Wallet.jsx line 629)
+  // ── Check if merchant has a batch actively in progress ─────────────────────
+  useEffect(() => {
+    const merchantId = localStorage.getItem("merchant_id") || localStorage.getItem("merchantId");
+    if (!merchantId) return;
+    apiPost("pipeline-cycles.php", { action: "list", limit: 100 })
+      .then(res => {
+        if (!res?.success) return;
+        const inProgress = (res.cycles || []).some(c => {
+          if (!["open", "locked"].includes(c.status)) return false;
+          const mid = c.merchant_id_str || c.merchant_id;
+          if (String(mid) !== String(merchantId)) return false;
+          // A batch is "in progress" if orders stage is completed (approved onward)
+          // i.e. stage_orders is completed but cycle isn't closed yet
+          const stageOrders = c.stage_orders || "pending";
+          return stageOrders === "completed";
+        });
+        setActiveBatchInProgress(inProgress);
+      })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     if (wallet?.conversion_rate) {
       let r = Number(wallet.conversion_rate);
@@ -1177,6 +1201,30 @@ export default function StockPicker() {
         onConfirm={closeModal}
         onCancel={closeModal}
       />
+
+      {/* ── Active batch in-progress notice ── */}
+      {activeBatchInProgress && (
+        <div style={{
+          background: "#fef3c7",
+          border: "1px solid #f59e0b",
+          borderRadius: "10px",
+          padding: "0.875rem 1rem",
+          marginBottom: "1rem",
+          display: "flex",
+          gap: "0.75rem",
+          alignItems: "flex-start",
+        }}>
+          <span style={{ fontSize: "1.1rem", flexShrink: 0, marginTop: 1 }}>⏳</span>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#92400e", marginBottom: 2 }}>
+              A sweep cycle is currently in progress
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#b45309", lineHeight: 1.5 }}>
+              <strong>{merchantName}</strong> has an active batch being processed right now. Any changes to your basket will take effect in the <strong>next monthly cycle</strong>.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Points / Cash display */}
       <div className="card card--accent"
