@@ -77,8 +77,11 @@ try {
             COUNT(*) AS order_count,
             SUM(o.amount) AS total_amount
         FROM orders o
+        LEFT JOIN merchant_broker_config mbc
+            ON mbc.merchant_id = o.merchant_id
+            AND mbc.broker_id  = o.broker
         LEFT JOIN broker_master b
-            ON o.broker COLLATE utf8mb4_unicode_ci = b.broker_name COLLATE utf8mb4_unicode_ci
+            ON b.broker_id = mbc.broker_id
         WHERE o.merchant_id = ?
           AND LOWER(o.status) IN ('approved', 'funded', 'placed', 'submitted', 'confirmed')
         GROUP BY o.broker, b.broker_id, b.ach_bank_name,

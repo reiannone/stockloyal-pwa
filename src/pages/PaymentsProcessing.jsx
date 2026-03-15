@@ -125,6 +125,24 @@ export default function PaymentsProcessing() {
 
   const loading = cyclesLoading && cycleOptions.length === 0;
 
+  // Fetch broker ACH data once, keyed by broker_id (exact alphanumeric match)
+  const [brokerMasterMap, setBrokerMasterMap] = useState({});
+  useEffect(() => {
+    apiPost("get-brokers.php").then(res => {
+      if (!res?.success) return;
+      const map = {};
+      for (const b of res.brokers || []) {
+        if (b.broker_id) map[String(b.broker_id)] = {
+          ach_bank_name:    b.ach_bank_name    || "",
+          ach_routing_num:  b.ach_routing_num  || "",
+          ach_account_num:  b.ach_account_num  || "",
+          ach_account_type: b.ach_account_type || "",
+        };
+      }
+      setBrokerMasterMap(map);
+    }).catch(() => {});
+  }, []);
+
   return (
     <div className="app-container app-content">
       <ConfirmModal
@@ -274,7 +292,15 @@ export default function PaymentsProcessing() {
           ) : (
             <>
               <div style={{ fontSize: "0.82rem", color: "#64748b" }}>Showing {history.length} of {historyTotal} batch(es)</div>
-              {history.map(batch => <PaymentHistoryCard key={batch.batch_id} batch={batch} processing={cancelProcessing} onCancel={() => confirmCancelBatch(batch)} />)}
+              {history.map(batch => (
+                <HistoryPaymentPanel
+                  key={batch.batch_id}
+                  batch={batch}
+                  processing={cancelProcessing}
+                  onCancel={() => confirmCancelBatch(batch)}
+                  fundingMethod={fundingMethods[batch.merchant_id] || "manual_ach"}
+                />
+              ))}
               {historyHasMore && <button onClick={() => loadHistory(true)} disabled={historyLoading} style={{ padding: "0.75rem", background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 6, cursor: "pointer", fontSize: "0.85rem" }}>{historyLoading ? "Loading..." : "Load More"}</button>}
             </>
           )}
@@ -302,6 +328,7 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
   const [loading, setLoading]               = useState(false);
   const [expanded, setExpanded]             = useState(!isFundingDone);
   const [processResults, setProcessResults] = useState([]);
+  const [plaidInfo, setPlaidInfo]           = useState(null);
 
   const mid    = cycleOpt.merchant_id;
   const bid    = cycleOpt.broker_id;
@@ -313,7 +340,6 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
       const res = await apiPost("get-payments.php", { merchant_id: mid });
       if (res?.success) {
         const allOrders = res.orders || [];
-        // Scope to this cycle's broker client-side
         const filtered = bid
           ? allOrders.filter(o => {
               const obroker = (o.broker || "").toLowerCase();
@@ -329,25 +355,44 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
 
   useEffect(() => { load(); }, [load]);
 
+  // Fetch Plaid bank info for Plaid-funded merchants
+  useEffect(() => {
+    if (!isPlaid) return;
+    apiPost("plaid-bank-status.php", { merchant_id: mid })
+      .then(res => { if (res?.success && res.bank) setPlaidInfo(res.bank); })
+      .catch(() => {});
+  }, [mid, isPlaid]);
+
   const totalAmount     = useMemo(() => orders.reduce((s, o) => s + safeNum(o?.payment_amount ?? o?.executed_amount ?? o?.amount ?? 0), 0), [orders]);
   const memberCount     = useMemo(() => new Set(orders.map(o => o.member_id).filter(Boolean)).size, [orders]);
+
+  // Build ACH map keyed by o.broker value.
+  // summary already has ACH fields from the broker_master JOIN in get-payments.php
+  // keyed by s.broker which is the exact same value as o.broker on every order
   const brokerDetailsMap = useMemo(() => {
     const map = {};
-    for (const s of summary) { const b = (s?.broker || "Unknown").trim(); if (!map[b]) map[b] = { ach_bank_name: s.ach_bank_name || "", ach_routing_num: s.ach_routing_num || "", ach_account_num: s.ach_account_num || "", ach_account_type: s.ach_account_type || "" }; }
+    for (const s of summary) {
+      if (s.broker) map[s.broker] = {
+        ach_bank_name:    s.ach_bank_name    || "",
+        ach_routing_num:  s.ach_routing_num  || "",
+        ach_account_num:  s.ach_account_num  || "",
+        ach_account_type: s.ach_account_type || "",
+      };
+    }
     return map;
   }, [summary]);
 
-  const processBroker = async (broker) => {
-    if (!orders.filter(o => o.broker === broker).length) return { merchant_id: mid, broker, success: false, skipped: true, error: "No orders" };
+  const processBroker = async (brokerName) => {
+    if (!orders.filter(o => o.broker === brokerName).length) return { merchant_id: mid, broker: brokerName, success: false, skipped: true, error: "No orders" };
     try {
       if (isPlaid) {
-        const res = await apiPost("plaid-initiate-funding.php", { merchant_id: mid, broker });
-        return { merchant_id: mid, broker, funding_method: "plaid", success: res?.success || false, ...res };
+        const res = await apiPost("plaid-initiate-funding.php", { merchant_id: mid, broker: brokerName });
+        return { merchant_id: mid, broker: brokerName, funding_method: "plaid", success: res?.success || false, ...res };
       } else {
-        const res = await apiPost("export-payments-file.php", { merchant_id: mid, broker });
-        return { merchant_id: mid, broker, funding_method: "manual_ach", success: res?.success || false, ...res };
+        const res = await apiPost("export-payments-file.php", { merchant_id: mid, broker: brokerName });
+        return { merchant_id: mid, broker: brokerName, funding_method: "manual_ach", success: res?.success || false, ...res };
       }
-    } catch (err) { return { merchant_id: mid, broker, success: false, error: err.message }; }
+    } catch (err) { return { merchant_id: mid, broker: brokerName, success: false, error: err.message }; }
   };
 
   const doProcess = async (brokerFilter = null) => {
@@ -388,6 +433,19 @@ function CyclePaymentPanel({ cycleOpt, fundingMethod, processing, setProcessing,
             {cycle && stageBadge("Payment", cycle.stage_payment || "pending")}
             {cycle && stageBadge("Funding", cycle.stage_funding  || "pending")}
           </div>
+          {/* Plaid bank info strip */}
+          {isPlaid && plaidInfo && (
+            <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#6b21a8", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ padding: "1px 7px", borderRadius: 4, background: "#f3e8ff", fontWeight: 600 }}>
+                ⚡ {plaidInfo.institution_name || "Linked Bank"}
+              </span>
+              {plaidInfo.account_name && <span>{plaidInfo.account_name}</span>}
+              {plaidInfo.account_mask && <span>····{plaidInfo.account_mask}</span>}
+              <span style={{ color: plaidInfo.status === "active" ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
+                {plaidInfo.status}
+              </span>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -455,7 +513,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, isFundin
   });
   const statusColor = status => ({ approved: { bg: "#dbeafe", fg: "#1d4ed8" }, funded: { bg: "#d1fae5", fg: "#065f46" }, placed: { bg: "#ede9fe", fg: "#5b21b6" }, submitted: { bg: "#e0f2fe", fg: "#0369a1" }, confirmed: { bg: "#f0fdf4", fg: "#15803d" } }[status] || { bg: "#f3f4f6", fg: "#374151" });
 
-  // Build broker → basket → orders hierarchy
+  // Build broker → basket → orders hierarchy (keyed by broker name — matches summary)
   const hierarchy = {};
   for (const o of orders) {
     const br = o.broker || "Unknown";
@@ -499,7 +557,7 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, isFundin
         const br = hierarchy[brKey];
         const brOpen  = expandedBrokers.has(brKey);
         const achOpen = showAch.has(brKey);
-        const achDets = brokerDetailsMap[brKey];
+        const achDets = brokerDetailsMap[brKey] || null;
 
         return (
           <div key={brKey}>
@@ -510,7 +568,20 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, isFundin
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                 {pills(br)}
                 {achDets && <button onClick={e => { e.stopPropagation(); toggle(setShowAch, brKey); }} style={{ ...smallBtnStyle, background: achOpen ? "#dbeafe" : "#f1f5f9", color: achOpen ? "#1d4ed8" : "#475569", border: `1px solid ${achOpen ? "#93c5fd" : "#cbd5e1"}` }}>ACH</button>}
-                <button onClick={e => { e.stopPropagation(); onProcessBroker(brKey, br.orders.length, br.totalAmount); }} disabled={processing} style={{ ...smallBtnStyle, background: "#f59e0b", color: "#fff" }}><CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process</button>
+                <button
+                  onClick={isFundingDone ? undefined : e => { e.stopPropagation(); onProcessBroker(brKey, br.orders.length, br.totalAmount); }}
+                  disabled={processing || isFundingDone}
+                  title={isFundingDone ? "Stage already completed" : undefined}
+                  style={{
+                    ...smallBtnStyle,
+                    background: isFundingDone ? "#6b7280" : "#f59e0b",
+                    color: "#fff",
+                    cursor: isFundingDone ? "not-allowed" : "pointer",
+                    opacity: isFundingDone ? 0.55 : 1,
+                  }}
+                >
+                  <CreditCard size={11} style={{ verticalAlign: "middle" }} /> Process
+                </button>
                 {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
               </div>
             </div>
@@ -581,40 +652,135 @@ function PaymentsHierarchy({ orders, brokerDetailsMap = {}, processing, isFundin
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PaymentHistoryCard
+// HistoryPaymentPanel
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PaymentHistoryCard({ batch, processing, onCancel }) {
-  const [expanded, setExpanded] = useState(false);
+// ═══════════════════════════════════════════════════════════════════════════
+// HistoryPaymentPanel — mirrors CyclePaymentPanel but read-only for history
+// ═══════════════════════════════════════════════════════════════════════════
+
+function HistoryPaymentPanel({ batch, processing, onCancel, fundingMethod = "manual_ach" }) {
   const b = batch;
+  const isPlaid = fundingMethod === "plaid";
+  const [expanded, setExpanded]             = useState(true);
+  const [orders, setOrders]                 = useState(null);
+  const [summary, setSummary]               = useState([]);
+  const [loadingOrders, setLoadingOrders]   = useState(false);
+  const [plaidInfo, setPlaidInfo]           = useState(null);
+
+  // Fetch Plaid bank info if applicable
+  useEffect(() => {
+    if (!isPlaid || !b.merchant_id) return;
+    apiPost("plaid-bank-status.php", { merchant_id: b.merchant_id })
+      .then(res => { if (res?.success && res.bank) setPlaidInfo(res.bank); })
+      .catch(() => {});
+  }, [b.merchant_id, isPlaid]);
+
+  // Lazy-load orders + summary on first expand
+  const handleExpand = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && orders === null && !loadingOrders) {
+      setLoadingOrders(true);
+      try {
+        const res = await apiPost("get-payments.php", { merchant_id: b.merchant_id });
+        if (res?.success) {
+          setOrders(res.orders || []);
+          setSummary(Array.isArray(res.summary) ? res.summary : []);
+        } else { setOrders([]); }
+      } catch { setOrders([]); }
+      finally { setLoadingOrders(false); }
+    }
+  };
+
+  // summary already has ACH fields from the broker_master JOIN in get-payments.php
+  const brokerDetailsMap = useMemo(() => {
+    const map = {};
+    for (const s of summary) {
+      if (s.broker) map[s.broker] = {
+        ach_bank_name:    s.ach_bank_name    || "",
+        ach_routing_num:  s.ach_routing_num  || "",
+        ach_account_num:  s.ach_account_num  || "",
+        ach_account_type: s.ach_account_type || "",
+      };
+    }
+    return map;
+  }, [summary]);
+
+  const totalAmount = safeNum(b.total_amount);
+  const orderCount  = b.order_count || 0;
+
   return (
-    <div style={{ background: "#fff", borderRadius: 8, border: `1px solid ${expanded ? "#3b82f6" : "#e2e8f0"}`, overflow: "hidden" }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ padding: "0.75rem 1rem", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: expanded ? "#eff6ff" : "#fff" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>{b.batch_id}</span>
-            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#d1fae5", color: "#059669" }}>{b.order_count || 0} orders</span>
-            <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "1px 8px", borderRadius: 4, background: "#f0fdf4", color: "#15803d" }}>{fmtMoney(b.total_amount)}</span>
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      {/* Header — mirrors CyclePaymentPanel */}
+      <div
+        onClick={handleExpand}
+        style={{ padding: "12px 16px", background: expanded ? "#f8fafc" : "#fff", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", borderBottom: expanded ? "1px solid #e2e8f0" : "none" }}
+      >
+        <Store size={18} color="#8b5cf6" />
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+            <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1e293b" }}>{b.merchant_id}</span>
+            <span style={{ color: "#94a3b8", fontSize: "0.8rem" }}>·</span>
+            <Building2 size={13} color="#6366f1" />
+            <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "#4338ca" }}>{b.broker || "—"}</span>
+            {isPlaid && <span style={{ fontSize: "0.7rem", fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#ede9fe", color: "#7c3aed" }}>⚡ Plaid</span>}
+            <span style={{ fontSize: "0.68rem", fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "#f0fdf4", color: "#16a34a" }}>✓ Funded</span>
           </div>
-          <div style={{ display: "flex", gap: 16, fontSize: "0.78rem", color: "#64748b" }}>
-            <span>{b.merchant_id}</span><span>Broker: <strong>{b.broker}</strong></span><span>{b.paid_at}</span>
+          <div style={{ fontSize: "0.75rem", color: "#64748b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <span>{orderCount} orders · {fmtMoney(totalAmount)}</span>
+            {b.batch_id && <code style={{ fontSize: "0.7rem", background: "#f1f5f9", padding: "0 5px", borderRadius: 3 }}>{b.batch_id}</code>}
+            {b.paid_at && <span>Paid: {b.paid_at}</span>}
           </div>
+          {/* Plaid bank info strip — same as active tab */}
+          {isPlaid && plaidInfo && (
+            <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#6b21a8", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ padding: "1px 7px", borderRadius: 4, background: "#f3e8ff", fontWeight: 600 }}>
+                ⚡ {plaidInfo.institution_name || "Linked Bank"}
+              </span>
+              {plaidInfo.account_name && <span>{plaidInfo.account_name}</span>}
+              {plaidInfo.account_mask && <span>····{plaidInfo.account_mask}</span>}
+              <span style={{ color: plaidInfo.status === "active" ? "#16a34a" : "#dc2626", fontWeight: 600 }}>
+                {plaidInfo.status}
+              </span>
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={e => { e.stopPropagation(); onCancel(); }} disabled={processing} style={{ padding: "4px 10px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 4, cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}><RotateCcw size={11} style={{ verticalAlign: "middle" }} /> Cancel</button>
+          <button
+            onClick={e => { e.stopPropagation(); onCancel(); }}
+            disabled={processing}
+            style={{ padding: "5px 10px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, cursor: "pointer", fontSize: "0.72rem", fontWeight: 600 }}
+          >
+            <RotateCcw size={11} style={{ verticalAlign: "middle" }} /> Cancel
+          </button>
           {expanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
         </div>
       </div>
+
+      {/* Body */}
       {expanded && (
-        <div style={{ borderTop: "1px solid #e2e8f0", padding: "0.75rem 1rem", fontSize: "0.82rem" }}>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", color: "#475569" }}>
-            <span>Batch: <code style={{ fontSize: "0.75rem" }}>{b.batch_id}</code></span>
-            <span>Merchant: <strong>{b.merchant_id}</strong></span>
-            <span>Broker: <strong>{b.broker}</strong></span>
-            <span>Orders: <strong>{b.order_count}</strong></span>
-            <span>Amount: <strong>{fmtMoney(b.total_amount)}</strong></span>
-            <span>Paid: <strong>{b.paid_at}</strong></span>
-          </div>
+        <div style={{ padding: "12px" }}>
+          {loadingOrders ? (
+            <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
+              <Loader2 size={18} style={{ animation: "spin 1s linear infinite", verticalAlign: "middle", marginRight: 6 }} />
+              Loading orders…
+            </div>
+          ) : orders === null ? null
+            : orders.length === 0 ? (
+            <div style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8", fontSize: "0.85rem" }}>
+              No orders found for this batch.
+            </div>
+          ) : (
+            <PaymentsHierarchy
+              orders={orders}
+              brokerDetailsMap={brokerDetailsMap}
+              processing={false}
+              isFundingDone={true}
+              onProcessAll={() => {}}
+              onProcessBroker={() => {}}
+            />
+          )}
         </div>
       )}
     </div>
