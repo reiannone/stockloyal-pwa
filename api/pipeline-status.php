@@ -43,20 +43,14 @@ try {
     );
 
     // ── Stage 3: Journal (funded orders awaiting JNLC to member accounts) ────
+    // Only count orders not yet journaled — terminal states are 'completed' and 'executed'.
     $journal = q1($conn,
         "SELECT COUNT(*) AS cnt, COALESCE(SUM(amount),0) AS total,
                 COUNT(DISTINCT member_id) AS members
-         FROM orders WHERE status = 'funded'"
-    );
-    // Pending journals not yet executed at Alpaca
-    // Count funded orders whose journal hasn't completed yet
-    // journal_status is a column directly on orders ('pending','completed','failed')
-    $journalPending = q1($conn,
-        "SELECT COUNT(*) AS cnt
          FROM orders
          WHERE status = 'funded'
-           AND (journal_status IS NULL OR journal_status != 'completed')"
-    ) ?? ['cnt' => 0];
+           AND (journal_status IS NULL OR journal_status NOT IN ('completed', 'executed'))"
+    ) ?? ['cnt' => 0, 'total' => 0, 'members' => 0];
 
     // ── Stage 4: Sweep (placed — ready for broker order submission) ───────────
     $sweep = q1($conn,
@@ -128,10 +122,11 @@ try {
         ];
     }
 
-    // Journals stuck (funded >24h) — use created_at as fallback if updated_at absent
+    // Journals stuck (funded >24h and not yet journaled) — use journaled_at as fallback
     $staleJournals = q1($conn,
         "SELECT COUNT(*) AS cnt FROM orders
          WHERE status = 'funded'
+           AND (journal_status IS NULL OR journal_status NOT IN ('completed', 'executed'))
            AND COALESCE(journaled_at, placed_at) < DATE_SUB(NOW(), INTERVAL 24 HOUR)"
     );
     if (($staleJournals['cnt'] ?? 0) > 0) {
@@ -218,7 +213,7 @@ try {
                 'count'           => (int)($journal['cnt']           ?? 0),
                 'amount'          => (float)($journal['total']        ?? 0),
                 'members'         => (int)($journal['members']        ?? 0),
-                'pending_at_alpaca' => (int)($journalPending['cnt']  ?? 0),
+                'pending_at_alpaca' => (int)($journal['cnt']  ?? 0),
             ],
             'sweep' => [
                 'count'     => (int)($sweep['cnt']      ?? 0),

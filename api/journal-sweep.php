@@ -18,8 +18,9 @@ declare(strict_types=1);
  *      a. Ensure member has an Alpaca account (create if needed)
  *      b. Calculate total amount to journal
  *      c. POST /v1/journals with JNLC entry from firm → member
- *      d. Update orders: journal_status = 'completed', journaled_at = NOW()
- *   3. Return summary
+ *      d. Update orders: status = 'funded', journal_status = 'completed', journaled_at = NOW()
+ *   3. Resync pipeline_cycles denormalised counters for affected merchants
+ *   4. Return summary
  *
  * Prerequisites:
  *   - Orders must be status = 'approved' with paid_flag = 1 (merchant has paid)
@@ -148,11 +149,12 @@ function runJournal(PDO $conn, ?array $memberIds): array
     }
 
     // ─── 3. Process each member ───────────────────────────────────────
-    $results        = [];
-    $membersFunded  = 0;
+    $results         = [];
+    $membersFunded   = 0;
     $journalsCreated = 0;
-    $totalJournaled = 0.0;
-    $errors         = [];
+    $totalJournaled  = 0.0;
+    $errors          = [];
+    $affectedMerchants = [];
 
     foreach ($memberGroups as $mid => $group) {
         try {
@@ -203,13 +205,18 @@ function runJournal(PDO $conn, ?array $memberIds): array
             $journalsCreated++;
             $totalJournaled += $amount;
 
+            // Track which merchants need counter resync
+            if (!empty($group['merchant_id'])) {
+                $affectedMerchants[$group['merchant_id']] = true;
+            }
+
             $results[] = [
-                'member_id'        => $mid,
-                'member_name'      => $group['name'],
-                'amount'           => $amount,
-                'orders_count'     => count($group['order_ids']),
-                'alpaca_journal_id'=> $journalId,
-                'status'           => 'funded',
+                'member_id'         => $mid,
+                'member_name'       => $group['name'],
+                'amount'            => $amount,
+                'orders_count'      => count($group['order_ids']),
+                'alpaca_journal_id' => $journalId,
+                'status'            => 'funded',
             ];
 
             brokerLog("JOURNAL-SWEEP: Journaled \${$amount} to member $mid (journal: $journalId)");
@@ -241,6 +248,15 @@ function runJournal(PDO $conn, ?array $memberIds): array
         }
     }
 
+    // ─── 4. Resync pipeline_cycles denormalised counters ─────────────
+    //     The sweep guard reads orders_funded from pipeline_cycles; without
+    //     this resync it stays 0 even though orders.status is now 'funded'.
+    if ($journalsCreated > 0) {
+        foreach (array_keys($affectedMerchants) as $merchantId) {
+            resyncCycleCounts($conn, (string)$merchantId);
+        }
+    }
+
     brokerLog("JOURNAL-SWEEP: Complete — $membersFunded funded, $journalsCreated journals, \${$totalJournaled} total");
 
     return [
@@ -251,6 +267,108 @@ function runJournal(PDO $conn, ?array $memberIds): array
         'results'          => $results,
         'errors'           => $errors,
     ];
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESYNC PIPELINE CYCLE COUNTS FOR A MERCHANT
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Resyncs the denormalised counter columns on pipeline_cycles for the
+ * most-recent open/locked cycle belonging to $merchantId.
+ *
+ * Called after journaling so the sweep guard's "funded orders" check
+ * reflects reality immediately — without requiring a manual update_counts
+ * call from the Pipeline Cycles admin UI.
+ */
+function resyncCycleCounts(PDO $conn, string $merchantId): void
+{
+    try {
+        // Find the active cycle for this merchant
+        $cycleStmt = $conn->prepare("
+            SELECT id, batch_id
+            FROM pipeline_cycles
+            WHERE merchant_id_str = ?
+              AND status IN ('open', 'locked')
+            ORDER BY created_at DESC
+            LIMIT 1
+        ");
+        $cycleStmt->execute([$merchantId]);
+        $cycle = $cycleStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$cycle || !$cycle['batch_id']) {
+            brokerLog("JOURNAL-SWEEP: resyncCycleCounts — no open cycle/batch for merchant $merchantId, skipping");
+            return;
+        }
+
+        $cycleId = (int) $cycle['id'];
+        $batchId = $cycle['batch_id'];
+
+        // Aggregate live counts from orders
+        $counts = $conn->prepare("
+            SELECT
+                COUNT(*)                                                                     AS orders_total,
+                COUNT(DISTINCT member_id)                                                    AS baskets_total,
+                SUM(status = 'approved')                                                     AS orders_approved,
+                SUM(status = 'funded')                                                       AS orders_funded,
+                SUM(status IN ('placed','submitted','confirmed','executed'))                  AS orders_placed,
+                SUM(status IN ('submitted','confirmed','executed'))                           AS orders_submitted,
+                SUM(status = 'settled')                                                      AS orders_settled,
+                SUM(status = 'failed')                                                       AS orders_failed,
+                SUM(status = 'cancelled')                                                    AS orders_cancelled,
+                COALESCE(SUM(amount), 0)                                                     AS amount_total,
+                COALESCE(SUM(CASE WHEN status IN ('funded','placed','submitted','confirmed','executed','settled')
+                                  THEN amount END), 0)                                       AS amount_funded,
+                COALESCE(SUM(CASE WHEN status = 'settled' THEN amount END), 0)               AS amount_settled
+            FROM orders
+            WHERE batch_id = ?
+        ");
+        $counts->execute([$batchId]);
+        $c = $counts->fetch(PDO::FETCH_ASSOC);
+
+        $upd = $conn->prepare("
+            UPDATE pipeline_cycles SET
+                orders_total     = ?,
+                baskets_total    = ?,
+                orders_approved  = ?,
+                orders_funded    = ?,
+                orders_placed    = ?,
+                orders_submitted = ?,
+                orders_settled   = ?,
+                orders_failed    = ?,
+                orders_cancelled = ?,
+                amount_total     = ?,
+                amount_funded    = ?,
+                amount_settled   = ?,
+                updated_at       = NOW()
+            WHERE id = ?
+        ");
+        $upd->execute([
+            (int)   $c['orders_total'],
+            (int)   $c['baskets_total'],
+            (int)   $c['orders_approved'],
+            (int)   $c['orders_funded'],
+            (int)   $c['orders_placed'],
+            (int)   $c['orders_submitted'],
+            (int)   $c['orders_settled'],
+            (int)   $c['orders_failed'],
+            (int)   $c['orders_cancelled'],
+            (float) $c['amount_total'],
+            (float) $c['amount_funded'],
+            (float) $c['amount_settled'],
+            $cycleId,
+        ]);
+
+        brokerLog("JOURNAL-SWEEP: resyncCycleCounts cycle_id=$cycleId merchant=$merchantId — " .
+            "orders_funded={$c['orders_funded']} orders_approved={$c['orders_approved']}");
+
+    } catch (Exception $e) {
+        // Non-fatal: log and continue — sweep guard will show stale count
+        // but manual update_counts from Cycle admin will fix it.
+        brokerLog("JOURNAL-SWEEP: resyncCycleCounts FAILED for merchant $merchantId: " . $e->getMessage());
+        error_log("journal-sweep.php resyncCycleCounts error: " . $e->getMessage());
+    }
 }
 
 
@@ -366,26 +484,26 @@ function ensureMemberAlpacaAccount(PDO $conn, array $member): ?string
             'country'        => 'USA',
         ],
         'identity' => [
-            'given_name'            => $member['name'] ?: 'Member',
-            'family_name'           => $member['member_id'],
-            'date_of_birth'         => '1990-01-01',
-            'tax_id'                => '000-00-0000',
-            'tax_id_type'           => 'USA_SSN',
-            'country_of_citizenship'=> 'USA',
-            'country_of_birth'      => 'USA',
+            'given_name'               => $member['name'] ?: 'Member',
+            'family_name'              => $member['member_id'],
+            'date_of_birth'            => '1990-01-01',
+            'tax_id'                   => '000-00-0000',
+            'tax_id_type'              => 'USA_SSN',
+            'country_of_citizenship'   => 'USA',
+            'country_of_birth'         => 'USA',
             'country_of_tax_residence' => 'USA',
-            'funding_source'        => ['employment_income'],
+            'funding_source'           => ['employment_income'],
         ],
         'disclosures' => [
-            'is_control_person'            => false,
+            'is_control_person'               => false,
             'is_affiliated_exchange_or_finra' => false,
-            'is_politically_exposed'       => false,
-            'immediate_family_exposed'     => false,
+            'is_politically_exposed'          => false,
+            'immediate_family_exposed'        => false,
         ],
         'agreements' => [
-            ['agreement' => 'margin_agreement',  'signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
-            ['agreement' => 'account_agreement', 'signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
-            ['agreement' => 'customer_agreement','signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
+            ['agreement' => 'margin_agreement',   'signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
+            ['agreement' => 'account_agreement',  'signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
+            ['agreement' => 'customer_agreement', 'signed_at' => date('c'), 'ip_address' => '127.0.0.1'],
         ],
     ];
 
@@ -416,7 +534,7 @@ function ensureMemberAlpacaAccount(PDO $conn, array $member): ?string
         // Store in broker_credentials table
         $upd = $conn->prepare("
             UPDATE broker_credentials
-            SET broker_account_id = ?,
+            SET broker_account_id     = ?,
                 broker_account_number = ?,
                 broker_account_status = ?
             WHERE member_id = ? AND broker = ?

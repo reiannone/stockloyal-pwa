@@ -90,13 +90,22 @@ function getOverview(PDO $conn): array
     $dayOfMonth     = (int) date('j');
     $lastDayOfMonth = (int) date('t');
 
-    // Total pending orders + amount
+    // Total pending orders + amount (all funded)
     $stmt = $conn->query("
         SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS amt
         FROM   orders
         WHERE  LOWER(status) = 'funded'
     ");
     $pending = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // Funded orders that have been journaled (journal complete — safe to sweep)
+    $stmt = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM   orders
+        WHERE  LOWER(status) = 'funded'
+          AND  journal_status IN ('completed', 'executed')
+    ");
+    $journaled = $stmt->fetch(PDO::FETCH_ASSOC);
 
     // Today's sweep activity from sweep_log
     $stmt = $conn->prepare("
@@ -166,6 +175,7 @@ function getOverview(PDO $conn): array
         'success'              => true,
         'total_pending_orders' => (int) $pending['cnt'],
         'total_pending_amount' => (float) $pending['amt'],
+        'total_funded_orders'  => (int) $journaled['cnt'],
         'today'                => [
             'date'                => $today,
             'sweeps_run'          => (int) $todayStats['sweeps_run'],
