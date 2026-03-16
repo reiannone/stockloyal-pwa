@@ -449,9 +449,16 @@ export default function Portfolio() {
                 border: "1px solid #bae6fd",
               }}
             >
-              <h3 style={{ margin: "0 0 12px 0", fontSize: "1rem", color: "#0369a1" }}>
-                Brokerage Account Summary
-              </h3>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "12px", flexWrap: "wrap", gap: 6 }}>
+                <h3 style={{ margin: 0, fontSize: "1rem", color: "#0369a1" }}>
+                  Brokerage Account Summary
+                </h3>
+                {accountInfo.account_number && (
+                  <span style={{ fontSize: "0.72rem", color: "#64748b", fontFamily: "monospace", background: "#e0f2fe", padding: "2px 8px", borderRadius: 4, letterSpacing: "0.04em" }}>
+                    Acct # {accountInfo.account_number}
+                  </span>
+                )}
+              </div>
 
               <div
                 style={{

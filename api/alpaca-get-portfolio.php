@@ -146,6 +146,7 @@ try {
 
         "account"         => [
             "account_id"      => $accountId,
+            "account_number"  => $acct['account_number'] ?? '',
             "status"          => $acct['status'] ?? 'unknown',
             "cash"            => (float)($acct['cash'] ?? 0),
             "buying_power"    => (float)($acct['buying_power'] ?? 0),

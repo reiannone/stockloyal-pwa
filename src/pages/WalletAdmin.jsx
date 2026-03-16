@@ -362,6 +362,10 @@ export default function WalletAdmin() {
   const [lockoutResetting, setLockoutResetting] = useState(false);
   const [lockoutMsg, setLockoutMsg] = useState("");
 
+  // ── Alpaca account info (account_id + account_number) ──
+  const [alpacaAccountInfo, setAlpacaAccountInfo] = useState(null);
+  const [alpacaAccountLoading, setAlpacaAccountLoading] = useState(false);
+
   // --- delete wallet ---
   const deleteWallet = async (record_id) => {
     if (!selected?.member_id) {
@@ -527,6 +531,28 @@ export default function WalletAdmin() {
     }
   };
 
+  // ── Fetch Alpaca account ID + account number for a member ──
+  const fetchAlpacaAccountInfo = async (memberId) => {
+    setAlpacaAccountLoading(true);
+    setAlpacaAccountInfo(null);
+    try {
+      const data = await apiPost("alpaca-get-portfolio.php", { member_id: memberId });
+      if (data?.success && data.account) {
+        setAlpacaAccountInfo({
+          account_id:     data.account.account_id     || "",
+          account_number: data.account.account_number || "",
+          status:         data.account.status         || "",
+        });
+      } else {
+        setAlpacaAccountInfo(null);
+      }
+    } catch {
+      setAlpacaAccountInfo(null);
+    } finally {
+      setAlpacaAccountLoading(false);
+    }
+  };
+
   // ── Reset lockout for selected member ──
   const handleResetLockout = async () => {
     if (!selected?.member_id) return;
@@ -622,7 +648,11 @@ export default function WalletAdmin() {
     setShowPw(false);
     setShowTaxId(false);
     setLockoutMsg("");
+    setAlpacaAccountInfo(null);
     fetchLockoutInfo(withCalc.member_id);
+    if ((withCalc.broker || "").toLowerCase() === "alpaca") {
+      fetchAlpacaAccountInfo(withCalc.member_id);
+    }
     setTimeout(() => {
       editPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -1246,6 +1276,57 @@ export default function WalletAdmin() {
                 onChange={handleChange}
               />
             </FormRow>
+
+            {/* ── Alpaca Brokerage Account (read-only) ── */}
+            {(selected?.broker || "").toLowerCase() === "alpaca" && (
+              <div style={{
+                margin: "4px 0 16px",
+                padding: "12px 14px",
+                borderRadius: 8,
+                border: "1px solid #bae6fd",
+                background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+              }}>
+                <div style={{ fontWeight: 700, fontSize: "0.82rem", color: "#0369a1", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <CreditCard size={14} /> Alpaca Brokerage Account
+                  {alpacaAccountLoading && (
+                    <RefreshCw size={12} style={{ marginLeft: 4, animation: "spin 1s linear infinite" }} />
+                  )}
+                  {alpacaAccountInfo?.status && (
+                    <span style={{
+                      marginLeft: "auto", fontSize: "0.7rem", fontWeight: 700,
+                      padding: "1px 8px", borderRadius: 999,
+                      background: alpacaAccountInfo.status === "ACTIVE" ? "#dcfce7" : "#fef3c7",
+                      color: alpacaAccountInfo.status === "ACTIVE" ? "#166534" : "#92400e",
+                    }}>
+                      {alpacaAccountInfo.status}
+                    </span>
+                  )}
+                </div>
+
+                {alpacaAccountLoading && !alpacaAccountInfo ? (
+                  <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>Loading Alpaca account…</div>
+                ) : alpacaAccountInfo ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <div style={{ fontSize: "0.7rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>Account ID (UUID)</div>
+                      <div style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#0c4a6e", background: "#fff", padding: "5px 8px", borderRadius: 5, border: "1px solid #bae6fd", wordBreak: "break-all" }}>
+                        {alpacaAccountInfo.account_id || "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.7rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 3 }}>Account Number</div>
+                      <div style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#0c4a6e", background: "#fff", padding: "5px 8px", borderRadius: 5, border: "1px solid #bae6fd", fontWeight: 700 }}>
+                        {alpacaAccountInfo.account_number || "—"}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "0.8rem", color: "#9ca3af", fontStyle: "italic" }}>
+                    No Alpaca account data — member may not have completed onboarding.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Broker Credential Lockout ── */}
             {lockoutInfo?.has_credentials && (
