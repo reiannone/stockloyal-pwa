@@ -45,27 +45,22 @@ const fmtAgo = d => {
 const fmtDate = d => d ? new Date(d).toLocaleString() : "—";
 
 // ── Stage definitions ─────────────────────────────────────────────────────────
+// 5 stages -- mirrors the PIPELINE_STEPS defined in OrderPipeline.jsx (steps 1-5)
 const STAGES = [
-  { key: "baskets_orders", label: "Baskets & Orders", icon: ShoppingBasket, color: "#10b981", desc: "Loyalty baskets built & orders prepared, priced and approved" },
-  { key: "payment",    label: "Payment",    icon: CreditCard,      color: "#06b6d4", desc: "Merchant ACH / bank payment initiated" },
-  { key: "funding",    label: "Funding",    icon: Landmark,        color: "#8b5cf6", desc: "StockLoyal journal funding to member accounts" },
-  { key: "journal",    label: "Journal",    icon: ArrowRightLeft,  color: "#ec4899", desc: "Journal entries recorded & reconciled" },
-  { key: "placement",  label: "Placement",  icon: Repeat2,         color: "#3b82f6", desc: "Orders placed with broker" },
-  { key: "submission", label: "Submission", icon: Zap,             color: "#a855f7", desc: "Broker submission acknowledged" },
-  { key: "execution",  label: "Execution",  icon: Activity,        color: "#f97316", desc: "Market orders filled by broker" },
-  { key: "settlement", label: "Settlement", icon: CheckCircle2,    color: "#14b8a6", desc: "Trade settlement complete (T+1 / T+2)" },
+  { key: "prepare",   label: "Prepare Orders", icon: ShoppingBasket, color: "#8b5cf6", desc: "Loyalty baskets built & orders prepared, priced and approved" },
+  { key: "payment",   label: "Fund IB Sweep",  icon: CreditCard,     color: "#f59e0b", desc: "Merchant ACH payment to StockLoyal sweep account" },
+  { key: "journal",   label: "Journal Funds",  icon: ArrowRightLeft, color: "#10b981", desc: "JNLC from SL sweep account into individual member accounts" },
+  { key: "sweep",     label: "Order Sweep",    icon: Repeat2,        color: "#6366f1", desc: "Orders placed and submitted to broker" },
+  { key: "execution", label: "Broker Exec",    icon: Zap,            color: "#3b82f6", desc: "Market orders filled & trade settlement complete" },
 ];
 
-// stage key → { path, label, param? }
+// stage key -> { path, label, param? }
 const STAGE_LINKS = {
-  baskets_orders: { path: "/prepare-orders",   label: "Prepare Orders", param: c => `?merchant_id=${encodeURIComponent(c.merchant_id_str || '')}&broker_id=${encodeURIComponent(c.broker_id || '')}` },
-  payment:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
-  funding:    { path: "/payments-processing",  label: "Payments",   param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
-  journal:    { path: "/journal-admin",        label: "Journal" },
-  placement:  { path: "/sweep",                label: "Sweep" },
-  submission: { path: "/broker-exec",          label: "Broker Exec" },
-  execution:  { path: "/broker-exec",          label: "Broker Exec" },
-  settlement: { path: "/broker-exec",          label: "Broker Exec" },
+  prepare:   { path: "/prepare-orders",      label: "Prepare Orders", param: c => `?merchant_id=${encodeURIComponent(c.merchant_id_str || '')}&broker_id=${encodeURIComponent(c.broker_id || '')}` },
+  payment:   { path: "/payments-processing", label: "Payments",       param: c => `?merchant_id=${encodeURIComponent(c.merchant_code || '')}` },
+  journal:   { path: "/journal-admin",       label: "Journal" },
+  sweep:     { path: "/sweep-admin",         label: "Sweep" },
+  execution: { path: "/admin-broker-exec",   label: "Broker Exec" },
 };
 
 const STAGE_STATUS_COLORS = {
@@ -114,14 +109,25 @@ function StagePill({ stageKey, status }) {
 function StageProgressBar({ cycle }) {
   const statusWeight = { completed: 1, skipped: 1, in_progress: 0.5, blocked: 0, failed: 0, pending: 0 };
 
-  // Resolve the combined baskets_orders stage from the two real DB columns
+  // Map logical stage keys to DB pipeline_cycles columns.
+  // prepare   = worst of stage_baskets + stage_orders
+  // payment   = worst of stage_payment + stage_funding
+  // journal   = stage_journal
+  // sweep     = worst of stage_placement + stage_submission
+  // execution = worst of stage_execution + stage_settlement
+  const worst = (...statuses) => {
+    const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, skipped: 4, completed: 5 };
+    return statuses.reduce((a, b) => (rank[a] ?? 2) <= (rank[b] ?? 2) ? a : b);
+  };
   const resolveStageStatus = (key) => {
-    if (key === 'baskets_orders') {
-      const b = cycle.stage_baskets || 'pending';
-      const o = cycle.stage_orders  || 'pending';
-      return b === 'completed' ? o : b;
+    switch (key) {
+      case 'prepare':   return worst(cycle.stage_baskets || 'pending', cycle.stage_orders   || 'pending');
+      case 'payment':   return worst(cycle.stage_payment || 'pending', cycle.stage_funding  || 'pending');
+      case 'journal':   return cycle.stage_journal   || 'pending';
+      case 'sweep':     return worst(cycle.stage_placement || 'pending', cycle.stage_submission || 'pending');
+      case 'execution': return worst(cycle.stage_execution || 'pending', cycle.stage_settlement || 'pending');
+      default:          return cycle[`stage_${key}`] || 'pending';
     }
-    return cycle[`stage_${key}`] || 'pending';
   };
 
   const done = STAGES.reduce((sum, s) => sum + (statusWeight[resolveStageStatus(s.key)] ?? 0), 0);
@@ -292,18 +298,20 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
             {STAGES.map(stg => {
-              // Combined baskets_orders: derive status from worst of the two DB stages
-              const isCombined = stg.key === 'baskets_orders';
-              const stageStatus = isCombined
-                ? (() => {
-                    const b = cycle.stage_baskets || 'pending';
-                    const o = cycle.stage_orders  || 'pending';
-                    const rank = { failed: 0, blocked: 1, in_progress: 2, pending: 3, skipped: 4, completed: 5 };
-                    // return worst status (lowest rank), but if baskets done show orders status
-                    if (b === 'completed') return o;
-                    return (rank[b] ?? 3) <= (rank[o] ?? 3) ? b : o;
-                  })()
-                : cycle[`stage_${stg.key}`] || 'pending';
+              const worst = (...ss) => {
+                const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, skipped: 4, completed: 5 };
+                return ss.reduce((a, b) => (rank[a] ?? 2) <= (rank[b] ?? 2) ? a : b);
+              };
+              const stageStatus = (() => {
+                switch (stg.key) {
+                  case 'prepare':   return worst(cycle.stage_baskets || 'pending', cycle.stage_orders || 'pending');
+                  case 'payment':   return worst(cycle.stage_payment || 'pending', cycle.stage_funding || 'pending');
+                  case 'journal':   return cycle.stage_journal || 'pending';
+                  case 'sweep':     return worst(cycle.stage_placement || 'pending', cycle.stage_submission || 'pending');
+                  case 'execution': return worst(cycle.stage_execution || 'pending', cycle.stage_settlement || 'pending');
+                  default:          return cycle[`stage_${stg.key}`] || 'pending';
+                }
+              })();
 
               const col   = STAGE_STATUS_COLORS[stageStatus];
               const Icon  = stg.icon;
@@ -342,36 +350,46 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
                   {/* Description */}
                   <div style={{ fontSize: "0.63rem", color: "#6b7280", marginBottom: 8, lineHeight: 1.4 }}>{stg.desc}</div>
 
-                  {/* Combined sub-status badges */}
-                  {isCombined && (
+                  {/* Sub-status badges for compound stages */}
+                  {stg.key === 'prepare' && (
                     <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
                       {[["Baskets", cycle.stage_baskets], ["Orders", cycle.stage_orders]].map(([lbl, s]) => {
                         const sc = STAGE_STATUS_COLORS[s || "pending"];
-                        return (
-                          <span key={lbl} style={{
-                            fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4,
-                            background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg,
-                          }}>{lbl}: {s || "pending"}</span>
-                        );
+                        return <span key={lbl} style={{ fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg }}>{lbl}: {s || "pending"}</span>;
+                      })}
+                    </div>
+                  )}
+                  {stg.key === 'payment' && (
+                    <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                      {[["Payment", cycle.stage_payment], ["Funding", cycle.stage_funding]].map(([lbl, s]) => {
+                        const sc = STAGE_STATUS_COLORS[s || "pending"];
+                        return <span key={lbl} style={{ fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg }}>{lbl}: {s || "pending"}</span>;
+                      })}
+                    </div>
+                  )}
+                  {stg.key === 'sweep' && (
+                    <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                      {[["Placement", cycle.stage_placement], ["Submission", cycle.stage_submission]].map(([lbl, s]) => {
+                        const sc = STAGE_STATUS_COLORS[s || "pending"];
+                        return <span key={lbl} style={{ fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg }}>{lbl}: {s || "pending"}</span>;
+                      })}
+                    </div>
+                  )}
+                  {stg.key === 'execution' && (
+                    <div style={{ display: "flex", gap: 5, marginBottom: 6 }}>
+                      {[["Execution", cycle.stage_execution], ["Settlement", cycle.stage_settlement]].map(([lbl, s]) => {
+                        const sc = STAGE_STATUS_COLORS[s || "pending"];
+                        return <span key={lbl} style={{ fontSize: "0.6rem", fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.fg }}>{lbl}: {s || "pending"}</span>;
                       })}
                     </div>
                   )}
 
                   {/* Timestamps */}
-                  {isCombined ? (
-                    (cycle.baskets_started_at || cycle.orders_completed_at) && (
-                      <div style={{ fontSize: "0.62rem", color: "#94a3b8", marginBottom: 6 }}>
-                        {cycle.baskets_started_at  && <div>▶ {fmtDate(cycle.baskets_started_at)}</div>}
-                        {cycle.orders_completed_at && <div>✓ {fmtDate(cycle.orders_completed_at)}</div>}
-                      </div>
-                    )
-                  ) : (
-                  (cycle[`${stg.key}_started_at`] || cycle[`${stg.key}_completed_at`]) && (
+                  {(cycle[`${stg.key}_started_at`] || cycle[`${stg.key}_completed_at`]) && (
                     <div style={{ fontSize: "0.62rem", color: "#94a3b8", marginBottom: 6 }}>
-                      {cycle[`${stg.key}_started_at`]   && <div>▶ {fmtDate(cycle[`${stg.key}_started_at`])}</div>}
-                      {cycle[`${stg.key}_completed_at`] && <div>✓ {fmtDate(cycle[`${stg.key}_completed_at`])}</div>}
+                      {cycle[`${stg.key}_started_at`]   && <div>&#9654; {fmtDate(cycle[`${stg.key}_started_at`])}</div>}
+                      {cycle[`${stg.key}_completed_at`] && <div>&#10003; {fmtDate(cycle[`${stg.key}_completed_at`])}</div>}
                     </div>
-                  )
                   )}
 
                   {/* Always-visible deep-link */}
@@ -882,19 +900,31 @@ export default function PipelineCyclesAdmin() {
     load(true);
   };
 
+  // Map logical stage keys to the DB column names used by pipeline-cycles.php.
+  // Compound stages advance their primary (last) DB column.
+  const STAGE_DB_KEY = {
+    prepare:   'orders',      // stage_baskets done first, stage_orders is the gate
+    payment:   'funding',     // stage_payment done first, stage_funding is the gate
+    journal:   'journal',
+    sweep:     'submission',  // stage_placement done first, stage_submission is the gate
+    execution: 'settlement',  // stage_execution done first, stage_settlement is the gate
+  };
+
   const handleAdvanceStage = async (cycleId, stage, stageStatus) => {
+    const dbStage = STAGE_DB_KEY[stage] || stage;
     const res = await apiPost("pipeline-cycles.php", {
-      action: "advance_stage", cycle_id: cycleId, stage, stage_status: stageStatus,
+      action: "advance_stage", cycle_id: cycleId, stage: dbStage, stage_status: stageStatus,
     });
     if (!res?.success) { showToast(res?.error || "Failed to advance stage.", "error"); return; }
-    showToast(`Stage '${stage}' → ${stageStatus}.`);
+    showToast(`Stage '${stage}' -> ${stageStatus}.`);
     load(true);
   };
 
-  // Orchestrated stage execution — returns result for inline display in CycleCard
+  // Orchestrated stage execution -- returns result for inline display in CycleCard
   const handleRunStage = async (cycleId, stage) => {
+    const dbStage = STAGE_DB_KEY[stage] || stage;
     const res = await apiPost("pipeline-cycles.php", {
-      action: "run_stage", cycle_id: cycleId, stage,
+      action: "run_stage", cycle_id: cycleId, stage: dbStage,
     });
     // Reload cycle data after any run (success or failure)
     load(true);

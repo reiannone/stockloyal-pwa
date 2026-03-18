@@ -5,10 +5,9 @@ import {
   Package, RefreshCw, CheckCircle2, XCircle, TrendingUp,
   ShoppingBasket, Clock, Landmark, ChevronUp, ChevronDown,
   Zap, Hourglass, Info, Store, Building2, ClipboardList, AlertTriangle,
-  Timer, Play, Activity, Server, CalendarClock, BarChart3,
+  Activity, Server, CalendarClock, BarChart3,
   CircleDot, CircleOff, Wifi, WifiOff, ArrowLeft,
 } from "lucide-react";
-import ConfirmModal from "../components/ConfirmModal";
 import OrderPipeline from "../components/OrderPipeline";
 
 const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
@@ -95,9 +94,9 @@ export default function BrokerExecAdmin() {
   return (
     <div className="app-container app-content">
       {/* Header */}
-      <h1 className="page-title">Broker Trade Execution</h1>
+      <h1 className="page-title">Broker Execution Status</h1>
       <p className="page-deck">
-        Monitor automated broker execution and manually execute placed orders. The cron job submits orders to Alpaca at market open.
+        Read-only view of Alpaca broker responses — order fills, submissions, and cron execution history. The cron job submits placed orders to Alpaca automatically at market open.
       </p>
 
       {/* ── Order Pipeline ── */}
@@ -111,9 +110,9 @@ export default function BrokerExecAdmin() {
       }}>
         <div style={{ display: "flex", gap: "0.5rem" }}>
           {[
-            { key: "placed",  label: <><Zap     size={12} style={{ verticalAlign: "middle" }} /> Placed</> },
-            { key: "history", label: <><Clock   size={12} style={{ verticalAlign: "middle" }} /> History</> },
-            { key: "cron",    label: <><Timer   size={12} style={{ verticalAlign: "middle" }} /> Cron Runs</> },
+            { key: "placed",  label: <><Zap     size={12} style={{ verticalAlign: "middle" }} /> Placed Orders</> },
+            { key: "history", label: <><Clock   size={12} style={{ verticalAlign: "middle" }} /> Fill History</> },
+            { key: "cron",    label: <><Activity size={12} style={{ verticalAlign: "middle" }} /> Cron Runs</> },
           ].map((t) => (
             <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
               padding: "0.5rem 1rem",
@@ -208,7 +207,6 @@ export default function BrokerExecAdmin() {
                   formatCurrency={formatCurrency}
                   formatDate={formatDate}
                   refreshSignal={refreshPlaced}
-                  onExecuted={() => { setRefreshPlaced(n => n + 1); loadHistory(); }}
                 />
               ))}
             </div>
@@ -267,19 +265,14 @@ export default function BrokerExecAdmin() {
 // MerchantExecPanel — Per-merchant placed orders + execute controls
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate, refreshSignal, onExecuted }) {
+function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate, refreshSignal }) {
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [executing, setExecuting] = useState(false);
-  const [lastResult, setLastResult] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [modal, setModal] = useState({ show: false, title: "", message: "", details: null, data: null });
 
   const cycleForM = (cycleOptions || []).find(o => o.merchant_id === merchant.merchant_id);
   const isExecutionDone = cycleForM?.cycle?.stage_execution === "completed";
-
-  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -305,64 +298,11 @@ function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate,
 
   useEffect(() => { loadOrders(); }, [loadOrders, refreshSignal]);
 
-  const doExecute = async (action, params = {}) => {
-    closeModal();
-    setExecuting(true);
-    setLastResult(null);
-    try {
-      const res = await apiPost("broker-execute.php", { action, ...params });
-      setLastResult(res);
-      await loadOrders();
-      onExecuted?.();
-    } catch (err) {
-      setLastResult({ success: false, error: err.message });
-    }
-    setExecuting(false);
-  };
-
-  const confirmExecuteMerchant = () => {
-    setModal({
-      show: true,
-      title: `Execute ${merchant.merchant_name}`,
-      message: `Execute all ${summary?.total_orders || 0} placed orders for ${merchant.merchant_name}?`,
-      details: summary ? (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <span>Orders: <strong>{summary.total_orders}</strong></span>
-          <span>Amount: <strong>{formatCurrency(summary.total_amount)}</strong></span>
-        </div>
-      ) : null,
-      data: { type: "merchant" },
-    });
-  };
-
-  const confirmExecuteBasket = (basketId, count) => {
-    setModal({
-      show: true,
-      title: "Execute Basket",
-      message: `Execute basket ${basketId} with ${count || "?"} order(s)?`,
-      data: { type: "basket", basketId },
-    });
-  };
-
-  const handleModalConfirm = () => {
-    const d = modal.data;
-    if (d?.type === "merchant") doExecute("execute_merchant", { merchant_id: merchant.merchant_id });
-    else if (d?.type === "basket") doExecute("execute_basket", { basket_id: d.basketId });
-  };
-
   const orderCount = summary?.total_orders || 0;
-  const totalAmt = summary?.total_amount || 0;
+  const totalAmt   = summary?.total_amount || 0;
 
   return (
     <div style={{ background: "#fff", borderRadius: "8px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
-      <ConfirmModal
-        show={modal.show} title={modal.title} message={modal.message}
-        details={modal.details}
-        icon={<Zap size={20} color="#f59e0b" />}
-        confirmText="Execute" confirmColor="#059669"
-        onConfirm={handleModalConfirm} onCancel={closeModal}
-      />
-
       {/* Panel header */}
       <div style={{
         padding: "0.75rem 1rem", background: "#f8fafc",
@@ -385,13 +325,11 @@ function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate,
           </span>
         )}
         {!loading && (
-          <>
-            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-              {orderCount} order{orderCount !== 1 ? "s" : ""} · {formatCurrency(totalAmt)}
-            </span>
-          </>
+          <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+            {orderCount} order{orderCount !== 1 ? "s" : ""} · {formatCurrency(totalAmt)}
+          </span>
         )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
+        <div style={{ marginLeft: "auto" }}>
           <button
             onClick={(e) => { e.stopPropagation(); loadOrders(); }}
             disabled={loading}
@@ -402,40 +340,8 @@ function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate,
           >
             <RefreshCw size={11} style={{ verticalAlign: "middle" }} />
           </button>
-          <button
-            onClick={isExecutionDone ? undefined : confirmExecuteMerchant}
-            disabled={executing || !orderCount || isExecutionDone}
-            title={isExecutionDone ? "Execution stage already completed" : undefined}
-            style={{
-              padding: "0.3rem 0.75rem",
-              background: isExecutionDone ? "#6b7280" : executing ? "#94a3b8" : (!orderCount ? "#e2e8f0" : "#059669"),
-              color: "#fff", border: "none", borderRadius: "5px",
-              fontSize: "0.75rem", fontWeight: 600,
-              cursor: (orderCount && !executing && !isExecutionDone) ? "pointer" : "not-allowed",
-              opacity: isExecutionDone ? 0.55 : 1,
-            }}
-          >
-            {executing
-              ? <><Hourglass size={11} style={{ verticalAlign: "middle" }} /> Executing...</>
-              : <><Zap size={11} style={{ verticalAlign: "middle" }} /> Execute Merchant</>
-            }
-          </button>
         </div>
       </div>
-
-      {/* Result banner */}
-      {lastResult && !collapsed && (
-        <div style={{
-          padding: "0.6rem 1rem", fontSize: "0.8rem",
-          background: lastResult.success ? "#d1fae5" : "#fee2e2",
-          borderBottom: "1px solid #e2e8f0",
-        }}>
-          {lastResult.success
-            ? <><CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Executed {lastResult.orders_executed || 0} orders · {lastResult.duration_seconds || 0}s</>
-            : <><XCircle size={12} style={{ verticalAlign: "middle" }} color="#dc2626" /> {lastResult.error}</>
-          }
-        </div>
-      )}
 
       {/* Orders */}
       {!collapsed && (
@@ -451,10 +357,6 @@ function MerchantExecPanel({ merchant, cycleOptions, formatCurrency, formatDate,
               orders={orders}
               formatCurrency={formatCurrency}
               formatDate={formatDate}
-              executing={executing}
-              isExecutionDone={isExecutionDone}
-              onExecuteMerchant={() => confirmExecuteMerchant()}
-              onExecuteBasket={confirmExecuteBasket}
               mode="placed"
             />
           )}
@@ -473,8 +375,6 @@ function CronRunsTab({ formatCurrency, formatDate }) {
   const [cronRuns, setCronRuns] = useState([]);
   const [cronStats, setCronStats] = useState(null);
   const [cronLoading, setCronLoading] = useState(true);
-  const [triggering, setTriggering] = useState(false);
-  const [triggerResult, setTriggerResult] = useState(null);
   const [filter, setFilter] = useState(null);
 
   const loadCronData = useCallback(async () => {
@@ -494,25 +394,11 @@ function CronRunsTab({ formatCurrency, formatDate }) {
 
   useEffect(() => { loadCronData(); }, [loadCronData]);
 
-  // Auto-refresh every 30s when tab is visible
+  // Auto-refresh every 30s
   useEffect(() => {
     const interval = setInterval(loadCronData, 30000);
     return () => clearInterval(interval);
   }, [loadCronData]);
-
-  const handleTrigger = async () => {
-    setTriggering(true);
-    setTriggerResult(null);
-    try {
-      const res = await apiPost("cron-exec-log.php", { action: "trigger" });
-      setTriggerResult(res);
-      // Reload after a brief delay to catch the new run
-      setTimeout(loadCronData, 3000);
-    } catch (err) {
-      setTriggerResult({ success: false, error: err.message });
-    }
-    setTriggering(false);
-  };
 
   const s24 = cronStats?.last_24h || {};
   const sAll = cronStats?.all_time || {};
@@ -588,51 +474,18 @@ function CronRunsTab({ formatCurrency, formatDate }) {
             </button>
           ))}
         </div>
-
-        <div style={{ display: "flex", gap: "0.75rem" }}>
-          <button
-            onClick={loadCronData}
-            disabled={cronLoading}
-            style={{
-              padding: "0.5rem 1rem", background: "#f1f5f9", color: "#475569",
-              border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.8rem",
-              cursor: "pointer",
-            }}
-          >
-            <RefreshCw size={13} style={{ verticalAlign: "middle" }} /> Refresh
-          </button>
-          <button
-            onClick={handleTrigger}
-            disabled={triggering}
-            style={{
-              padding: "0.5rem 1rem",
-              background: triggering ? "#94a3b8" : "#1e40af",
-              color: "#fff", border: "none", borderRadius: "6px",
-              fontSize: "0.8rem", fontWeight: 600, cursor: triggering ? "wait" : "pointer",
-            }}
-          >
-            {triggering
-              ? <><Hourglass size={13} style={{ verticalAlign: "middle" }} /> Triggering...</>
-              : <><Play size={13} style={{ verticalAlign: "middle" }} /> Trigger Now</>
-            }
-          </button>
-        </div>
+        <button
+          onClick={loadCronData}
+          disabled={cronLoading}
+          style={{
+            padding: "0.5rem 1rem", background: "#f1f5f9", color: "#475569",
+            border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "0.8rem",
+            cursor: "pointer",
+          }}
+        >
+          <RefreshCw size={13} style={{ verticalAlign: "middle" }} /> Refresh
+        </button>
       </div>
-
-      {/* Manual trigger result */}
-      {triggerResult && (
-        <div style={{
-          padding: "0.75rem", marginBottom: "1rem", borderRadius: "6px",
-          background: triggerResult.success ? "#dbeafe" : "#fee2e2",
-          border: `1px solid ${triggerResult.success ? "#3b82f6" : "#ef4444"}`,
-          fontSize: "0.82rem",
-        }}>
-          {triggerResult.success
-            ? <><Activity size={14} style={{ verticalAlign: "middle" }} /> Manual execution triggered — refreshing in 3s...</>
-            : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Trigger failed: {triggerResult.error}</>
-          }
-        </div>
-      )}
 
       {/* Cron Runs List */}
       {cronLoading ? (
@@ -647,7 +500,7 @@ function CronRunsTab({ formatCurrency, formatDate }) {
             No Cron Runs {filter ? `(${filter})` : ""}
           </div>
           <div style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
-            The cron job runs automatically during market hours, or click "Trigger Now" to start one.
+            The cron job runs automatically during market hours. Check back after market open.
           </div>
         </div>
       ) : (
@@ -1027,9 +880,6 @@ function ExecHistoryCard({ h, formatCurrency, formatDate }) {
               orders={execOrders}
               formatCurrency={formatCurrency}
               formatDate={formatDate}
-              executing={false}
-              onExecuteMerchant={() => {}}
-              onExecuteBasket={() => {}}
               mode="confirmed"
             />
           ) : (
@@ -1045,11 +895,10 @@ function ExecHistoryCard({ h, formatCurrency, formatDate }) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ExecHierarchy — Merchant → Broker → Basket → Orders tree
-// Supports both "placed" (with execute buttons) and "confirmed" (read-only)
+// ExecHierarchy — Merchant -> Broker -> Basket -> Orders tree (read-only)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ExecHierarchy({ orders, formatCurrency, formatDate, executing, isExecutionDone, onExecuteMerchant, onExecuteBasket, mode = "placed" }) {
+function ExecHierarchy({ orders, formatCurrency, formatDate, mode = "placed" }) {
   const [expandedMerchants, setExpandedMerchants] = useState(new Set());
   const [expandedBrokers, setExpandedBrokers] = useState(new Set());
   const [expandedBaskets, setExpandedBaskets] = useState(new Set());
@@ -1149,15 +998,6 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, isExecut
               {badge(`${Object.keys(m.brokers).length} broker(s)`, "#e0e7ff", "#3730a3")}
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                 {pills(m)}
-                {!isConfirmed && !isExecutionDone && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onExecuteMerchant(mId, m.merchant_name, m.orders.length, m.totalAmount); }}
-                    disabled={executing}
-                    style={execBtnStyle}
-                  >
-                    <Zap size={11} style={{ verticalAlign: "middle" }} /> Execute
-                  </button>
-                )}
                 {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
               </div>
             </div>
@@ -1205,15 +1045,6 @@ function ExecHierarchy({ orders, formatCurrency, formatDate, executing, isExecut
                           <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
                             {badge(`${bk.orders.length} orders`, "#faf5ff", "#7c3aed")}
                             {badge(formatCurrency(bk.totalAmount), "#f0fdf4", "#15803d")}
-                            {!isConfirmed && !isExecutionDone && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); onExecuteBasket(bkId, bk.orders.length); }}
-                                disabled={executing}
-                                style={execBtnStyle}
-                              >
-                                <Zap size={11} style={{ verticalAlign: "middle" }} /> Execute
-                              </button>
-                            )}
                             {bkOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
                           </div>
                         </div>
@@ -1323,16 +1154,4 @@ const tdStyle = {
   padding: "0.5rem 0.75rem",
   fontSize: "0.82rem",
   color: "#334155",
-};
-
-const execBtnStyle = {
-  padding: "2px 10px",
-  background: "#059669",
-  color: "#fff",
-  border: "none",
-  borderRadius: "4px",
-  fontSize: "0.68rem",
-  fontWeight: 600,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
 };
