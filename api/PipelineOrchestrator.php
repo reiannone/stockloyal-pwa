@@ -9,6 +9,10 @@
  * existing endpoint — no logic is duplicated here.
  *
  * Deploy: /var/www/html/api/PipelineOrchestrator.php
+ *
+ * Orders stage is now split into two admin steps:
+ *   stage=orders         → prepare only  → stage_orders='staged' (awaiting review)
+ *   stage=orders_approve → approve only  → stage_orders='completed'
  */
 
 // ── Custom exception: stage is waiting (polling), not truly failed ────────────
@@ -39,12 +43,22 @@ class PipelineOrchestrator
     {
         $cycleId = (int) $cycle['id'];
 
-        // ── Combined baskets_orders stage ───────────────────────────────────
+        // ── Combined baskets_orders stage (legacy, kept for compatibility) ──────
         if ($stage === 'baskets_orders') {
-            return $this->runBasketsAndOrders($cycle, $cycleId);
+            return $this->runBasketsAndPrepare($cycle, $cycleId);
         }
 
-        // Mark stage in_progress + set started_at on first run
+        // ── Orders: prepare only — leaves stage_orders='staged' for admin review ─
+        if ($stage === 'orders') {
+            return $this->runOrdersPrepare($cycle, $cycleId);
+        }
+
+        // ── Orders: admin-triggered approve — advances stage_orders to 'completed' ─
+        if ($stage === 'orders_approve') {
+            return $this->runOrdersApprove($cycle, $cycleId);
+        }
+
+        // ── Generic stage handler ────────────────────────────────────────────
         $alreadyStarted = !empty($cycle["stage_{$stage}"])
                           && $cycle["stage_{$stage}"] !== 'pending';
         $this->setStageStatus($cycleId, $stage, 'in_progress', !$alreadyStarted);
@@ -52,7 +66,6 @@ class PipelineOrchestrator
         try {
             $result = match ($stage) {
                 'baskets'    => $this->runBaskets($cycle),
-                'orders'     => $this->runOrders($cycle, $cycleId),
                 'payment'    => $this->runPayment($cycle),
                 'funding'    => $this->runFunding($cycle),
                 'journal'    => $this->runJournal($cycle),
@@ -72,7 +85,6 @@ class PipelineOrchestrator
             return ['success' => true, 'waiting' => false] + $result;
 
         } catch (StageWaitingException $e) {
-            // Polling stage — keep in_progress, record message, do NOT mark failed
             $this->setLastError($cycleId, "[{$stage} · waiting] " . $e->getMessage());
             return [
                 'success' => false,
@@ -82,7 +94,6 @@ class PipelineOrchestrator
             ];
 
         } catch (\Exception $e) {
-            // Hard failure
             $this->setStageStatus($cycleId, $stage, 'failed', false);
             $this->setLastError($cycleId, "[{$stage}] " . $e->getMessage());
             return [
@@ -99,12 +110,10 @@ class PipelineOrchestrator
     // =========================================================================
 
     /**
-     * BASKETS — validate eligible members with active stock picks exist for this merchant.
-     * Mirrors the PrepareOrders preview check: calls prepare_orders.php action=preview
-     * scoped to this merchant. Eligible = has points + active basket + investment election.
+     * Combined: Baskets validation then Orders prepare (no approve).
+     * Legacy entry point — equivalent to clicking both manually.
      */
-    // ── Combined: Baskets then Orders in one button press ───────────────────
-    private function runBasketsAndOrders(array $cycle, int $cycleId): array
+    private function runBasketsAndPrepare(array $cycle, int $cycleId): array
     {
         $basketStatus = $cycle['stage_baskets'] ?? 'pending';
         $orderStatus  = $cycle['stage_orders']  ?? 'pending';
@@ -124,19 +133,17 @@ class PipelineOrchestrator
             }
         }
 
-        // Re-fetch cycle to get updated stage_baskets before orders
+        // Re-fetch cycle to get updated stage_baskets
         $cycleRow = $this->conn->prepare("SELECT * FROM pipeline_cycles WHERE id = ?");
         $cycleRow->execute([$cycleId]);
         $cycle = $cycleRow->fetch(\PDO::FETCH_ASSOC) ?: $cycle;
 
-        // ── Orders ───────────────────────────────────────────────────────────
-        if ($orderStatus !== 'completed') {
+        // ── Orders prepare (leaves stage_orders='staged') ────────────────────
+        if (!in_array($orderStatus, ['staged', 'completed'])) {
             $this->setStageStatus($cycleId, 'orders', 'in_progress', $orderStatus === 'pending');
             try {
-                $oResult = $this->runOrders($cycle, $cycleId);
-                $this->setStageStatus($cycleId, 'orders', 'completed', false);
-                $this->advanceCycleStage($cycleId, 'orders');
-                $this->syncCounts($cycleId);
+                $oResult = $this->runOrdersPrepareInternal($cycle, $cycleId);
+                $this->setStageStatus($cycleId, 'orders', 'staged', false);
                 $this->clearLastError($cycleId);
             } catch (\Throwable $e) {
                 $this->setStageStatus($cycleId, 'orders', 'failed', false);
@@ -146,18 +153,20 @@ class PipelineOrchestrator
         }
 
         return [
-            'success' => true,
-            'waiting' => false,
-            'baskets' => $bResult ?? ['skipped' => true],
-            'orders'  => $oResult ?? ['skipped' => true],
-            // surface key metrics for the result pill panel
+            'success'          => true,
+            'waiting'          => false,
+            'baskets'          => $bResult ?? ['skipped' => true],
+            'orders'           => $oResult ?? ['skipped' => true],
             'eligible_members' => ($bResult ?? [])['eligible_members'] ?? null,
-            'orders_created'   => ($oResult ?? [])['orders_created']   ?? null,
-            'orders_approved'  => ($oResult ?? [])['orders_approved']  ?? null,
+            'orders_staged'    => ($oResult ?? [])['orders_staged']    ?? null,
             'batch_id'         => ($oResult ?? [])['batch_id']         ?? null,
+            'message'          => ($oResult ?? [])['message']          ?? 'Batch staged — review on Prepare Orders page.',
         ];
     }
 
+    /**
+     * BASKETS — validate eligible members for this merchant.
+     */
     private function runBaskets(array $cycle): array
     {
         $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
@@ -182,7 +191,6 @@ class PipelineOrchestrator
             );
         }
 
-        // Pull through useful preview stats for the result panel
         $byMerchant  = $res['by_merchant'] ?? [];
         $totalAmount = 0;
         foreach ($byMerchant as $m) {
@@ -199,14 +207,45 @@ class PipelineOrchestrator
     }
 
     /**
-     * ORDERS — prepare a new batch then approve it.
-     * Calls prepare_orders.php (prepare → approve) and attaches the batch to the cycle.
+     * ORDERS PREPARE — run the prepare step only.
+     *
+     * Public entry point called by runStage('orders').
+     * Sets stage_orders = 'staged' and waits for admin approval.
      */
-    private function runOrders(array $cycle, int $cycleId): array
+    private function runOrdersPrepare(array $cycle, int $cycleId): array
+    {
+        $alreadyStarted = !empty($cycle['stage_orders'])
+                          && $cycle['stage_orders'] !== 'pending';
+        $this->setStageStatus($cycleId, 'orders', 'in_progress', !$alreadyStarted);
+
+        try {
+            $result = $this->runOrdersPrepareInternal($cycle, $cycleId);
+
+            // Leave at 'staged' — admin must approve before completing
+            $this->setStageStatus($cycleId, 'orders', 'staged', false);
+            $this->clearLastError($cycleId);
+
+            return ['success' => true, 'waiting' => false] + $result;
+
+        } catch (\Exception $e) {
+            $this->setStageStatus($cycleId, 'orders', 'failed', false);
+            $this->setLastError($cycleId, '[orders] ' . $e->getMessage());
+            return [
+                'success' => false,
+                'waiting' => false,
+                'error'   => $e->getMessage(),
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Internal prepare logic shared by runOrdersPrepare and runBasketsAndPrepare.
+     */
+    private function runOrdersPrepareInternal(array $cycle, int $cycleId): array
     {
         $mid = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
-        // ── Step 1: prepare ──────────────────────────────────────────────────
         $prep = $this->internalPost('prepare_orders.php', [
             'action'      => 'prepare',
             'merchant_id' => $mid,
@@ -221,43 +260,110 @@ class PipelineOrchestrator
             throw new \Exception('prepare_orders returned no batch_id.');
         }
 
-        // Attach batch to cycle immediately so other stages can reference it
+        // Attach batch to cycle so subsequent stages can reference it
         $this->attachBatch($cycleId, $batchId);
 
-        // ── Step 2: approve ──────────────────────────────────────────────────
-        $appr = $this->internalPost('prepare_orders.php', [
-            'action'   => 'approve',
-            'batch_id' => $batchId,
-        ]);
+        $staged   = (int)   ($prep['results']['total_orders']  ?? 0);
+        $members  = (int)   ($prep['results']['total_members'] ?? 0);
+        $amount   = (float) ($prep['results']['total_amount']  ?? 0);
+        $duration = (float) ($prep['results']['duration_seconds'] ?? 0);
+        $isRefresh = (bool) ($prep['is_refresh'] ?? false);
 
-        if (empty($appr['success'])) {
-            throw new \Exception(
-                "Batch {$batchId} prepare succeeded but approve failed: " .
-                ($appr['error'] ?? 'unknown error')
-            );
-        }
-
-        // prepare returns: batch_id, nothing_to_stage
-        // approve returns: orders_created, orders_skipped, orders_flagged, duration_seconds
-        $apprCount = (int)   ($appr['orders_created']  ?? 0);
-        $skipped   = (int)   ($appr['orders_skipped']  ?? 0);
-        $flagged   = (int)   ($appr['orders_flagged']  ?? 0);
-        $duration  = (float) ($appr['duration_seconds'] ?? 0);
-        $amount    = (float) ($prep['total_amount']    ?? 0);
-
-        $suffix = '';
-        if ($skipped > 0) $suffix .= ", {$skipped} skipped";
-        if ($flagged > 0) $suffix .= ", {$flagged} flagged";
-        if ($duration > 0) $suffix .= " in {$duration}s";
+        $mode = $isRefresh ? 'refreshed' : 'staged';
 
         return [
-            'batch_id'        => $batchId,
-            'orders_created'  => $apprCount,
-            'orders_skipped'  => $skipped,
-            'orders_flagged'  => $flagged,
-            'total_amount'    => $amount,
-            'message'         => "Batch {$batchId}: {$apprCount} order(s) created and approved{$suffix}.",
+            'batch_id'      => $batchId,
+            'orders_staged' => $staged,
+            'members'       => $members,
+            'total_amount'  => $amount,
+            'is_refresh'    => $isRefresh,
+            'message'       => "Batch {$batchId}: {$staged} order(s) {$mode} for {$members} member(s)" .
+                               ($amount > 0 ? " ($" . number_format($amount, 2) . ")" : "") .
+                               " — review on Prepare Orders page, then click Approve.",
         ];
+    }
+
+    /**
+     * ORDERS APPROVE — run the approve step only.
+     *
+     * Called by runStage('orders_approve') after admin has reviewed the staged batch.
+     * Advances stage_orders to 'completed'.
+     */
+    private function runOrdersApprove(array $cycle, int $cycleId): array
+    {
+        // Validate: stage_orders must be 'staged'
+        $orderStatus = $cycle['stage_orders'] ?? 'pending';
+        if ($orderStatus !== 'staged') {
+            return [
+                'success' => false,
+                'waiting' => false,
+                'error'   => "Orders stage is '{$orderStatus}' — must be 'staged' before approving. Run the prepare step first.",
+                'message' => "Orders stage is '{$orderStatus}' — must be 'staged' before approving.",
+            ];
+        }
+
+        // Resolve batch_id
+        $batchId = $cycle['batch_id'] ?? null;
+        if (!$batchId) {
+            return [
+                'success' => false,
+                'waiting' => false,
+                'error'   => 'No batch_id attached to this cycle. Run the prepare step first.',
+                'message' => 'No batch attached — run prepare first.',
+            ];
+        }
+
+        $this->setStageStatus($cycleId, 'orders', 'in_progress', false);
+
+        try {
+            $appr = $this->internalPost('prepare_orders.php', [
+                'action'   => 'approve',
+                'batch_id' => $batchId,
+            ]);
+
+            if (empty($appr['success'])) {
+                throw new \Exception(
+                    "Approve failed for batch {$batchId}: " .
+                    ($appr['error'] ?? 'unknown error')
+                );
+            }
+
+            $created  = (int)   ($appr['orders_created']   ?? 0);
+            $skipped  = (int)   ($appr['orders_skipped']   ?? 0);
+            $flagged  = (int)   ($appr['orders_flagged']   ?? 0);
+            $duration = (float) ($appr['duration_seconds'] ?? 0);
+
+            // Advance to completed and move pipeline forward
+            $this->setStageStatus($cycleId, 'orders', 'completed', false);
+            $this->advanceCycleStage($cycleId, 'orders');
+            $this->syncCounts($cycleId);
+            $this->clearLastError($cycleId);
+
+            $suffix = '';
+            if ($skipped > 0) $suffix .= ", {$skipped} skipped";
+            if ($flagged > 0) $suffix .= ", {$flagged} flagged";
+            if ($duration > 0) $suffix .= " in {$duration}s";
+
+            return [
+                'success'        => true,
+                'waiting'        => false,
+                'batch_id'       => $batchId,
+                'orders_created' => $created,
+                'orders_skipped' => $skipped,
+                'orders_flagged' => $flagged,
+                'message'        => "Batch {$batchId}: {$created} order(s) approved and ready for payment{$suffix}.",
+            ];
+
+        } catch (\Exception $e) {
+            $this->setStageStatus($cycleId, 'orders', 'failed', false);
+            $this->setLastError($cycleId, '[orders_approve] ' . $e->getMessage());
+            return [
+                'success' => false,
+                'waiting' => false,
+                'error'   => $e->getMessage(),
+                'message' => $e->getMessage(),
+            ];
+        }
     }
 
     /**
@@ -318,9 +424,6 @@ class PipelineOrchestrator
 
     /**
      * FUNDING — verify all batch orders have paid_flag = 1.
-     *
-     * Throws StageWaitingException (keeps stage in_progress) if payment
-     * has not yet been confirmed. Operator re-runs after marking payments paid.
      */
     private function runFunding(array $cycle): array
     {
@@ -356,7 +459,6 @@ class PipelineOrchestrator
         }
 
         if ($unpaid > 0) {
-            // Polling — not a hard failure
             throw new StageWaitingException(
                 "{$unpaid} of {$total} order(s) not yet marked as paid. " .
                 "Run 'Mark Payments Paid' in Payments Processing, then re-run this check."
@@ -373,15 +475,13 @@ class PipelineOrchestrator
     }
 
     /**
-     * JOURNAL — sweep journal entries to member Alpaca accounts,
-     * scoped to members in this cycle's batch.
+     * JOURNAL — sweep journal entries to member Alpaca accounts.
      */
     private function runJournal(array $cycle): array
     {
         $batchId = $cycle['batch_id'] ?? null;
         $mid     = $cycle['merchant_code'] ?? $cycle['merchant_id_str'] ?? '';
 
-        // Scope to this batch's members (approved + paid)
         if ($batchId) {
             $stmt = $this->conn->prepare("
                 SELECT DISTINCT member_id
@@ -407,12 +507,12 @@ class PipelineOrchestrator
         if (empty($memberIds)) {
             throw new \Exception(
                 'No approved + paid orders found to journal. ' .
-                'Ensure the Funding stage has been completed.'
+                'Ensure Orders and Funding stages are complete.'
             );
         }
 
-        $res = $this->internalPost('journal-sweep.php', [
-            'action'     => 'journal',
+        $res = $this->internalPost('cron-journal-sweep.php', [
+            'action'     => 'run',
             'member_ids' => $memberIds,
         ]);
 
@@ -435,7 +535,7 @@ class PipelineOrchestrator
     }
 
     /**
-     * PLACEMENT — sweep orders to 'placed' status via trigger_sweep.php.
+     * PLACEMENT — sweep orders to 'placed' status.
      */
     private function runPlacement(array $cycle): array
     {
@@ -453,14 +553,14 @@ class PipelineOrchestrator
         $placed = $res['orders_placed'] ?? ($res['count'] ?? ($res['total_processed'] ?? 0));
 
         return [
-            'merchant_id'  => $mid,
-            'orders_placed'=> (int) $placed,
-            'message'      => "{$placed} order(s) placed for merchant {$mid}.",
+            'merchant_id'   => $mid,
+            'orders_placed' => (int) $placed,
+            'message'       => "{$placed} order(s) placed for merchant {$mid}.",
         ];
     }
 
     /**
-     * SUBMISSION — submit placed orders to broker via execute_merchant.
+     * SUBMISSION — submit placed orders to broker.
      */
     private function runSubmission(array $cycle): array
     {
@@ -487,22 +587,19 @@ class PipelineOrchestrator
         }
 
         return [
-            'exec_id'          => $execId,
-            'orders_executed'  => $executed,
-            'orders_failed'    => $failed,
-            'baskets_processed'=> $res['baskets_processed'] ?? 0,
-            'duration_seconds' => $duration,
-            'message'          => "Submitted {$executed} order(s) to broker" .
-                                  ($failed > 0 ? " ({$failed} failed)" : "") .
-                                  ($execId ? ". Exec ID: {$execId}" : "."),
+            'exec_id'           => $execId,
+            'orders_executed'   => $executed,
+            'orders_failed'     => $failed,
+            'baskets_processed' => $res['baskets_processed'] ?? 0,
+            'duration_seconds'  => $duration,
+            'message'           => "Submitted {$executed} order(s) to broker" .
+                                   ($failed > 0 ? " ({$failed} failed)" : "") .
+                                   ($execId ? ". Exec ID: {$execId}" : "."),
         ];
     }
 
     /**
      * EXECUTION — poll for broker fill confirmation.
-     *
-     * Throws StageWaitingException if fills are still pending.
-     * Marks complete once all submitted/placed orders reach executed/confirmed.
      */
     private function runExecution(array $cycle): array
     {
@@ -514,13 +611,13 @@ class PipelineOrchestrator
 
         $stmt = $this->conn->prepare("
             SELECT
-                COUNT(*)                                                          AS total,
+                COUNT(*)                                                             AS total,
                 SUM(CASE WHEN status IN ('executed','confirmed') THEN 1 ELSE 0 END) AS executed,
                 SUM(CASE WHEN status = 'submitted'              THEN 1 ELSE 0 END) AS submitted,
                 SUM(CASE WHEN status = 'placed'                 THEN 1 ELSE 0 END) AS placed,
                 SUM(CASE WHEN status = 'failed'                 THEN 1 ELSE 0 END) AS failed,
                 COALESCE(SUM(CASE WHEN status IN ('executed','confirmed')
-                                  THEN amount ELSE 0 END), 0)                   AS amount_executed
+                                  THEN amount ELSE 0 END), 0)                      AS amount_executed
             FROM orders
             WHERE {$where}
         ");
@@ -561,7 +658,7 @@ class PipelineOrchestrator
     }
 
     /**
-     * SETTLEMENT — mark all executed/confirmed orders in the batch as settled.
+     * SETTLEMENT — mark all executed/confirmed orders as settled.
      */
     private function runSettlement(array $cycle): array
     {
@@ -643,7 +740,6 @@ class PipelineOrchestrator
         $next = $stages[$idx + 1] ?? null;
 
         if ($next === null) {
-            // Settlement complete — close the cycle
             $this->conn->exec("
                 UPDATE pipeline_cycles
                 SET    status      = 'completed',
@@ -652,7 +748,6 @@ class PipelineOrchestrator
                 WHERE  id = {$cycleId}
             ");
         } else {
-            // Just touch updated_at — current_stage is derived in PHP from stage columns
             $this->conn->exec("
                 UPDATE pipeline_cycles
                 SET    updated_at = '{$now}'
@@ -687,30 +782,29 @@ class PipelineOrchestrator
 
     private function syncCounts(int $cycleId): void
     {
-        // Fetch batch_id for this cycle (may be null if orders stage hasn't run yet)
         $stmt = $this->conn->prepare("SELECT batch_id FROM pipeline_cycles WHERE id = ?");
         $stmt->execute([$cycleId]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-        if (empty($row['batch_id'])) return; // nothing to aggregate yet
+        if (empty($row['batch_id'])) return;
 
         $batchId = $row['batch_id'];
 
         $cStmt = $this->conn->prepare("
             SELECT
                 COUNT(DISTINCT basket_id)                                                    AS baskets_total,
-                COUNT(*)                                                                       AS orders_total,
-                SUM(status = 'approved')                                                       AS orders_approved,
-                SUM(status = 'funded')                                                         AS orders_funded,
-                SUM(status IN ('placed','submitted','confirmed','executed'))                    AS orders_placed,
-                SUM(status IN ('submitted','confirmed','executed'))                            AS orders_submitted,
-                SUM(status = 'settled')                                                        AS orders_settled,
-                SUM(status = 'failed')                                                         AS orders_failed,
-                SUM(status = 'cancelled')                                                      AS orders_cancelled,
-                COALESCE(SUM(amount), 0)                                                       AS amount_total,
+                COUNT(*)                                                                     AS orders_total,
+                SUM(status = 'approved')                                                     AS orders_approved,
+                SUM(status = 'funded')                                                       AS orders_funded,
+                SUM(status IN ('placed','submitted','confirmed','executed'))                  AS orders_placed,
+                SUM(status IN ('submitted','confirmed','executed'))                           AS orders_submitted,
+                SUM(status = 'settled')                                                      AS orders_settled,
+                SUM(status = 'failed')                                                       AS orders_failed,
+                SUM(status = 'cancelled')                                                    AS orders_cancelled,
+                COALESCE(SUM(amount), 0)                                                     AS amount_total,
                 COALESCE(SUM(CASE WHEN status IN ('funded','placed','submitted','confirmed','executed','settled')
-                                  THEN amount END), 0)                                         AS amount_funded,
-                COALESCE(SUM(CASE WHEN status = 'settled' THEN amount END), 0)                 AS amount_settled
+                                  THEN amount END), 0)                                       AS amount_funded,
+                COALESCE(SUM(CASE WHEN status = 'settled' THEN amount END), 0)               AS amount_settled
             FROM orders
             WHERE batch_id = ?
         ");
@@ -766,17 +860,10 @@ class PipelineOrchestrator
     //  Internal HTTP helper
     // =========================================================================
 
-    /**
-     * POST JSON to another endpoint on the same server (loopback).
-     *
-     * Derives the URL from $_SERVER so it works on any hostname / path prefix.
-     * All existing endpoints default actor to 'admin' if no auth header is sent.
-     */
     private function internalPost(string $endpoint, array $payload): array
     {
         $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        // dirname of e.g. /api/pipeline-cycles.php → /api
         $dir   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/api/pipeline-cycles.php'), '/');
         $url   = "{$proto}://{$host}{$dir}/{$endpoint}";
 
@@ -786,8 +873,8 @@ class PipelineOrchestrator
             CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 90,           // broker calls can be slow
-            CURLOPT_SSL_VERIFYPEER => false,         // loopback — cert not needed
+            CURLOPT_TIMEOUT        => 90,
+            CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
         ]);
 

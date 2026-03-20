@@ -4,315 +4,345 @@ import { apiPost } from "../api";
 import OrderPipeline from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
-import { ArrowLeft, CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb, AlertTriangle, ClipboardList, HelpCircle, ChevronUp, ChevronDown, Store, Building2, ShoppingBasket, Package } from "lucide-react";
+import {
+  ArrowRight, CirclePlay, RefreshCw, CheckCircle2, XCircle, Trash2, Bomb,
+  AlertTriangle, HelpCircle, ChevronUp, ChevronDown, Building2, ShoppingBasket,
+  Package, Loader2, Unlock, Lock, Play, Plus, CreditCard,
+} from "lucide-react";
 
 /**
  * PrepareOrders — Admin page for staged order preparation
  *
- * Staging workflow:
- *   1. Preview   → Aggregate counts (read-only, nothing written)
- *   2. Prepare   → INSERT...SELECT into prepared_orders (staged)
- *   3. Review    → Hierarchy: Merchant → Broker → Basket → Orders
- *   4. Approve   → Move staged → orders table (pending)
- *   5. Discard   → Mark batch discarded
+ * One card per open pipeline cycle (merchant · broker pair).
+ * Each card manages its own trial run, refresh, approve, and discard.
+ * "Run All Trials" runs prepare for every open cycle sequentially.
  *
- * Rules:
- *   - sweep_percentage = 0 → treated as 100%
- *   - points = 0 → member bypassed
- *   - conversion_rate from merchant tier columns (tier1–tier6)
+ * Workflow per cycle:
+ *   1. Run Trial   → INSERT into prepared_orders (staged)
+ *   2. Review      → Expandable hierarchy inside card
+ *   3. Approve     → Move staged → orders (approved), pipeline advances
+ *   4. Discard     → Mark batch discarded (soft delete)
  */
+
+const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
 
 export default function PrepareOrders() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // ── Read ?merchant_id and ?broker_id from URL (navigated from Pipeline Cycles) ──
-  const params = new URLSearchParams(location.search);
+  const params        = new URLSearchParams(location.search);
   const urlMerchantId = params.get("merchant_id") || "";
   const urlBrokerId   = params.get("broker_id")   || "";
 
-  // Selected merchant-broker pair — stored as "merchantId|brokerId" or "" for All
-  const makeKey = (mid, bid) => (mid && bid) ? `${mid}|${bid}` : mid ? mid : "";
-  const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+  const [activeTab, setActiveTab] = useState("cycles");
 
-  // Derived filters from selected pair
-  const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
-  const filterBroker   = selectedPair.includes("|") ? selectedPair.split("|")[1] : "";
+  // ── Pipeline cycles ──────────────────────────────────────────────────────
+  const [cycleOptions,     setCycleOptions]     = useState([]);
+  const [cyclesLoading,    setCyclesLoading]    = useState(true);
 
-  const [activeTab, setActiveTab] = useState("preview");
-
-  // ── Preview state ──
-  const [preview, setPreview] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState(null);
-  const [preparing, setPreparing] = useState(false);
-  const [prepareResult, setPrepareResult] = useState(null);
-
-  // ── Pipeline cycle pairs (for dropdown + blocking) ──
-  const [cycleOptions, setCycleOptions] = useState([]); // [{ key, merchant_id, broker_id, merchant_name, broker_name, cycle }]
-  const [activeCycle, setActiveCycle] = useState(null);
-
-  useEffect(() => {
+  const loadCycles = useCallback(() => {
+    setCyclesLoading(true);
     apiPost("pipeline-cycles.php", { action: "list", limit: 100 })
       .then(res => {
         if (!res?.success) return;
         const open = (res.cycles || []).filter(c => ["open", "locked"].includes(c.status));
-        const opts = open.map(c => ({
+        setCycleOptions(open.map(c => ({
           key:           makeKey(c.merchant_id_str, c.broker_id),
           merchant_id:   c.merchant_id_str,
           broker_id:     c.broker_id,
           merchant_name: c.merchant_name || c.merchant_id_str,
           broker_name:   c.broker_name   || c.broker_id,
+          funding_method: c.funding_method,
           cycle:         c,
-        }));
-        setCycleOptions(opts);
-
-        // Determine blocking cycle for current selection
-        const blocking = open.find(c =>
-          c.merchant_id_str === filterMerchant &&
-          (!filterBroker || c.broker_id === filterBroker) &&
-          ["open", "locked"].includes(c.status) &&
-          c.stage_orders === "completed"
-        );
-        setActiveCycle(blocking || null);
+        })));
       })
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPair]);
-
-  // ── Batches state ──
-  const [batches, setBatches] = useState([]);
-  const [batchesLoading, setBatchesLoading] = useState(false);
-  const [batchesError, setBatchesError] = useState(null);
-  const [activeBatchId, setActiveBatchId] = useState(null);
-  const [batchStats, setBatchStats] = useState(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-
-  // Pipeline queue counts
-  const [queueCounts, setQueueCounts] = useState(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await apiPost("admin-queue-counts.php");
-        if (data?.success) setQueueCounts(data.counts);
-      } catch (err) {
-        console.warn("[PrepareOrders] queue counts fetch failed:", err);
-      }
-    })();
+      .catch(() => {})
+      .finally(() => setCyclesLoading(false));
   }, []);
 
-  // ── Actions in progress ──
-  const [actionLoading, setActionLoading] = useState(false);
+  useEffect(() => { loadCycles(); }, [loadCycles]);
 
-  // ── Unified Modal State ──
-  const [modal, setModal] = useState({
-    show: false,
-    type: null,        // 'prepare' | 'approve' | 'discard' | 'monthly-warning'
-    title: "",
-    message: "",
-    details: null,
-    confirmText: "Confirm",
-    cancelText: "Cancel",
-    confirmColor: "#007bff",
-    icon: <HelpCircle size={20} />,
-    data: null,        // Additional data (e.g., batchId)
-  });
+  // ── All available merchant-broker pairs (from get_options) ───────────────
+  const [allPairs,     setAllPairs]     = useState([]); // [{ key, record_id, merchant_id, merchant_name, broker_id, broker_name, default_funding }]
+  const [optLoading,   setOptLoading]   = useState(true);
 
-  const closeModal = () => setModal(prev => ({ ...prev, show: false }));
+  const loadOptions = useCallback(() => {
+    setOptLoading(true);
+    apiPost("pipeline-cycles.php", { action: "get_options" })
+      .then(res => {
+        if (!res?.success) return;
+        const merchants       = res.merchants        || [];
+        const brokers         = res.brokers          || [];
+        const merchantBrokers = res.merchant_brokers || {};
+        const pairs = [];
+        for (const m of merchants) {
+          const linkedIds = merchantBrokers[m.merchant_id] ?? null;
+          const eligible  = linkedIds
+            ? brokers.filter(b => linkedIds.includes(b.broker_id))
+            : brokers;
+          for (const b of eligible) {
+            pairs.push({
+              key:             makeKey(m.merchant_id, b.broker_id),
+              record_id:       m.record_id,
+              merchant_id:     m.merchant_id,
+              merchant_name:   m.merchant_name,
+              broker_id:       b.broker_id,
+              broker_name:     b.broker_name,
+              default_funding: "plaid",
+            });
+          }
+        }
+        setAllPairs(pairs);
+      })
+      .catch(() => {})
+      .finally(() => setOptLoading(false));
+  }, []);
 
-  // ── Helpers ──
-  const fmt$ = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v || 0);
-  const fmtN = (v) => Number(v || 0).toLocaleString();
-  const fmtDate = (d) => (d ? new Date(d).toLocaleString() : "-");
+  useEffect(() => { loadOptions(); }, [loadOptions]);
 
-  // ── Load preview ──
-  const loadPreview = useCallback(async () => {
-    setPreviewLoading(true);
-    setPreviewError(null);
+  // ── Initiate state ───────────────────────────────────────────────────────
+  const [selectedNewPair,     setSelectedNewPair]     = useState("");
+  const [selectedFunding,     setSelectedFunding]     = useState("plaid");
+  const [initiating,          setInitiating]          = useState(false);
+  const [initiateAllLoading,  setInitiateAllLoading]  = useState(false);
+  const [initiateError,       setInitiateError]       = useState(null);
+
+  // Available pairs = allPairs that don't have an active open/locked cycle
+  const activeCycleKeys = new Set(cycleOptions.map(c => c.key));
+  const availablePairs  = allPairs.filter(p => !activeCycleKeys.has(p.key));
+
+  // Open a single cycle then immediately run the trial
+  const openAndRunCycle = async (pair, fundingMethod) => {
+    const key = pair.key;
+    setInitiateError(null);
+    // Step 1: open cycle
+    const openRes = await apiPost("pipeline-cycles.php", {
+      action:              "open",
+      merchant_record_id:  pair.record_id,
+      broker_id:           pair.broker_id,
+      funding_method:      fundingMethod || "plaid",
+      label:               `${pair.merchant_name} – ${pair.broker_name} – ${new Date().toLocaleString('en-US', { month: 'short', year: 'numeric' })}`,
+    });
+    if (!openRes?.success) throw new Error(openRes?.error || "Failed to open cycle.");
+
+    // Step 2: reload cycles so the new one appears in cycleOptions
+    await new Promise(resolve => {
+      apiPost("pipeline-cycles.php", { action: "list", limit: 100 }).then(res => {
+        if (res?.success) {
+          const open = (res.cycles || []).filter(c => ["open", "locked"].includes(c.status));
+          const opts = open.map(c => ({
+            key:            makeKey(c.merchant_id_str, c.broker_id),
+            merchant_id:    c.merchant_id_str,
+            broker_id:      c.broker_id,
+            merchant_name:  c.merchant_name || c.merchant_id_str,
+            broker_name:    c.broker_name   || c.broker_id,
+            funding_method: c.funding_method,
+            cycle:          c,
+          }));
+          setCycleOptions(opts);
+        }
+        resolve();
+      }).catch(resolve);
+    });
+
+    // Step 3: run prepare for this pair
+    const cycleOpt = { key, merchant_id: pair.merchant_id, broker_id: pair.broker_id };
+    await executePrepareForCycle(cycleOpt);
+  };
+
+  const handleInitiateSelected = async () => {
+    const pair = availablePairs.find(p => p.key === selectedNewPair);
+    if (!pair) return;
+    setInitiating(true);
     try {
-      const payload = { action: "preview" };
-      if (filterMerchant) payload.merchant_id = filterMerchant;
-      if (filterBroker)   payload.broker_id   = filterBroker;
-      const res = await apiPost("prepare_orders.php", payload);
-      if (res.success) {
-        setPreview(res);
-      } else {
-        setPreviewError(res.error || "Preview failed — check PHP response.");
-        console.error("Preview failed:", res);
-      }
-    } catch (err) {
-      setPreviewError("Network/API error: " + err.message);
-      console.error("Preview exception:", err);
+      await openAndRunCycle(pair, selectedFunding);
+      setSelectedNewPair("");
+    } catch (e) {
+      setInitiateError(e.message);
     }
-    setPreviewLoading(false);
-  }, [filterMerchant, filterBroker]);
+    setInitiating(false);
+  };
 
-  // ── Load batches ──
+  const handleInitiateAll = async () => {
+    setInitiateAllLoading(true);
+    setInitiateError(null);
+    for (const pair of availablePairs) {
+      try {
+        await openAndRunCycle(pair, selectedFunding);
+      } catch (e) {
+        setInitiateError(`${pair.merchant_name} · ${pair.broker_name}: ${e.message}`);
+      }
+    }
+    setInitiateAllLoading(false);
+  };
+
+  // ── Per-cycle running state & results ────────────────────────────────────
+  // cycleRunning: { [key]: bool }
+  // cycleResults: { [key]: last prepare api response }
+  const [cycleRunning, setCycleRunning] = useState({});
+  const [cycleResults, setCycleResults] = useState({});
+  const [runAllLoading,     setRunAllLoading]     = useState(false);
+  const [approveAllLoading, setApproveAllLoading] = useState(false);
+  // Bumped after any stage update so OrderPipeline re-fetches immediately
+  const [pipelineRefreshKey, setPipelineRefreshKey] = useState(0);
+
+  // ── Batches (all, reloaded after each action) ────────────────────────────
+  const [batches,       setBatches]       = useState([]);
+  const [batchesLoading,setBatchesLoading]= useState(false);
+  const [batchesError,  setBatchesError]  = useState(null);
+  const [activeBatchId, setActiveBatchId] = useState(null);
+  const [batchStats,    setBatchStats]    = useState(null);
+  const [statsLoading,  setStatsLoading]  = useState(false);
+
+  // Batches tab filter (separate from cycle cards)
+  const [batchFilter, setBatchFilter] = useState(makeKey(urlMerchantId, urlBrokerId));
+
   const loadBatches = useCallback(async () => {
     setBatchesLoading(true);
     setBatchesError(null);
     try {
       const res = await apiPost("prepare_orders.php", { action: "batches", limit: 50 });
-      if (res.success) {
-        setBatches(res.batches || []);
-      } else {
-        setBatchesError(res.error || "Failed to load batches.");
-        console.error("Batches failed:", res);
-      }
+      if (res.success) setBatches(res.batches || []);
+      else setBatchesError(res.error || "Failed to load batches.");
     } catch (err) {
       setBatchesError("Network/API error: " + err.message);
-      console.error("Batches exception:", err);
     }
     setBatchesLoading(false);
   }, []);
 
-  // ── Detect existing staged batch ──
-  const stagedBatch = batches.find((b) => b.status === "staged");
-  const isRefreshMode = !!stagedBatch;
+  useEffect(() => { loadBatches(); }, [loadBatches]);
 
-  // ── Prepare (stage) - show modal ──
-  const showPrepareModal = () => {
-    // Check if there's an approved batch for the current month
-    const currentMonth = new Date().toISOString().slice(0, 7); // "2026-02"
-    const approvedThisMonth = batches.filter(
-      (b) => b.status === "approved" && b.batch_id?.startsWith(`PREP-${currentMonth}`)
-    );
+  // Auto-switch to batches tab if a staged batch exists on load
+  useEffect(() => {
+    if (batches.some(b => b.status === "staged")) setActiveTab("cycles");
+  }, [batches]);
 
-    if (approvedThisMonth.length > 0) {
-      // Show monthly warning modal
-      setModal({
-        show: true,
-        type: "monthly-warning",
-        title: "Prep Already Approved This Month",
-        icon: <AlertTriangle size={20} color="#f59e0b" />,
-        message: (
-          <>
-            A preparation batch has already been <strong>approved</strong> for <strong>{currentMonth}</strong>.
-            <div style={{ marginTop: "12px" }}>
-              Running a new trial will create a <strong>separate</strong> batch.
-            </div>
-          </>
-        ),
-        details: (
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: "8px", color: "#92400e" }}>Previous batch(es):</div>
-            {approvedThisMonth.map((b) => (
-              <div key={b.batch_id} style={{ marginBottom: "4px" }}>
-                • <strong>{b.batch_id}</strong> — {fmtN(b.total_orders)} orders, {fmt$(b.total_amount)}
-              </div>
-            ))}
-          </div>
-        ),
-        confirmText: "Override & Create New Trial",
-        confirmColor: "#dc2626",
-        data: { forceOverride: true },
-      });
-      return;
-    }
+  // ── Actions in progress (approve / discard / delete) ─────────────────────
+  const [actionLoading, setActionLoading] = useState(false);
 
-    if (isRefreshMode) {
-      // Refresh existing trial
-      const rc = parseInt(stagedBatch.refresh_count || 0);
-      setModal({
-        show: true,
-        type: "prepare",
-        title: "Refresh Trial Run",
-        icon: <RefreshCw size={20} color="#6366f1" />,
-        message: (
-          <>
-            Refresh the existing staged batch with <strong>updated data</strong> (prices, member changes, basket edits)?
-            <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
-              Batch <strong style={{ fontFamily: "monospace" }}>{stagedBatch.batch_id}</strong> will be rebuilt in place.
-              {rc > 0 && <> (refreshed {rc} time{rc !== 1 ? "s" : ""} so far)</>}
-            </div>
-          </>
-        ),
-        details: (
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "0.85rem" }}>
-            <span>Current: <strong>{fmtN(stagedBatch.total_orders)}</strong> orders</span>
-            <span>Amount: <strong>{fmt$(stagedBatch.total_amount)}</strong></span>
-            <span>Members: <strong>{fmtN(stagedBatch.total_members)}</strong></span>
-          </div>
-        ),
-        confirmText: "Refresh Trial",
-        confirmColor: "#6366f1",
-        data: { forceOverride: false },
-      });
-    } else {
-      // New trial
-      setModal({
-        show: true,
-        type: "prepare",
-        title: "Run Trial",
-        icon: <ClipboardList size={20} color="#6366f1" />,
-        message: (
-          <>
-            Stage a <strong>trial run</strong> for all eligible members?
-            <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
-              This is a dry run for reconciliation purposes. No orders are created until the batch is <strong>approved</strong>.
-            </div>
-          </>
-        ),
-        confirmText: "Run Trial",
-        confirmColor: "#6366f1",
-        data: { forceOverride: false },
-      });
-    }
-  };
+  // ── Modal ─────────────────────────────────────────────────────────────────
+  const [modal, setModal] = useState({
+    show: false, type: null, title: "", message: "", details: null,
+    confirmText: "Confirm", cancelText: "Cancel",
+    confirmColor: "#007bff", icon: <HelpCircle size={20} />, data: null,
+  });
+  const closeModal = () => setModal(p => ({ ...p, show: false }));
 
-  // ── Execute prepare ──
-  const executePrepare = async () => {
-    closeModal();
-    setPreparing(true);
-    setPrepareResult(null);
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const fmt$    = v => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v || 0);
+  const fmtN    = v => Number(v || 0).toLocaleString();
+  const fmtDate = d => d ? new Date(d).toLocaleString() : "—";
 
-    try {
-      const payload = { action: "prepare" };
-      if (filterMerchant) payload.merchant_id = filterMerchant;
-      if (filterBroker)   payload.broker_id   = filterBroker;
-      const res = await apiPost("prepare_orders.php", payload);
-      setPrepareResult(res);
-      if (res.success && !res.nothing_to_stage && res.batch_id) {
-        await loadBatches();
-        setActiveTab("batches");
-        setActiveBatchId(res.batch_id);
-        loadStats(res.batch_id);
-      } else if (res.success && res.nothing_to_stage) {
-        await loadBatches(); // refresh list so any stale staged batches are cleared
-      }
-    } catch (err) {
-      setPrepareResult({ success: false, error: err.message });
-    }
-    setPreparing(false);
-  };
-
-  // ── Load batch stats ──
+  // ── Load stats for expanded batch ─────────────────────────────────────────
   const loadStats = async (batchId) => {
-    setStatsLoading(true);
-    setBatchStats(null);
+    setStatsLoading(true); setBatchStats(null);
     try {
       const res = await apiPost("prepare_orders.php", { action: "stats", batch_id: batchId });
       if (res.success) setBatchStats(res);
-    } catch (err) {
-      console.error("Stats error:", err);
-    }
+    } catch (e) { console.error("Stats error:", e); }
     setStatsLoading(false);
   };
 
-  // ── Approve - show modal ──
+  const selectBatch = (batchId) => {
+    if (activeBatchId === batchId) { setActiveBatchId(null); setBatchStats(null); return; }
+    setActiveBatchId(batchId);
+    loadStats(batchId);
+  };
+
+  // ── Update pipeline_cycles stage_orders so RAG reflects reality ─────────
+  // Called directly from PrepareOrders (not via orchestrator), so we must
+  // keep the pipeline_cycles stage columns in sync manually.
+  const updateCycleStage = useCallback(async (cycleId, stageStatus) => {
+    if (!cycleId) return;
+    try {
+      await apiPost("pipeline-cycles.php", {
+        action:       "advance_stage",
+        cycle_id:     cycleId,
+        stage:        "orders",
+        stage_status: stageStatus,
+      });
+      // Trigger immediate OrderPipeline re-fetch so RAG updates without waiting 30s
+      setPipelineRefreshKey(k => k + 1);
+    } catch (e) {
+      console.warn("[PrepareOrders] updateCycleStage failed:", e);
+    }
+  }, []);
+
+  // Resolve cycle_id from a batch's filter_merchant
+  const cycleIdForMerchant = useCallback((merchantId) => {
+    const opt = cycleOptions.find(c =>
+      String(c.merchant_id || "").toLowerCase() === String(merchantId || "").toLowerCase()
+    );
+    return opt?.cycle?.id ?? null;
+  }, [cycleOptions]);
+
+  // ── Execute prepare for a single cycle ───────────────────────────────────
+  const executePrepareForCycle = useCallback(async (cycleOpt) => {
+    const key = cycleOpt.key;
+    setCycleRunning(p => ({ ...p, [key]: true }));
+    setCycleResults(p => ({ ...p, [key]: null }));
+    try {
+      const res = await apiPost("prepare_orders.php", {
+        action:      "prepare",
+        merchant_id: cycleOpt.merchant_id,
+        broker_id:   cycleOpt.broker_id,
+      });
+      setCycleResults(p => ({ ...p, [key]: res }));
+      if (res.success && !res.nothing_to_stage) {
+        // Mark stage_orders = 'staged' so the RAG turns green
+        await updateCycleStage(cycleOpt.cycle?.id, "staged");
+      }
+      await loadBatches();
+    } catch (err) {
+      setCycleResults(p => ({ ...p, [key]: { success: false, error: err.message } }));
+    }
+    setCycleRunning(p => ({ ...p, [key]: false }));
+  }, [loadBatches, updateCycleStage]);
+
+  // ── Run All Trials ────────────────────────────────────────────────────────
+  const executeRunAll = async () => {
+    setRunAllLoading(true);
+    for (const cycleOpt of cycleOptions) {
+      await executePrepareForCycle(cycleOpt);
+    }
+    setRunAllLoading(false);
+  };
+
+  // ── Approve All Staged ───────────────────────────────────────────────────
+  const executeApproveAll = async () => {
+    const stagedBatches = batches.filter(b => b.status === "staged");
+    if (stagedBatches.length === 0) return;
+    setApproveAllLoading(true);
+    for (const batch of stagedBatches) {
+      try {
+        const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batch.batch_id });
+        if (res.success) {
+          const cycleId = cycleIdForMerchant(batch.filter_merchant);
+          await updateCycleStage(cycleId, "completed");
+        }
+      } catch (e) {
+        console.error("Approve all error for", batch.batch_id, e);
+      }
+    }
+    await loadBatches();
+    setActiveBatchId(null);
+    setBatchStats(null);
+    setApproveAllLoading(false);
+  };
+
+  // ── Approve ───────────────────────────────────────────────────────────────
   const showApproveModal = (batchId) => {
     const batch = batches.find(b => b.batch_id === batchId);
     setModal({
-      show: true,
-      type: "approve",
+      show: true, type: "approve",
       title: "Approve & Lock Batch",
       icon: <CheckCircle2 size={20} color="#10b981" />,
       message: (
         <>
           Approve batch <strong style={{ fontFamily: "monospace" }}>{batchId}</strong>?
           <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#6b7280" }}>
-            This will <strong>lock</strong> the batch and create live orders. No further refreshes will be possible.
-            The pipeline advances to <strong>Payment Settlement</strong>.
+            This will <strong>lock</strong> the batch and create live orders.
+            The pipeline advances to <strong>Fund IB Sweep</strong>.
           </div>
         </>
       ),
@@ -323,101 +353,60 @@ export default function PrepareOrders() {
           <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
         </div>
       ) : null,
-      confirmText: "Approve & Lock",
-      confirmColor: "#10b981",
+      confirmText: "Approve & Lock", confirmColor: "#10b981",
       data: { batchId },
     });
   };
 
-  // ── Execute approve ──
   const executeApprove = async (batchId) => {
-    closeModal();
-    setActionLoading(true);
+    closeModal(); setActionLoading(true);
     try {
       const res = await apiPost("prepare_orders.php", { action: "approve", batch_id: batchId });
       if (res.success) {
-        const mp = res.missing_prices ? ` (Warning: ${res.missing_prices} orders had no price)` : "";
+        const mp      = res.missing_prices ? ` (Warning: ${res.missing_prices} orders had no price)` : "";
         const skipped = res.orders_skipped || 0;
         const flagged = res.orders_flagged || 0;
-        const hasDups = skipped > 0 || flagged > 0;
-
         setModal({
-          show: true,
-          type: "result",
-          title: "Batch Approved",
+          show: true, type: "result", title: "Batch Approved",
           icon: <CheckCircle2 size={20} color="#10b981" />,
           message: (
             <>
-              <strong>{fmtN(res.orders_created)}</strong> new orders created in {res.duration_seconds}s.{mp}
-              {hasDups && (
+              <strong>{fmtN(res.orders_created)}</strong> orders created in {res.duration_seconds}s.{mp}
+              {(skipped > 0 || flagged > 0) && (
                 <div style={{ marginTop: "10px", padding: "8px 12px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "6px", fontSize: "0.82rem" }}>
-                  <strong><AlertTriangle size={13} style={{ verticalAlign: "middle" }} /> Duplicate Detection:</strong>
+                  <strong>Duplicate Detection:</strong>
                   <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "6px" }}>
-                    <span>Skipped (existing active): <strong>{skipped}</strong></span>
-                    {flagged > 0 && (
-                      <span style={{ color: "#dc2626" }}>Flagged (balance issue): <strong>{flagged}</strong></span>
-                    )}
-                    <span>Reused: <strong>{res.orders_reused || 0}</strong></span>
+                    {skipped > 0 && <span>Skipped (existing active): <strong>{skipped}</strong></span>}
+                    {flagged > 0 && <span style={{ color: "#dc2626" }}>Flagged (balance issue): <strong>{flagged}</strong></span>}
                   </div>
                 </div>
               )}
-              {flagged > 0 && res.duplicates && (
-                <details style={{ marginTop: "8px", fontSize: "0.78rem" }}>
-                  <summary style={{ cursor: "pointer", color: "#dc2626", fontWeight: 600 }}>
-                    {flagged} order(s) flagged — existing orders may have insufficient points/balance
-                  </summary>
-                  <div style={{ marginTop: "6px", maxHeight: "200px", overflow: "auto" }}>
-                    {res.duplicates.filter(d => d.action === "flagged").map((d, i) => (
-                      <div key={i} style={{ padding: "4px 0", borderBottom: "1px solid #f1f5f9", fontSize: "0.75rem" }}>
-                        Member <strong>{d.member_id}</strong> · {d.symbol} · Order #{d.existing_order_id} ({d.existing_status}) — {d.reason}
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
             </>
           ),
-          confirmText: "OK",
-          confirmColor: "#10b981",
-          data: { resultOnly: true },
+          confirmText: "OK", confirmColor: "#10b981", data: { resultOnly: true },
         });
-        await loadBatches();
-        setActiveBatchId(null);
-        setBatchStats(null);
+        // Mark stage_orders = 'completed' so the RAG turns blue
+        const cycleId = cycleIdForMerchant(batches.find(b => b.batch_id === batchId)?.filter_merchant);
+        await updateCycleStage(cycleId, "completed");
+        await loadBatches(); setActiveBatchId(null); setBatchStats(null);
       } else {
-        setModal({
-          show: true,
-          type: "result",
-          title: "Approve Failed",
-          icon: <XCircle size={20} color="#ef4444" />,
-          message: res.error || "Unknown error occurred.",
-          confirmText: "OK",
-          confirmColor: "#ef4444",
-          data: { resultOnly: true },
-        });
+        setModal({ show: true, type: "result", title: "Approve Failed",
+          icon: <XCircle size={20} color="#ef4444" />, message: res.error || "Unknown error.",
+          confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
       }
     } catch (err) {
-      setModal({
-        show: true,
-        type: "result",
-        title: "Error",
-        icon: <XCircle size={20} color="#ef4444" />,
-        message: err.message,
-        confirmText: "OK",
-        confirmColor: "#ef4444",
-        data: { resultOnly: true },
-      });
+      setModal({ show: true, type: "result", title: "Error",
+        icon: <XCircle size={20} color="#ef4444" />, message: err.message,
+        confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
     }
     setActionLoading(false);
   };
 
-  // ── Discard - show modal ──
+  // ── Discard ───────────────────────────────────────────────────────────────
   const showDiscardModal = (batchId) => {
     const batch = batches.find(b => b.batch_id === batchId);
     setModal({
-      show: true,
-      type: "discard",
-      title: "Discard Batch",
+      show: true, type: "discard", title: "Discard Batch",
       icon: <Trash2 size={20} color="#ef4444" />,
       message: `Discard batch "${batchId}"?`,
       details: batch ? (
@@ -429,62 +418,44 @@ export default function PrepareOrders() {
           </div>
         </div>
       ) : "Staged orders will be marked as discarded.",
-      confirmText: "Discard",
-      confirmColor: "#ef4444",
+      confirmText: "Discard", confirmColor: "#ef4444",
       data: { batchId },
     });
   };
 
-  // ── Execute discard ──
   const executeDiscard = async (batchId) => {
-    closeModal();
-    setActionLoading(true);
+    closeModal(); setActionLoading(true);
     try {
       const res = await apiPost("prepare_orders.php", { action: "discard", batch_id: batchId });
-      if (res.success) {
-        await loadBatches();
-        setActiveBatchId(null);
-        setBatchStats(null);
+      if (!res.success) {
+        setModal({ show: true, type: "result", title: "Discard Failed",
+          icon: <XCircle size={20} color="#ef4444" />, message: res.error || "Unknown error.",
+          confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
       } else {
-        setModal({
-          show: true,
-          type: "result",
-          title: "Discard Failed",
-          icon: <XCircle size={20} color="#ef4444" />,
-          message: res.error || "Unknown error occurred.",
-          confirmText: "OK",
-          confirmColor: "#ef4444",
-          data: { resultOnly: true },
-        });
+        // Reset stage_orders to 'pending' so the cycle can be re-prepared
+        const cycleId = cycleIdForMerchant(batches.find(b => b.batch_id === batchId)?.filter_merchant);
+        await updateCycleStage(cycleId, "pending");
+        await loadBatches(); setActiveBatchId(null); setBatchStats(null);
       }
     } catch (err) {
-      setModal({
-        show: true,
-        type: "result",
-        title: "Error",
-        icon: <XCircle size={20} color="#ef4444" />,
-        message: err.message,
-        confirmText: "OK",
-        confirmColor: "#ef4444",
-        data: { resultOnly: true },
-      });
+      setModal({ show: true, type: "result", title: "Error",
+        icon: <XCircle size={20} color="#ef4444" />, message: err.message,
+        confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
     }
     setActionLoading(false);
   };
 
-  // ── Delete Batch (hard delete: orders, baskets, batch record) ──
+  // ── Delete batch ──────────────────────────────────────────────────────────
   const showDeleteBatchModal = (batchId) => {
     const batch = batches.find(b => b.batch_id === batchId);
     setModal({
-      show: true,
-      type: "delete_batch",
-      title: "Delete Batch Permanently",
+      show: true, type: "delete_batch", title: "Delete Batch Permanently",
       icon: <Bomb size={20} color="#ef4444" />,
       message: (
         <>
           Permanently delete batch <strong style={{ fontFamily: "monospace" }}>{batchId}</strong>?
           <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#ef4444", fontWeight: 600 }}>
-            This will physically DELETE all orders, baskets, and the batch record. This cannot be undone.
+            This will physically DELETE all orders, baskets, and the batch record. Cannot be undone.
           </div>
         </>
       ),
@@ -492,91 +463,44 @@ export default function PrepareOrders() {
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "0.85rem" }}>
           <span>Orders: <strong>{fmtN(batch.total_orders)}</strong></span>
           <span>Amount: <strong>{fmt$(batch.total_amount)}</strong></span>
-          <span>Members: <strong>{fmtN(batch.total_members)}</strong></span>
         </div>
       ) : null,
-      confirmText: "Delete Everything",
-      confirmColor: "#dc2626",
+      confirmText: "Delete Everything", confirmColor: "#dc2626",
       data: { batchId },
     });
   };
 
   const executeDeleteBatch = async (batchId) => {
-    closeModal();
-    setActionLoading(true);
+    closeModal(); setActionLoading(true);
     try {
       const res = await apiPost("prepare_orders.php", { action: "delete_batch", batch_id: batchId });
-      if (res.success) {
-        await loadBatches();
-        if (activeBatchId === batchId) {
-          setActiveBatchId(null);
-          setBatchStats(null);
-        }
+      if (!res.success) {
+        setModal({ show: true, type: "result", title: "Delete Failed",
+          icon: <XCircle size={20} color="#ef4444" />, message: res.error || "Unknown error.",
+          confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
       } else {
-        setModal({
-          show: true, type: "result",
-          title: "Delete Failed",
-          icon: <XCircle size={20} color="#ef4444" />,
-          message: res.error || "Unknown error.",
-          confirmText: "OK", confirmColor: "#ef4444",
-          data: { resultOnly: true },
-        });
+        await loadBatches();
+        if (activeBatchId === batchId) { setActiveBatchId(null); setBatchStats(null); }
       }
     } catch (err) {
-      setModal({
-        show: true, type: "result",
-        title: "Error",
-        icon: <XCircle size={20} color="#ef4444" />,
-        message: err.message,
-        confirmText: "OK", confirmColor: "#ef4444",
-        data: { resultOnly: true },
-      });
+      setModal({ show: true, type: "result", title: "Error",
+        icon: <XCircle size={20} color="#ef4444" />, message: err.message,
+        confirmText: "OK", confirmColor: "#ef4444", data: { resultOnly: true } });
     }
     setActionLoading(false);
   };
 
-
+  // ── Modal confirm dispatch ────────────────────────────────────────────────
   const handleModalConfirm = () => {
     switch (modal.type) {
-      case "prepare":
-      case "monthly-warning":
-        executePrepare();
-        break;
-      case "approve":
-        executeApprove(modal.data?.batchId);
-        break;
-      case "discard":
-        executeDiscard(modal.data?.batchId);
-        break;
-      case "delete_batch":
-        executeDeleteBatch(modal.data?.batchId);
-        break;
-      case "result":
-        closeModal();
-        break;
-      default:
-        closeModal();
+      case "approve":      executeApprove(modal.data?.batchId);     break;
+      case "discard":      executeDiscard(modal.data?.batchId);     break;
+      case "delete_batch": executeDeleteBatch(modal.data?.batchId); break;
+      default:             closeModal();
     }
   };
 
-  // ── Initial load ──
-  useEffect(() => {
-    loadPreview();
-    loadBatches();
-  }, [loadPreview, loadBatches]);
-
-  // ── Batch clicked ──
-  const selectBatch = (batchId) => {
-    if (activeBatchId === batchId) {
-      setActiveBatchId(null);
-      setBatchStats(null);
-      return;
-    }
-    setActiveBatchId(batchId);
-    loadStats(batchId);
-  };
-
-  // ── Status badge ──
+  // ── Status badge ──────────────────────────────────────────────────────────
   const statusBadge = (status) => {
     const map = {
       staged:      { bg: "#fef3c7", text: "#92400e" },
@@ -587,576 +511,429 @@ export default function PrepareOrders() {
     };
     const c = map[status] || map.staged;
     return (
-      <span style={{
-        display: "inline-block",
-        padding: "2px 10px",
-        borderRadius: 999,
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        background: c.bg,
-        color: c.text,
-        textTransform: "uppercase",
-      }}>
+      <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 999,
+        fontSize: "0.75rem", fontWeight: 600, background: c.bg, color: c.text, textTransform: "uppercase" }}>
         {status}
       </span>
     );
   };
 
+  // ── Derive batch for a given cycle ────────────────────────────────────────
+  const batchForCycle = (cycleOpt) =>
+    batches.find(b =>
+      b.status === "staged" &&
+      String(b.filter_merchant || "").toLowerCase() === String(cycleOpt.merchant_id || "").toLowerCase()
+    ) || null;
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="app-container app-content">
-      
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* UNIFIED CONFIRM MODAL                                                  */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
       <ConfirmModal
-        show={modal.show}
-        title={modal.title}
-        message={modal.message}
-        details={modal.details}
-        confirmText={modal.confirmText}
+        show={modal.show} title={modal.title} message={modal.message}
+        details={modal.details} confirmText={modal.confirmText}
         cancelText={modal.data?.resultOnly ? null : modal.cancelText}
-        confirmColor={modal.confirmColor}
-        icon={modal.icon}
-        onConfirm={handleModalConfirm}
-        onCancel={closeModal}
+        confirmColor={modal.confirmColor} icon={modal.icon}
+        onConfirm={handleModalConfirm} onCancel={closeModal}
       />
 
-      {/* ── Header ── */}
       <h1 className="page-title">Prepare Batch Orders</h1>
       <p className="page-deck">
-        Run a trial to stage orders based on each member's basket selections and investment elections.
-        Refresh as many times as needed to reconcile funding requirements with merchant partners.
-        Once approved, the batch is locked and advances to payment settlement.
+        Stage orders for each merchant · broker pipeline cycle. Review the trial run,
+        then approve to lock the batch and advance to payment settlement.
       </p>
 
-      {/* ── Order Pipeline ── */}
-      <OrderPipeline currentStep={1} queueCounts={queueCounts} />
+      <OrderPipeline
+        currentStep={1}
+        refreshKey={pipelineRefreshKey}
+        stepStatuses={{
+          prepare: (() => {
+            const staged   = batches.filter(b => b.status === "staged").length;
+            const approved = batches.filter(b => b.status === "approved").length;
+            const total    = batches.filter(b => ["staged","approved"].includes(b.status)).length;
+            if (total === 0)          return "none";
+            if (staged > 0 && approved === 0) return "in_progress";   // all staged → green
+            if (staged > 0 && approved > 0)   return "in_progress";   // mix → green
+            if (approved > 0 && staged === 0)  return "completed";     // all approved → blue
+            return "none";
+          })(),
+        }}
+      />
 
       {/* ── Tabs ── */}
       <div style={{
-        display: "flex",
-        gap: "0.5rem",
-        marginBottom: "1.5rem",
-        borderBottom: "1px solid #e2e8f0",
-        paddingBottom: "0.5rem",
-        justifyContent: "space-between",
-        alignItems: "center",
+        display: "flex", gap: "0.5rem", marginBottom: "1.5rem",
+        borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem",
+        justifyContent: "space-between", alignItems: "center",
       }}>
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          {["preview", "batches"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                padding: "0.5rem 1rem",
-                background: activeTab === tab ? "#6366f1" : "transparent",
-                color: activeTab === tab ? "#fff" : "#64748b",
-                border: "none",
-                borderRadius: "6px",
-                fontWeight: "500",
-                cursor: "pointer",
-                textTransform: "capitalize",
-              }}
-            >
-              {tab === "batches" ? `Batches (${batches.length})` : "Preview"}
+          {[
+            { key: "cycles",  label: `Cycles (${cycleOptions.length})` },
+            { key: "batches", label: `History (${batches.length})` },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              padding: "0.5rem 1rem",
+              background: activeTab === t.key ? "#6366f1" : "transparent",
+              color: activeTab === t.key ? "#fff" : "#64748b",
+              border: "none", borderRadius: "6px", fontWeight: "500", cursor: "pointer",
+            }}>
+              {t.label}
             </button>
           ))}
         </div>
-        <button
-          onClick={() => navigate("/pipeline-cycles")}
-          style={{
-            display: "inline-flex", alignItems: "center", gap: "0.4rem",
-            padding: "0.4rem 0.75rem",
-            background: "none", border: "1px solid #d1d5db", borderRadius: "6px",
-            color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
-          }}
-        >
-          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+        <button onClick={() => navigate("/payments-processing")} style={{
+          display: "inline-flex", alignItems: "center", gap: "0.4rem",
+          padding: "0.4rem 0.75rem", background: "none",
+          border: "1px solid #d1d5db", borderRadius: "6px",
+          color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
+        }}>
+          Next: Fund IB Sweep <ArrowRight size={13} />
         </button>
       </div>
 
-      {/* ── Prepare result banner ── */}
-      {prepareResult && (
-        <div style={{
-          padding: "1rem",
-          marginBottom: "1rem",
-          borderRadius: "8px",
-          background: prepareResult.success ? (prepareResult.nothing_to_stage ? "#eff6ff" : "#d1fae5") : "#fee2e2",
-          border: `1px solid ${prepareResult.success ? (prepareResult.nothing_to_stage ? "#93c5fd" : "#10b981") : "#ef4444"}`,
-        }}>
-          <strong>
-            {prepareResult.success
-              ? prepareResult.nothing_to_stage
-                ? <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> Nothing to Stage</>
-                : <><CheckCircle2 size={14} style={{ verticalAlign: "middle" }} /> {prepareResult.is_refresh ? "Trial Refreshed Successfully" : "Trial Staged Successfully"}</>
-              : <><XCircle size={14} style={{ verticalAlign: "middle" }} /> Staging Failed</>}
-          </strong>
-          {prepareResult.success && prepareResult.nothing_to_stage && (
-            <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#1e40af" }}>
-              All active picks are already covered by approved or in-flight orders. No new staging batch was created.
-            </div>
-          )}
-          {prepareResult.success && prepareResult.results && !prepareResult.nothing_to_stage && (
-            <div style={{ marginTop: "0.5rem", fontSize: "0.875rem", display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-              <span>Batch: <strong style={{ fontFamily: "monospace" }}>{prepareResult.batch_id}</strong></span>
-              <span>Members: <strong>{fmtN(prepareResult.results.total_members)}</strong></span>
-              <span>Orders: <strong>{fmtN(prepareResult.results.total_orders)}</strong></span>
-              <span>Amount: <strong>{fmt$(prepareResult.results.total_amount)}</strong></span>
-              <span>Shares: <strong>{Number(prepareResult.results.total_shares || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</strong></span>
-              <span>Points: <strong>{fmtN(prepareResult.results.total_points)}</strong></span>
-              <span>Skipped: <strong>{fmtN(prepareResult.results.members_skipped)}</strong></span>
-              <span>Time: <strong>{prepareResult.results.duration_seconds}s</strong></span>
-              <span style={(prepareResult.results.capped_at_max || 0) > 0 ? { color: "#b45309" } : {}}>
-                Baskets Reduced: <strong>{fmtN(prepareResult.results.capped_at_max)}</strong>
-              </span>
-              {(prepareResult.results.missing_prices || 0) > 0 && (
-                <span style={{ color: "#dc2626" }}><AlertTriangle size={12} style={{ verticalAlign: "middle" }} /> {prepareResult.results.missing_prices} orders missing price</span>
-              )}
-            </div>
-          )}
-          {prepareResult.error && !prepareResult.results && (
-            <div style={{ marginTop: "0.5rem", color: "#dc2626" }}>{prepareResult.error}</div>
-          )}
-        </div>
-      )}
-
-
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* PREVIEW TAB                                                        */}
+      {/* CYCLES TAB — one card per open pipeline cycle                      */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {activeTab === "preview" && (
+      {activeTab === "cycles" && (
         <div>
-          {/* Toolbar */}
-          <div style={{
-            display: "flex",
-            gap: "0.75rem",
-            alignItems: "center",
-            flexWrap: "wrap",
-            marginBottom: "1.25rem",
-            padding: "0.75rem 1rem",
-            background: "#f8fafc",
-            borderRadius: "8px",
-            border: "1px solid #e2e8f0",
-          }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Merchant · Broker
-              </label>
-              <select
-                value={selectedPair}
-                onChange={(e) => setSelectedPair(e.target.value)}
-                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
-              >
-                <option value="">All Active Cycles</option>
-                {cycleOptions.map((opt) => (
-                  <option key={opt.key} value={opt.key}>
-                    {opt.merchant_name} · {opt.broker_name}
-                  </option>
-                ))}
-                {urlMerchantId && !cycleOptions.find(o => o.merchant_id === urlMerchantId) && (
-                  <option value={makeKey(urlMerchantId, urlBrokerId)}>
-                    {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
-                  </option>
-                )}
-              </select>
-            </div>
-            <button
-              onClick={loadPreview}
-              disabled={previewLoading}
-              style={{
-                padding: "0.5rem 1rem",
-                background: "#6366f1",
-                color: "#fff",
-                border: "none",
-                borderRadius: "6px",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-                cursor: previewLoading ? "not-allowed" : "pointer",
-                opacity: previewLoading ? 0.6 : 1,
-              }}
-            >
-              {previewLoading ? "Loading..." : <><RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh</>}
-            </button>
-            <button
-              onClick={showPrepareModal}
-              disabled={preparing || !preview?.eligible_members || !!activeCycle}
-              style={{
-                padding: "0.5rem 1.25rem",
-                background: activeCycle ? "#e2e8f0" : preparing ? "#94a3b8" : "#10b981",
-                color: activeCycle ? "#94a3b8" : "#fff",
-                border: "none",
-                borderRadius: "6px",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-                cursor: preparing || !preview?.eligible_members || !!activeCycle ? "not-allowed" : "pointer",
-              }}
-            >
-              {preparing ? "Staging..." : isRefreshMode
-                ? <><RefreshCw size={14} style={{ verticalAlign: "middle" }} /> Refresh Trial</>
-                : <><CirclePlay size={14} style={{ verticalAlign: "middle" }} /> Run Trial</>}
-            </button>
-          </div>
-
-          {/* ── Run Trial block reason ── */}
-          {(() => {
-            if (activeCycle) return (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e", fontSize: "0.85rem", fontWeight: 500 }}>
-                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                <span>
-                  Run Trial is blocked — <strong>{activeCycle.merchant_name || activeCycle.merchant_id_str}</strong> already has an active pipeline cycle (#{activeCycle.id}) with orders approved and in-flight.{" "}
-                  <a href="/#/pipeline-cycles" style={{ color: "#b45309", fontWeight: 700 }}>View in Pipeline Management →</a>
-                </span>
-              </div>
-            );
-            if (preparing) return (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", fontSize: "0.85rem", fontWeight: 500 }}>
-                <RefreshCw size={14} style={{ flexShrink: 0 }} />
-                Staging in progress — please wait…
-              </div>
-            );
-            if (previewLoading) return (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#f8fafc", border: "1px solid #e2e8f0", color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
-                <RefreshCw size={14} style={{ flexShrink: 0 }} />
-                Loading preview — Run Trial is available once preview data loads.
-              </div>
-            );
-            if (!preview) return (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "0.85rem", fontWeight: 500 }}>
-                <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                Run Trial is disabled — click <strong style={{ margin: "0 4px" }}>Refresh</strong> to load preview data first.
-              </div>
-            );
-            if (!preview.eligible_members || preview.eligible_members === 0) return (
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0.6rem 1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", fontSize: "0.85rem", fontWeight: 500 }}>
-                <XCircle size={14} style={{ flexShrink: 0 }} />
-                Run Trial is disabled — no eligible members found. Members need points, an active basket, and an investment election.
-              </div>
-            );
-            return null;
-          })()}
-
-          {previewLoading ? (
-            <div style={{ textAlign: "center", padding: "3rem", color: "#64748b" }}>Loading preview...</div>
-          ) : previewError ? (
-            <div style={{
-              padding: "1rem",
-              borderRadius: "8px",
-              background: "#fee2e2",
-              border: "1px solid #ef4444",
-              color: "#991b1b",
-              fontSize: "0.875rem",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}>
-              <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Preview Error</strong>
-              <div style={{ marginTop: "0.5rem" }}>{previewError}</div>
-              <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: "#6b7280" }}>
-                Check: 1) prepare_staging_tables.sql was run, 2) prepare_orders.php is deployed, 3) Browser console / Network tab for details.
-              </div>
-            </div>
-          ) : !preview ? (
+          {cyclesLoading ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "#94a3b8" }}>
-               <RefreshCw size={16} style={{ verticalAlign: "middle" }} /> Click Refresh to load preview counts.
+              <Loader2 size={24} style={{ animation: "spin 1s linear infinite" }} />
+              <div style={{ marginTop: 8 }}>Loading cycles…</div>
             </div>
           ) : (
             <>
-              {/* Summary cards */}
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                gap: "0.75rem",
-                marginBottom: "1.5rem",
-              }}>
-                <StatCard label="Members" value={fmtN(preview.eligible_members)} color="#6366f1" tooltip="Number of members with active stock picks who are eligible to receive orders in this batch." />
-                <StatCard label="Merchants" value={fmtN(preview.unique_merchants)} color="#8b5cf6" tooltip="Number of distinct merchants whose loyalty members are included in this batch." />
-                <StatCard label="Brokers" value={fmtN(preview.unique_brokers)} color="#0ea5e9" tooltip="Number of distinct broker firms that orders will be routed to across all members in this batch — currently Alpaca Securities LLC." />
-                <StatCard label="Symbols" value={fmtN(preview.unique_symbols)} color="#06b6d4" tooltip="Number of unique stock symbols selected across all member baskets in this batch." />
-                <StatCard label="Baskets" value={fmtN(preview.eligible_members)} color="#14b8a6" tooltip="Each eligible member gets one basket — a grouped set of orders for all their selected stocks in this sweep cycle." />
-                <StatCard label="Total Orders" value={fmtN(preview.total_picks)} color="#0284c7" tooltip="Total number of individual stock orders across all member baskets. Each symbol in a member's basket becomes one order." />
-                <StatCard label="Est. Amount" value={fmt$(preview.est_total_amount)} color="#10b981" tooltip="Estimated total USD value of all orders based on current stock prices and each member's point conversion rate. Final amounts are set at execution." />
-                <StatCard label="Est. Points" value={fmtN(preview.est_total_points)} color="#f59e0b" tooltip="Estimated total loyalty points that will be redeemed across all members in this batch, based on each merchant's conversion rate." />
-                {preview.bypassed_below_min > 0 && (
-                  <StatCard label="Bypassed (Min)" value={fmtN(preview.bypassed_below_min)} color="#ef4444" tooltip="Orders dropped because the calculated amount fell below the broker's minimum order size ($5.00 per order for Alpaca). These members will not receive an order for that symbol." />
-                )}
-                {preview.capped_at_max > 0 && (
-                  <StatCard label="Capped (Max)" value={fmtN(preview.capped_at_max)} color="#f97316" tooltip="Baskets that exceeded the broker's maximum basket value ($5,000 per basket for Alpaca). All orders in those baskets were scaled down proportionally to stay within the limit." />
-                )}
-                {preview.members_skipped > 0 && (
-                  <StatCard label="Skipped (0 pts)" value={fmtN(preview.members_skipped)} color="#6b7280" tooltip="Members who had no redeemable point balance at the time of preparation and were excluded from this batch entirely." />
-                )}
-              </div>
-
-              {/* By merchant breakdown */}
-              {preview.by_merchant?.length > 0 && (
+              {/* ── Initiate Panel — available pairs without an active cycle ── */}
+              {availablePairs.length > 0 && (
                 <div style={{
-                  background: "#fff",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
-                  overflow: "auto",
+                  marginBottom: 16, padding: "16px 18px", borderRadius: 10,
+                  border: "1px solid #c7d2fe",
+                  background: "linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%)",
                 }}>
-                  <div style={{ padding: "0.75rem 1rem", background: "#f8fafc", fontWeight: 600, fontSize: "0.85rem", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>By Merchant</span>
-                    <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: 400 }}>Click a row to view batches</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <Plus size={16} color="#6366f1" />
+                    <span style={{ fontWeight: 700, color: "#3730a3", fontSize: "0.9rem" }}>
+                      Initiate New Cycle
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#6366f1", background: "#e0e7ff",
+                      padding: "1px 8px", borderRadius: 10, fontWeight: 600 }}>
+                      {availablePairs.length} available
+                    </span>
                   </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Merchant</th>
-                        <th style={thStyle}>Members</th>
-                        <th style={thStyle}>Orders</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.by_merchant.map((m, i) => (
-                        <tr
-                          key={i}
-                          style={{ borderBottom: "1px solid #e2e8f0", cursor: "pointer" }}
-                          title={`View batches for ${m.merchant_name || m.merchant_id}`}
-                          onClick={() => {
-                            const matchingOpt = cycleOptions.find(o => String(o.merchant_id) === String(m.merchant_id));
-                            setSelectedPair(matchingOpt ? matchingOpt.key : String(m.merchant_id));
-                            setActiveTab("batches");
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.background = "#f0f9ff")}
-                          onMouseLeave={e => (e.currentTarget.style.background = "")}
-                        >
-                          <td style={{ ...tdStyle, fontWeight: 600, color: "#4f46e5", display: "flex", alignItems: "center", gap: 6 }}>
-                            {m.merchant_name || m.merchant_id}
-                            <Package size={13} color="#a5b4fc" />
-                          </td>
-                          <td style={tdStyle}>{fmtN(m.members)}</td>
-                          <td style={tdStyle}>{fmtN(m.picks)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+
+                  {initiateError && (
+                    <div style={{ marginBottom: 10, padding: "7px 12px", borderRadius: 7,
+                      background: "#fef2f2", border: "1px solid #fecaca",
+                      fontSize: "0.82rem", color: "#dc2626" }}>
+                      {initiateError}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+                    {/* Merchant·Broker dropdown */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: "1 1 240px" }}>
+                      <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "#4338ca",
+                        textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Merchant · Broker
+                      </label>
+                      <select
+                        value={selectedNewPair}
+                        onChange={e => setSelectedNewPair(e.target.value)}
+                        style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid #c7d2fe",
+                          fontSize: "0.85rem", background: "#fff", cursor: "pointer" }}
+                      >
+                        <option value="">— select a relationship —</option>
+                        {availablePairs.map(p => (
+                          <option key={p.key} value={p.key}>
+                            {p.merchant_name} · {p.broker_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Funding method dropdown */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      <label style={{ fontSize: "0.7rem", fontWeight: 700, color: "#4338ca",
+                        textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Funding
+                      </label>
+                      <select
+                        value={selectedFunding}
+                        onChange={e => setSelectedFunding(e.target.value)}
+                        style={{ padding: "7px 10px", borderRadius: 7, border: "1px solid #c7d2fe",
+                          fontSize: "0.85rem", background: "#fff", cursor: "pointer" }}
+                      >
+                        <option value="plaid">Plaid ACH</option>
+                        <option value="csv">CSV Upload</option>
+                        <option value="manual">Manual</option>
+                        <option value="wire">Wire</option>
+                      </select>
+                    </div>
+
+                    {/* Open Selected button */}
+                    <button
+                      onClick={handleInitiateSelected}
+                      disabled={!selectedNewPair || initiating || initiateAllLoading}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "8px 18px", borderRadius: 7, fontWeight: 700, fontSize: "0.85rem",
+                        background: (!selectedNewPair || initiating || initiateAllLoading) ? "#e0e7ff" : "#6366f1",
+                        color: (!selectedNewPair || initiating || initiateAllLoading) ? "#6366f1" : "#fff",
+                        border: "none", cursor: (!selectedNewPair || initiating || initiateAllLoading) ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {initiating
+                        ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Opening…</>
+                        : <><CirclePlay size={14} /> Open & Run Trial</>}
+                    </button>
+
+                    {/* Open All button — only when 2+ available pairs */}
+                    {availablePairs.length > 1 && (
+                      <button
+                        onClick={handleInitiateAll}
+                        disabled={initiating || initiateAllLoading}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "8px 18px", borderRadius: 7, fontWeight: 700, fontSize: "0.85rem",
+                          background: (initiating || initiateAllLoading) ? "#e0e7ff" : "#8b5cf6",
+                          color: (initiating || initiateAllLoading) ? "#6366f1" : "#fff",
+                          border: "none", cursor: (initiating || initiateAllLoading) ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {initiateAllLoading
+                          ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Opening All…</>
+                          : <><Play size={14} /> Open All & Run Trials</>}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {/* Bulk action buttons — Run All Trials + Approve All Staged */}
+              {cycleOptions.length > 1 && (() => {
+                const stagedCount = batches.filter(b => b.status === "staged").length;
+                const anyBusy = runAllLoading || approveAllLoading || Object.values(cycleRunning).some(Boolean);
+                return (
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12 }}>
+                    {/* Run All Trials */}
+                    <button
+                      onClick={executeRunAll}
+                      disabled={anyBusy}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        padding: "8px 18px", borderRadius: 8,
+                        background: anyBusy ? "#94a3b8" : "#8b5cf6",
+                        color: "#fff", border: "none", fontWeight: 700, fontSize: "0.85rem",
+                        cursor: anyBusy ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {runAllLoading
+                        ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Running All…</>
+                        : <><Play size={14} /> Run All Trials</>}
+                    </button>
+                    {/* Approve All Staged — only shown when there are staged batches */}
+                    {stagedCount > 0 && (
+                      <button
+                        onClick={executeApproveAll}
+                        disabled={anyBusy}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "8px 18px", borderRadius: 8,
+                          background: anyBusy ? "#94a3b8" : "#10b981",
+                          color: "#fff", border: "none", fontWeight: 700, fontSize: "0.85rem",
+                          cursor: anyBusy ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {approveAllLoading
+                          ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Approving All…</>
+                          : <><CheckCircle2 size={14} /> Approve All Staged ({stagedCount})</>}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Per-cycle cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {cycleOptions.map(cycleOpt => {
+                  const batch   = batchForCycle(cycleOpt);
+                  const running = !!cycleRunning[cycleOpt.key];
+                  const result  = cycleResults[cycleOpt.key];
+                  return (
+                    <CyclePrepareCard
+                      key={cycleOpt.key}
+                      cycleOpt={cycleOpt}
+                      batch={batch}
+                      running={running}
+                      result={result}
+                      anyRunning={Object.values(cycleRunning).some(Boolean) || runAllLoading}
+                      actionLoading={actionLoading}
+                      activeBatchId={activeBatchId}
+                      batchStats={batchStats}
+                      statsLoading={statsLoading}
+                      onPrepare={() => executePrepareForCycle(cycleOpt)}
+                      onApprove={showApproveModal}
+                      onDiscard={showDiscardModal}
+                      onDelete={showDeleteBatchModal}
+                      onSelectBatch={selectBatch}
+                      fmt$={fmt$}
+                      fmtN={fmtN}
+                      fmtDate={fmtDate}
+                    />
+                  );
+                })}
+              </div>
             </>
           )}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
 
-
       {/* ═══════════════════════════════════════════════════════════════════ */}
-      {/* BATCHES TAB                                                        */}
+      {/* HISTORY TAB — all batches with filter                               */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {activeTab === "batches" && (
         <div>
-          {/* ── Batches toolbar (mirrors Preview filter) ── */}
+          {/* Filter toolbar */}
           <div style={{
             display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
             marginBottom: "1.25rem", padding: "0.75rem 1rem",
             background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0",
           }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <label style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748b",
+                textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Merchant · Broker
               </label>
               <select
-                value={selectedPair}
-                onChange={(e) => setSelectedPair(e.target.value)}
-                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
+                value={batchFilter}
+                onChange={e => setBatchFilter(e.target.value)}
+                style={{ padding: "0.4rem 0.75rem", borderRadius: "6px",
+                  border: "1px solid #d1d5db", fontSize: "0.85rem", minWidth: 260 }}
               >
                 <option value="">All Batches</option>
-                {cycleOptions.map((opt) => (
+                {cycleOptions.map(opt => (
                   <option key={opt.key} value={opt.key}>
                     {opt.merchant_name} · {opt.broker_name}
                   </option>
                 ))}
-                {urlMerchantId && !cycleOptions.find(o => o.merchant_id === urlMerchantId) && (
-                  <option value={makeKey(urlMerchantId, urlBrokerId)}>
-                    {urlMerchantId}{urlBrokerId ? ` · ${urlBrokerId}` : ""}
-                  </option>
-                )}
               </select>
             </div>
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-              {filterMerchant && (
-                <span style={{ fontSize: "0.75rem", background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 6, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                  {cycleOptions.find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}
-                  <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#92400e", padding: 0, lineHeight: 1, fontSize: "0.9rem" }} title="Clear filter">×</button>
-                </span>
-              )}
-              <button onClick={loadBatches} disabled={batchesLoading} style={{ padding: "0.375rem 0.75rem", background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                <RefreshCw size={12} style={{ animation: batchesLoading ? "spin 1s linear infinite" : "none" }} />
-                {batchesLoading ? "Loading…" : "Refresh"}
-              </button>
-            </div>
+            <button onClick={loadBatches} disabled={batchesLoading} style={{
+              padding: "0.375rem 0.75rem", background: "#6366f1", color: "#fff",
+              border: "none", borderRadius: "4px", fontSize: "0.75rem",
+              cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+            }}>
+              <RefreshCw size={12} style={{ animation: batchesLoading ? "spin 1s linear infinite" : "none" }} />
+              {batchesLoading ? "Loading…" : "Refresh"}
+            </button>
           </div>
 
           {batchesError && (
-            <div style={{ padding: "1rem", marginBottom: "1rem", borderRadius: "8px", background: "#fee2e2", border: "1px solid #ef4444", color: "#991b1b", fontSize: "0.875rem", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-              <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Batches Error</strong>
-              <div style={{ marginTop: "0.5rem" }}>{batchesError}</div>
+            <div style={{ padding: "1rem", marginBottom: "1rem", borderRadius: "8px",
+              background: "#fee2e2", border: "1px solid #ef4444", color: "#991b1b",
+              fontSize: "0.875rem" }}>
+              <strong><XCircle size={14} style={{ verticalAlign: "middle" }} /> Error:</strong>{" "}
+              {batchesError}
             </div>
           )}
 
           {(() => {
-            const visibleBatches = filterMerchant
-              ? batches.filter(b => String(b.filter_merchant || b.merchant_id || "").toLowerCase() === String(filterMerchant).toLowerCase())
+            const filterMerchant = batchFilter.includes("|") ? batchFilter.split("|")[0] : batchFilter;
+            const visible = filterMerchant
+              ? batches.filter(b => String(b.filter_merchant || "").toLowerCase() === filterMerchant.toLowerCase())
               : batches;
 
-            if (batches.length === 0 && !batchesError) return (
-              <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
-                No batches yet. Use the Preview tab to stage orders.
-              </div>
-            );
-            if (visibleBatches.length === 0) return (
-              <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
-                No batches found for <strong>{cycleOptions.find(o => o.merchant_id === filterMerchant)?.merchant_name || filterMerchant}</strong>.{" "}
-                <button onClick={() => setSelectedPair("")} style={{ background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontWeight: 600, padding: 0 }}>Clear filter</button>
-              </div>
-            );
+            if (batches.length === 0 && !batchesError)
+              return <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>No batches yet.</div>;
+            if (visible.length === 0)
+              return <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>No batches for selected filter.</div>;
+
             return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {visibleBatches.map((b) => {
-                const isActive = activeBatchId === b.batch_id;
-
-                return (
-                  <div
-                    key={b.batch_id}
-                    style={{
-                      background: "#fff",
-                      borderRadius: "8px",
-                      border: `1px solid ${isActive ? "#6366f1" : "#e2e8f0"}`,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {/* ── Batch header ── */}
-                    <div
-                      onClick={() => selectBatch(b.batch_id)}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        cursor: "pointer",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {visible.map(b => {
+                  const isActive = activeBatchId === b.batch_id;
+                  return (
+                    <div key={b.batch_id} style={{ background: "#fff", borderRadius: "8px",
+                      border: `1px solid ${isActive ? "#6366f1" : "#e2e8f0"}`, overflow: "hidden" }}>
+                      {/* Header row */}
+                      <div onClick={() => selectBatch(b.batch_id)} style={{
+                        padding: "0.75rem 1rem", cursor: "pointer",
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
                         background: isActive ? "#f0f9ff" : "#fff",
-                        transition: "background 0.15s",
-                      }}
-                    >
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {/* Top row */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.9rem", color: "#1e293b" }}>
-                            <LineageLink id={b.batch_id} type="batch">{b.batch_id}</LineageLink>
-                          </span>
-                          {statusBadge(b.status)}
-                          {b.filter_merchant && (
-                            <span style={{ fontSize: "0.7rem", background: "#fef3c7", color: "#92400e", padding: "1px 8px", borderRadius: 4 }}>
-                              merchant: {b.filter_merchant}
+                      }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: "0.9rem", color: "#1e293b" }}>
+                              <LineageLink id={b.batch_id} type="batch">{b.batch_id}</LineageLink>
                             </span>
-                          )}
-                          {b.filter_member && (
-                            <span style={{ fontSize: "0.7rem", background: "#e0e7ff", color: "#3730a3", padding: "1px 8px", borderRadius: 4 }}>
-                              member: {b.filter_member}
-                            </span>
-                          )}
-                          {parseInt(b.refresh_count || 0) > 0 && (
-                            <span style={{ fontSize: "0.7rem", background: "#dbeafe", color: "#1e40af", padding: "1px 8px", borderRadius: 4 }}>
-                              <RefreshCw size={10} style={{ verticalAlign: "middle" }} /> refreshed ×{b.refresh_count}
-                            </span>
-                          )}
-                        </div>
-                        {/* Stats row */}
-                        <div style={{ display: "flex", gap: 16, fontSize: "0.8rem", color: "#475569", flexWrap: "wrap" }}>
-                          <span>Members: <strong>{fmtN(b.total_members)}</strong></span>
-                          <span>Orders: <strong>{fmtN(b.total_orders)}</strong></span>
-                          <span>Amount: <strong>{fmt$(b.total_amount)}</strong></span>
-                          <span>Points: <strong>{fmtN(b.total_points)}</strong></span>
-                          {(b.members_skipped ?? 0) > 0 && (
-                            <span style={{ color: "#ef4444" }}>Skipped: <strong>{fmtN(b.members_skipped)}</strong></span>
-                          )}
-                          <span style={{ color: "#94a3b8" }}>{fmtDate(b.created_at)}</span>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {b.status === "staged" && (
-                          <>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); showPrepareModal(); }}
-                              disabled={actionLoading || preparing}
-                              style={actionBtn("#6366f1")}
-                              title="Rebuild this batch with fresh data"
-                            >
-                              <RefreshCw size={12} style={{ verticalAlign: "middle" }} /> Refresh
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); showApproveModal(b.batch_id); }}
-                              disabled={actionLoading}
-                              style={actionBtn("#10b981")}
-                            >
-                              <CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Approve
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); showDiscardModal(b.batch_id); }}
-                              disabled={actionLoading}
-                              style={actionBtn("#ef4444")}
-                            >
-                              <Trash2 size={12} style={{ verticalAlign: "middle" }} /> Discard
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); showDeleteBatchModal(b.batch_id); }}
-                          disabled={actionLoading}
-                          style={{ ...actionBtn("#7f1d1d"), background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5" }}
-                          title="Permanently delete all orders, baskets, and batch record"
-                        >
-                          <Bomb size={12} style={{ verticalAlign: "middle" }} /> Delete
-                        </button>
-                        <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
-                          {isActive ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* ── Expanded: batch stats ── */}
-                    {isActive && (
-                      <div style={{ borderTop: "1px solid #e2e8f0" }}>
-                        {statsLoading ? (
-                          <div style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>Loading stats...</div>
-                        ) : !batchStats ? null : (
-                          <div style={{ padding: "1rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-                            {/* ── Missing prices warning ── */}
-                            {(batchStats.missing_prices || 0) > 0 && (
-                              <div style={{
-                                padding: "0.75rem 1rem",
-                                background: "#fef3c7",
-                                border: "1px solid #f59e0b",
-                                borderRadius: 6,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 8,
-                                fontSize: "0.85rem",
-                                color: "#92400e",
-                              }}>
-                                <span style={{ fontSize: "1.1rem" }}><AlertTriangle size={18} /></span>
-                                <span>
-                                  <strong>{batchStats.missing_prices}</strong> orders have no price data (shares = 0).
-                                  Yahoo Finance may not have returned prices for those symbols. Try refreshing the trial to re-fetch prices.
-                                </span>
-                              </div>
+                            {statusBadge(b.status)}
+                            {b.filter_merchant && (
+                              <span style={{ fontSize: "0.7rem", background: "#fef3c7", color: "#92400e", padding: "1px 8px", borderRadius: 4 }}>
+                                {b.filter_merchant}
+                              </span>
                             )}
-
-                            {/* ── Merchant → Broker → Basket → Orders hierarchy ── */}
-                            <BatchHierarchy
-                              batchId={b.batch_id}
-                              merchants={batchStats.by_merchant}
-                            />
+                            {parseInt(b.refresh_count || 0) > 0 && (
+                              <span style={{ fontSize: "0.7rem", background: "#dbeafe", color: "#1e40af", padding: "1px 8px", borderRadius: 4 }}>
+                                <RefreshCw size={10} style={{ verticalAlign: "middle" }} /> ×{b.refresh_count}
+                              </span>
+                            )}
                           </div>
-                        )}
+                          <div style={{ display: "flex", gap: 16, fontSize: "0.8rem", color: "#475569", flexWrap: "wrap" }}>
+                            <span>Members: <strong>{fmtN(b.total_members)}</strong></span>
+                            <span>Orders: <strong>{fmtN(b.total_orders)}</strong></span>
+                            <span>Amount: <strong>{fmt$(b.total_amount)}</strong></span>
+                            <span>Points: <strong>{fmtN(b.total_points)}</strong></span>
+                            <span style={{ color: "#94a3b8" }}>{fmtDate(b.created_at)}</span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {b.status === "staged" && (
+                            <>
+                              <button onClick={e => { e.stopPropagation(); showApproveModal(b.batch_id); }}
+                                disabled={actionLoading} style={actionBtn("#10b981")}>
+                                <CheckCircle2 size={12} style={{ verticalAlign: "middle" }} /> Approve
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); showDiscardModal(b.batch_id); }}
+                                disabled={actionLoading} style={actionBtn("#ef4444")}>
+                                <Trash2 size={12} style={{ verticalAlign: "middle" }} /> Discard
+                              </button>
+                            </>
+                          )}
+                          <button onClick={e => { e.stopPropagation(); showDeleteBatchModal(b.batch_id); }}
+                            disabled={actionLoading}
+                            style={{ ...actionBtn("#7f1d1d"), background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5" }}>
+                            <Bomb size={12} style={{ verticalAlign: "middle" }} /> Delete
+                          </button>
+                          {isActive ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      {/* Expanded stats */}
+                      {isActive && (
+                        <div style={{ borderTop: "1px solid #e2e8f0" }}>
+                          {statsLoading ? (
+                            <div style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>Loading stats...</div>
+                          ) : batchStats ? (
+                            <div style={{ padding: "1rem" }}>
+                              {(batchStats.missing_prices || 0) > 0 && (
+                                <div style={{ padding: "0.75rem 1rem", background: "#fef3c7", border: "1px solid #f59e0b",
+                                  borderRadius: 6, display: "flex", alignItems: "center", gap: 8,
+                                  fontSize: "0.85rem", color: "#92400e", marginBottom: "1rem" }}>
+                                  <AlertTriangle size={16} />
+                                  <span><strong>{batchStats.missing_prices}</strong> orders missing price — refresh trial to re-fetch.</span>
+                                </div>
+                              )}
+                              <BatchHierarchy batchId={b.batch_id} merchants={batchStats.by_merchant} />
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             );
           })()}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
     </div>
@@ -1165,69 +942,287 @@ export default function PrepareOrders() {
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Sub-components
+// CyclePrepareCard — one card per open pipeline cycle
 // ═══════════════════════════════════════════════════════════════════════════
 
-function Tooltip({ text, children }) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <span
-      style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-    >
-      {children}
-      {visible && (
-        <span style={{
-          position: "absolute",
-          bottom: "calc(100% + 8px)",
-          left: "50%",
-          transform: "translateX(-50%)",
-          background: "#1f2937",
-          color: "#f9fafb",
-          fontSize: "11px",
-          lineHeight: 1.5,
-          padding: "8px 12px",
-          borderRadius: "7px",
-          whiteSpace: "normal",
-          width: 240,
-          zIndex: 999,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-          pointerEvents: "none",
-        }}>
-          {text}
-          <span style={{
-            position: "absolute",
-            top: "100%", left: "50%",
-            transform: "translateX(-50%)",
-            borderWidth: "5px", borderStyle: "solid",
-            borderColor: "#1f2937 transparent transparent transparent",
-          }} />
-        </span>
-      )}
-    </span>
-  );
-}
+function CyclePrepareCard({
+  cycleOpt, batch, running, result, anyRunning, actionLoading,
+  activeBatchId, batchStats, statsLoading,
+  onPrepare, onApprove, onDiscard, onDelete, onSelectBatch,
+  fmt$, fmtN, fmtDate,
+}) {
+  const [expanded, setExpanded] = useState(false);
 
-function StatCard({ label, value, color, tooltip }) {
+  const hasStagedBatch = !!batch;
+  const isApprovedExpanded = activeBatchId === batch?.batch_id;
+
+  // Header color: amber if staged batch waiting, green if no batch yet
+  const headerBg = hasStagedBatch
+    ? "linear-gradient(135deg, #78350f 0%, #92400e 100%)"
+    : "linear-gradient(135deg, #064e3b 0%, #065f46 100%)";
+
+  const FUNDING_LABELS = { plaid: "Plaid ACH", csv: "CSV", manual: "Manual", wire: "Wire" };
+
   return (
     <div style={{
-      padding: "1rem 1.25rem",
+      borderRadius: 12, overflow: "hidden",
+      border: `2px solid ${hasStagedBatch ? "#fde68a" : "#6ee7b7"}`,
       background: "#fff",
-      borderRadius: "8px",
-      border: "1px solid #e2e8f0",
-      borderTop: `3px solid ${color}`,
+      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
     }}>
-      <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-        {tooltip ? <Tooltip text={tooltip}>{label}</Tooltip> : label}
+      {/* ── Card header ── */}
+      <div style={{
+        padding: "14px 16px", background: headerBg,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        flexWrap: "wrap", gap: 10,
+      }}>
+        {/* Left: merchant + broker */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 10, flexShrink: 0,
+            background: "rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {hasStagedBatch
+              ? <Lock size={20} color="#fbbf24" />
+              : <Unlock size={20} color="#86efac" />}
+          </div>
+          <div>
+            <div style={{ fontSize: "0.95rem", fontWeight: 800, color: "#fff" }}>
+              {cycleOpt.merchant_name}
+            </div>
+            <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.65)", marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}>
+              <Building2 size={11} color="rgba(255,255,255,0.5)" />
+              {cycleOpt.broker_name}
+              {cycleOpt.funding_method && (
+                <span style={{ padding: "1px 6px", borderRadius: 6,
+                  background: "rgba(255,255,255,0.15)", fontSize: "0.65rem" }}>
+                  {FUNDING_LABELS[cycleOpt.funding_method] ?? cycleOpt.funding_method}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: batch status + expand */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {batch && (
+            <div style={{ padding: "5px 10px", borderRadius: 7,
+              background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)" }}>
+              <div style={{ fontSize: "0.58rem", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Batch</div>
+              <div style={{ fontSize: "0.78rem", fontFamily: "monospace", color: "#fff", fontWeight: 700 }}>{batch.batch_id}</div>
+            </div>
+          )}
+          <button
+            onClick={() => setExpanded(x => !x)}
+            style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.22)",
+              color: "#fff", borderRadius: 7, padding: "5px 10px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4, fontSize: "0.75rem" }}
+          >
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            {expanded ? "Collapse" : "Details"}
+          </button>
+        </div>
       </div>
-      <div style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#1e293b", marginTop: "0.25rem" }}>
-        {value}
+
+      {/* ── Stats bar ── */}
+      <div style={{
+        padding: "10px 16px", borderBottom: "1px solid #f1f5f9",
+        display: "flex", alignItems: "center", flexWrap: "wrap", gap: 18,
+        background: "#fafafa",
+      }}>
+        {batch ? (
+          <>
+            {/* Status badge */}
+            {(() => {
+              const S = {
+                staged:    { bg: "#d1fae5", text: "#065f46" },
+                approved:  { bg: "#dbeafe", text: "#1e40af" },
+                discarded: { bg: "#f3f4f6", text: "#6b7280" },
+              };
+              const s = S[batch.status] || S.staged;
+              return (
+                <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: "0.72rem",
+                  fontWeight: 700, background: s.bg, color: s.text,
+                  letterSpacing: "0.05em", alignSelf: "center", flexShrink: 0 }}>
+                  {(batch.status || "staged").toUpperCase()}
+                </span>
+              );
+            })()}
+            {[
+              { label: "Members", value: fmtN(batch.total_members), color: "#374151" },
+              { label: "Orders",  value: fmtN(batch.total_orders),  color: "#374151" },
+              { label: "Amount",  value: fmt$(batch.total_amount),  color: "#1d4ed8" },
+              { label: "Points",  value: fmtN(batch.total_points),  color: "#374151" },
+            ].map(s => (
+              <div key={s.label}>
+                <div style={{ fontSize: "0.6rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</div>
+                <div style={{ fontSize: "0.9rem", fontWeight: 700, color: s.color }}>{s.value}</div>
+              </div>
+            ))}
+            {parseInt(batch.refresh_count || 0) > 0 && (
+              <span style={{ fontSize: "0.7rem", background: "#dbeafe", color: "#1e40af",
+                padding: "2px 8px", borderRadius: 4, alignSelf: "center" }}>
+                <RefreshCw size={10} style={{ verticalAlign: "middle" }} /> refreshed ×{batch.refresh_count}
+              </span>
+            )}
+            <span style={{ fontSize: "0.72rem", color: "#94a3b8", alignSelf: "center" }}>
+              {fmtDate(batch.created_at)}
+            </span>
+          </>
+        ) : (
+          <span style={{ fontSize: "0.82rem", color: "#94a3b8", fontStyle: "italic" }}>
+            No staged batch — run a trial to begin
+          </span>
+        )}
       </div>
+
+      {/* ── Action buttons ── */}
+      <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {hasStagedBatch ? (
+          <>
+            {/* Refresh Trial */}
+            <button
+              onClick={onPrepare}
+              disabled={running || anyRunning}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "7px 16px", borderRadius: 7, fontSize: "0.82rem", fontWeight: 600,
+                background: (running || anyRunning) ? "#e0e7ff" : "transparent",
+                color: (running || anyRunning) ? "#4338ca" : "#6366f1",
+                border: "1px solid #c7d2fe",
+                cursor: (running || anyRunning) ? "not-allowed" : "pointer",
+              }}
+            >
+              {running
+                ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Refreshing…</>
+                : <><RefreshCw size={13} /> Refresh Trial</>}
+            </button>
+            {/* Approve */}
+            <button
+              onClick={() => onApprove(batch.batch_id)}
+              disabled={running || anyRunning || actionLoading}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "7px 18px", borderRadius: 7, fontSize: "0.82rem", fontWeight: 700,
+                background: (running || anyRunning || actionLoading) ? "#d1fae5" : "#10b981",
+                color: (running || anyRunning || actionLoading) ? "#065f46" : "#fff",
+                border: "none", cursor: (running || anyRunning || actionLoading) ? "not-allowed" : "pointer",
+              }}
+            >
+              <CheckCircle2 size={13} /> Approve & Lock
+            </button>
+            {/* Discard */}
+            <button
+              onClick={() => onDiscard(batch.batch_id)}
+              disabled={running || actionLoading}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 7, fontSize: "0.82rem", fontWeight: 600,
+                background: "transparent", color: "#dc2626",
+                border: "1px solid #fca5a5",
+                cursor: (running || actionLoading) ? "not-allowed" : "pointer",
+              }}
+            >
+              <Trash2 size={13} /> Discard
+            </button>
+          </>
+        ) : (
+          /* Run Trial */
+          <button
+            onClick={onPrepare}
+            disabled={running || anyRunning}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 18px", borderRadius: 7, fontSize: "0.82rem", fontWeight: 700,
+              background: (running || anyRunning) ? "#e0e7ff" : "#8b5cf6",
+              color: (running || anyRunning) ? "#4338ca" : "#fff",
+              border: "none", cursor: (running || anyRunning) ? "not-allowed" : "pointer",
+            }}
+          >
+            {running
+              ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Running Trial…</>
+              : <><CirclePlay size={13} /> Run Trial</>}
+          </button>
+        )}
+
+        {/* Delete batch (always visible when batch exists) */}
+        {batch && (
+          <button
+            onClick={() => onDelete(batch.batch_id)}
+            disabled={actionLoading}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 12px", borderRadius: 7, fontSize: "0.78rem", fontWeight: 600,
+              background: "#fef2f2", color: "#991b1b",
+              border: "1px solid #fca5a5",
+              cursor: actionLoading ? "not-allowed" : "pointer",
+              marginLeft: "auto",
+            }}
+          >
+            <Bomb size={12} /> Delete Batch
+          </button>
+        )}
+      </div>
+
+      {/* ── Prepare result ── */}
+      {result && (
+        <div style={{
+          margin: "0 16px 12px",
+          padding: "8px 12px", borderRadius: 7,
+          background: result.success ? "#f0fdf4" : "#fef2f2",
+          border: `1px solid ${result.success ? "#bbf7d0" : "#fecaca"}`,
+          fontSize: "0.82rem",
+          color: result.success ? "#15803d" : "#dc2626",
+        }}>
+          {result.success ? (
+            result.nothing_to_stage
+              ? "Nothing to stage — all picks are already covered by active orders."
+              : `Trial ${result.is_refresh ? "refreshed" : "staged"}: ${fmtN(result.results?.total_orders)} orders for ${fmtN(result.results?.total_members)} members — ${fmt$(result.results?.total_amount)}`
+          ) : (
+            result.error || "Prepare failed."
+          )}
+        </div>
+      )}
+
+      {/* ── Expanded: batch hierarchy ── */}
+      {expanded && batch && (
+        <div style={{ borderTop: "1px solid #e2e8f0" }}>
+          <div
+            onClick={() => onSelectBatch(batch.batch_id)}
+            style={{ padding: "8px 16px", background: "#f8fafc", cursor: "pointer",
+              fontSize: "0.78rem", color: "#6366f1", fontWeight: 600,
+              display: "flex", alignItems: "center", gap: 6,
+              borderBottom: isApprovedExpanded ? "1px solid #e2e8f0" : "none" }}
+          >
+            <ShoppingBasket size={13} />
+            {isApprovedExpanded ? "Hide order breakdown" : "Show order breakdown"}
+            {isApprovedExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </div>
+          {isApprovedExpanded && (
+            statsLoading ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>
+                <Loader2 size={18} style={{ animation: "spin 1s linear infinite", verticalAlign: "middle" }} /> Loading…
+              </div>
+            ) : batchStats ? (
+              <div style={{ padding: "1rem" }}>
+                {(batchStats.missing_prices || 0) > 0 && (
+                  <div style={{ padding: "0.75rem 1rem", background: "#fef3c7", border: "1px solid #f59e0b",
+                    borderRadius: 6, display: "flex", alignItems: "center", gap: 8,
+                    fontSize: "0.85rem", color: "#92400e", marginBottom: "1rem" }}>
+                    <AlertTriangle size={16} />
+                    <span><strong>{batchStats.missing_prices}</strong> orders missing price — refresh trial to re-fetch.</span>
+                  </div>
+                )}
+                <BatchHierarchy batchId={batch.batch_id} merchants={batchStats.by_merchant} />
+              </div>
+            ) : null
+          )}
+        </div>
+      )}
     </div>
   );
 }
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1239,209 +1234,124 @@ function BatchHierarchy({ batchId, merchants }) {
   const fmtN = (v) => Number(v || 0).toLocaleString();
   const fmtShares = (v) => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 
-  // Expand/collapse state per level
   const [expandedMerchants, setExpandedMerchants] = useState(new Set());
-  const [expandedBrokers, setExpandedBrokers] = useState(new Set());
-  const [expandedBaskets, setExpandedBaskets] = useState(new Set());
+  const [expandedBrokers,   setExpandedBrokers]   = useState(new Set());
+  const [expandedBaskets,   setExpandedBaskets]   = useState(new Set());
 
-  // Loaded children caches
-  const [brokerData, setBrokerData] = useState({});    // { merchantId: [rows] }
-  const [basketData, setBasketData] = useState({});    // { "merchantId|broker": [rows] }
-  const [orderData, setOrderData] = useState({});      // { basketId: [rows] }
+  const [brokerData,  setBrokerData]  = useState({});
+  const [basketData,  setBasketData]  = useState({});
+  const [orderData,   setOrderData]   = useState({});
 
-  // Loading flags
   const [loadingBrokers, setLoadingBrokers] = useState({});
   const [loadingBaskets, setLoadingBaskets] = useState({});
-  const [loadingOrders, setLoadingOrders] = useState({});
+  const [loadingOrders,  setLoadingOrders]  = useState({});
 
-  // ── Toggle helpers ──
   const toggleSet = (setter, key) => {
-    setter((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
+    setter(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   };
 
-  // ── Load brokers for a merchant ──
   const loadBrokers = async (merchantId) => {
     if (brokerData[merchantId]) return;
-    setLoadingBrokers((p) => ({ ...p, [merchantId]: true }));
+    setLoadingBrokers(p => ({ ...p, [merchantId]: true }));
     try {
-      const res = await apiPost("prepare_orders.php", {
-        action: "batch_brokers",
-        batch_id: batchId,
-        merchant_id: merchantId,
-      });
-      if (res.success) {
-        setBrokerData((p) => ({ ...p, [merchantId]: res.brokers || [] }));
-      } else {
-        console.error("batch_brokers failed:", res.error || res);
-        setBrokerData((p) => ({ ...p, [merchantId]: [] }));
-      }
-    } catch (err) {
-      console.error("batch_brokers error:", err);
-    }
-    setLoadingBrokers((p) => ({ ...p, [merchantId]: false }));
+      const res = await apiPost("prepare_orders.php", { action: "batch_brokers", batch_id: batchId, merchant_id: merchantId });
+      setBrokerData(p => ({ ...p, [merchantId]: res.success ? (res.brokers || []) : [] }));
+    } catch (e) { setBrokerData(p => ({ ...p, [merchantId]: [] })); }
+    setLoadingBrokers(p => ({ ...p, [merchantId]: false }));
   };
 
-  // ── Load baskets for a merchant + broker ──
   const loadBaskets = async (merchantId, broker) => {
     const key = `${merchantId}|${broker}`;
     if (basketData[key]) return;
-    setLoadingBaskets((p) => ({ ...p, [key]: true }));
+    setLoadingBaskets(p => ({ ...p, [key]: true }));
     try {
-      const res = await apiPost("prepare_orders.php", {
-        action: "batch_baskets",
-        batch_id: batchId,
-        merchant_id: merchantId,
-        broker,
-      });
-      if (res.success) {
-        setBasketData((p) => ({ ...p, [key]: res.baskets || [] }));
-      } else {
-        console.error("batch_baskets failed:", res.error || res);
-        setBasketData((p) => ({ ...p, [key]: [] }));
-      }
-    } catch (err) {
-      console.error("batch_baskets error:", err);
-    }
-    setLoadingBaskets((p) => ({ ...p, [key]: false }));
+      const res = await apiPost("prepare_orders.php", { action: "batch_baskets", batch_id: batchId, merchant_id: merchantId, broker });
+      setBasketData(p => ({ ...p, [key]: res.success ? (res.baskets || []) : [] }));
+    } catch (e) { setBasketData(p => ({ ...p, [key]: [] })); }
+    setLoadingBaskets(p => ({ ...p, [key]: false }));
   };
 
-  // ── Load orders for a basket ──
   const loadOrders = async (basketId) => {
     if (orderData[basketId]) return;
-    setLoadingOrders((p) => ({ ...p, [basketId]: true }));
+    setLoadingOrders(p => ({ ...p, [basketId]: true }));
     try {
-      const res = await apiPost("prepare_orders.php", {
-        action: "batch_orders",
-        batch_id: batchId,
-        basket_id: basketId,
-      });
-      if (res.success) {
-        setOrderData((p) => ({ ...p, [basketId]: res.orders || [] }));
-      } else {
-        console.error("batch_orders failed:", res.error || res);
-        setOrderData((p) => ({ ...p, [basketId]: [] }));
-      }
-    } catch (err) {
-      console.error("batch_orders error:", err);
-    }
-    setLoadingOrders((p) => ({ ...p, [basketId]: false }));
+      const res = await apiPost("prepare_orders.php", { action: "batch_orders", batch_id: batchId, basket_id: basketId });
+      setOrderData(p => ({ ...p, [basketId]: res.success ? (res.orders || []) : [] }));
+    } catch (e) { setOrderData(p => ({ ...p, [basketId]: [] })); }
+    setLoadingOrders(p => ({ ...p, [basketId]: false }));
   };
 
-  // ── Shared row styles ──
   const rowBase = (depth) => ({
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 12px",
-    paddingLeft: `${12 + depth * 24}px`,
-    cursor: "pointer",
-    fontSize: "0.82rem",
-    borderBottom: "1px solid #f1f5f9",
-    transition: "background 0.1s",
+    display: "flex", alignItems: "center", gap: 8,
+    padding: "8px 12px", paddingLeft: `${12 + depth * 24}px`,
+    cursor: "pointer", fontSize: "0.82rem",
+    borderBottom: "1px solid #f1f5f9", transition: "background 0.1s",
   });
 
   const badge = (text, bg, color) => (
-    <span style={{
-      fontSize: "0.7rem",
-      fontWeight: 600,
-      padding: "1px 8px",
-      borderRadius: 4,
-      background: bg,
-      color,
-      whiteSpace: "nowrap",
-    }}>
-      {text}
-    </span>
+    <span style={{ fontSize: "0.7rem", padding: "1px 6px", borderRadius: 4, background: bg, color, fontWeight: 600 }}>{text}</span>
   );
 
   const summaryPills = (row) => (
-    <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
-      {row.members != null && badge(`${fmtN(row.members)} mbrs`, "#f0f9ff", "#0369a1")}
-      {row.orders != null && badge(`${fmtN(row.orders)} orders`, "#faf5ff", "#7c3aed")}
-      {row.total_amount != null && badge(fmt$(row.total_amount), "#f0fdf4", "#15803d")}
-    </div>
+    <>
+      {row.members   && badge(`${fmtN(row.members)} mbrs`,   "#f0f9ff", "#0369a1")}
+      {row.orders    && badge(`${fmtN(row.orders)} orders`,  "#f5f3ff", "#6d28d9")}
+      {row.total_amount && badge(fmt$(row.total_amount),     "#f0fdf4", "#15803d")}
+    </>
   );
 
   const loadingRow = (depth) => (
-    <div style={{ ...rowBase(depth), cursor: "default", color: "#94a3b8", fontStyle: "italic" }}>
-      Loading...
+    <div style={{ ...rowBase(depth), color: "#94a3b8" }}>
+      <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Loading…
     </div>
   );
 
-  const emptyRow = (depth, text) => (
-    <div style={{ ...rowBase(depth), cursor: "default", color: "#94a3b8" }}>
-      {text}
-    </div>
+  const emptyRow = (depth, msg) => (
+    <div style={{ ...rowBase(depth), color: "#94a3b8", fontStyle: "italic" }}>{msg}</div>
   );
 
-  if (!merchants?.length) return <div style={{ padding: "1rem", color: "#94a3b8", textAlign: "center" }}>No data.</div>;
+  if (!merchants || merchants.length === 0)
+    return <div style={{ padding: "1rem", color: "#94a3b8", textAlign: "center" }}>No merchant data.</div>;
 
   return (
-    <div style={breakdownBox}>
-      <div style={breakdownHeader}>Batch Breakdown</div>
-
-      {/* ── Level 1: Merchants ── */}
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
       {merchants.map((m) => {
-        const mId = m.merchant_id;
-        const mOpen = expandedMerchants.has(mId);
-
+        const mId    = m.merchant_id;
+        const mOpen  = expandedMerchants.has(mId);
         return (
           <div key={mId}>
             <div
-              onClick={() => {
-                toggleSet(setExpandedMerchants, mId);
-                if (!mOpen) loadBrokers(mId);
-              }}
-              style={{
-                ...rowBase(0),
-                fontWeight: 600,
-                background: mOpen ? "#f8fafc" : "#fff",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f9ff")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = mOpen ? "#f8fafc" : "#fff")}
+              onClick={() => { toggleSet(setExpandedMerchants, mId); if (!mOpen) loadBrokers(mId); }}
+              style={{ ...rowBase(0), background: mOpen ? "#f5f3ff" : "#fafafa", fontWeight: 600 }}
+              onMouseEnter={e => (e.currentTarget.style.background = "#f5f3ff")}
+              onMouseLeave={e => (e.currentTarget.style.background = mOpen ? "#f5f3ff" : "#fafafa")}
             >
-              <Store size={14} color="#8b5cf6" />
-              <span style={{ color: "#1e293b" }}>{mId}</span>
+              <Package size={14} color="#8b5cf6" />
+              <span style={{ color: "#1e293b" }}>{m.merchant_id}</span>
               {summaryPills(m)}
               {mOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
             </div>
-
-            {/* ── Level 2: Brokers ── */}
             {mOpen && (
               loadingBrokers[mId]
                 ? loadingRow(1)
                 : !brokerData[mId]?.length
                   ? emptyRow(1, "No brokers found.")
                   : brokerData[mId].map((br) => {
-                      const bKey = `${mId}|${br.broker}`;
+                      const bKey  = `${mId}|${br.broker}`;
                       const brOpen = expandedBrokers.has(bKey);
-
                       return (
                         <div key={bKey}>
                           <div
-                            onClick={() => {
-                              toggleSet(setExpandedBrokers, bKey);
-                              if (!brOpen) loadBaskets(mId, br.broker);
-                            }}
-                            style={{
-                              ...rowBase(1),
-                              fontWeight: 500,
-                              background: brOpen ? "#faf5ff" : "#fff",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = "#faf5ff")}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = brOpen ? "#faf5ff" : "#fff")}
+                            onClick={() => { toggleSet(setExpandedBrokers, bKey); if (!brOpen) loadBaskets(mId, br.broker); }}
+                            style={{ ...rowBase(1), fontWeight: 500, background: brOpen ? "#faf5ff" : "#fff" }}
+                            onMouseEnter={e => (e.currentTarget.style.background = "#faf5ff")}
+                            onMouseLeave={e => (e.currentTarget.style.background = brOpen ? "#faf5ff" : "#fff")}
                           >
                             <Building2 size={14} color="#6366f1" />
                             <span style={{ color: "#1e293b" }}>{br.broker}</span>
                             {summaryPills(br)}
                             {brOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
                           </div>
-
-                          {/* ── Level 3: Baskets ── */}
                           {brOpen && (
                             loadingBaskets[bKey]
                               ? loadingRow(2)
@@ -1449,20 +1359,13 @@ function BatchHierarchy({ batchId, merchants }) {
                                 ? emptyRow(2, "No baskets found.")
                                 : basketData[bKey].map((bk) => {
                                     const bkOpen = expandedBaskets.has(bk.basket_id);
-
                                     return (
                                       <div key={bk.basket_id}>
                                         <div
-                                          onClick={() => {
-                                            toggleSet(setExpandedBaskets, bk.basket_id);
-                                            if (!bkOpen) loadOrders(bk.basket_id);
-                                          }}
-                                          style={{
-                                            ...rowBase(2),
-                                            background: bkOpen ? "#fffbeb" : "#fff",
-                                          }}
-                                          onMouseEnter={(e) => (e.currentTarget.style.background = "#fffbeb")}
-                                          onMouseLeave={(e) => (e.currentTarget.style.background = bkOpen ? "#fffbeb" : "#fff")}
+                                          onClick={() => { toggleSet(setExpandedBaskets, bk.basket_id); if (!bkOpen) loadOrders(bk.basket_id); }}
+                                          style={{ ...rowBase(2), background: bkOpen ? "#fffbeb" : "#fff" }}
+                                          onMouseEnter={e => (e.currentTarget.style.background = "#fffbeb")}
+                                          onMouseLeave={e => (e.currentTarget.style.background = bkOpen ? "#fffbeb" : "#fff")}
                                         >
                                           <ShoppingBasket size={14} color="#d97706" />
                                           <span style={{ fontFamily: "monospace", fontSize: "0.78rem", color: "#1e293b" }}>
@@ -1472,8 +1375,6 @@ function BatchHierarchy({ batchId, merchants }) {
                                           {summaryPills(bk)}
                                           {bkOpen ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
                                         </div>
-
-                                        {/* ── Level 4: Orders ── */}
                                         {bkOpen && (
                                           loadingOrders[bk.basket_id]
                                             ? loadingRow(3)
@@ -1484,44 +1385,27 @@ function BatchHierarchy({ batchId, merchants }) {
                                                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                                     <thead>
                                                       <tr style={{ background: "#f8fafc" }}>
-                                                        <th style={thStyleSm}>Order</th>
-                                                        <th style={thStyleSm}>Symbol</th>
-                                                        <th style={thStyleSm}>Amount</th>
-                                                        <th style={thStyleSm}>Price</th>
-                                                        <th style={thStyleSm}>Shares</th>
-                                                        <th style={thStyleSm}>Points</th>
-                                                        <th style={thStyleSm}>Status</th>
+                                                        {["Order","Symbol","Amount","Price","Shares","Points","Status"].map(h => (
+                                                          <th key={h} style={thStyleSm}>{h}</th>
+                                                        ))}
                                                       </tr>
                                                     </thead>
                                                     <tbody>
                                                       {orderData[bk.basket_id].map((o, i) => (
                                                         <tr key={o.order_id || i} style={{ borderBottom: "1px solid #f1f5f9" }}>
                                                           <td style={{ ...tdStyleSm, fontFamily: "monospace", fontSize: "0.75rem" }}>
-                                                            {o.order_id
-                                                              ? <LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink>
-                                                              : i + 1}
+                                                            {o.order_id ? <LineageLink id={String(o.order_id)} type="order">{o.order_id}</LineageLink> : i + 1}
                                                           </td>
                                                           <td style={{ ...tdStyleSm, fontWeight: 600 }}>{o.symbol}</td>
                                                           <td style={tdStyleSm}>{fmt$(o.amount)}</td>
-                                                          <td style={tdStyleSm}>
-                                                            {o.price ? fmt$(o.price) : <span style={{ color: "#ef4444", fontSize: "0.72rem" }}>—</span>}
-                                                          </td>
+                                                          <td style={tdStyleSm}>{o.price ? fmt$(o.price) : <span style={{ color: "#ef4444", fontSize: "0.72rem" }}>—</span>}</td>
                                                           <td style={tdStyleSm}>{fmtShares(o.shares)}</td>
                                                           <td style={tdStyleSm}>{fmtN(o.points)}</td>
                                                           <td style={tdStyleSm}>
                                                             <span style={{
-                                                              fontSize: "0.7rem",
-                                                              padding: "1px 8px",
-                                                              borderRadius: 4,
-                                                              background: o.status === "staged" ? "#fef3c7"
-                                                                : o.status === "pending" ? "#dbeafe"
-                                                                : o.status === "skipped_dup" ? "#fce7f3"
-                                                                : "#f3f4f6",
-                                                              color: o.status === "staged" ? "#92400e"
-                                                                : o.status === "pending" ? "#1e40af"
-                                                                : o.status === "skipped_dup" ? "#9d174d"
-                                                                : "#374151",
-                                                              fontWeight: 600,
+                                                              fontSize: "0.7rem", padding: "1px 8px", borderRadius: 4, fontWeight: 600,
+                                                              background: o.status === "staged" ? "#fef3c7" : o.status === "pending" ? "#dbeafe" : o.status === "skipped_dup" ? "#fce7f3" : "#f3f4f6",
+                                                              color:      o.status === "staged" ? "#92400e" : o.status === "pending" ? "#1e40af"  : o.status === "skipped_dup" ? "#9d174d"  : "#374151",
                                                             }}>
                                                               {o.status || "—"}
                                                             </span>
@@ -1548,63 +1432,16 @@ function BatchHierarchy({ batchId, merchants }) {
   );
 }
 
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Shared styles
-// ═══════════════════════════════════════════════════════════════════════════
-
-const thStyle = {
-  padding: "0.75rem 1rem",
-  textAlign: "left",
-  fontWeight: "600",
-  fontSize: "0.75rem",
-  color: "#64748b",
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-};
-
-const tdStyle = {
-  padding: "0.75rem 1rem",
-  fontSize: "0.875rem",
-};
+// ── Shared styles ──────────────────────────────────────────────────────────
 
 const thStyleSm = {
-  padding: "0.5rem 0.75rem",
-  textAlign: "left",
-  fontWeight: "600",
-  fontSize: "0.7rem",
-  color: "#64748b",
-  textTransform: "uppercase",
+  padding: "0.5rem 0.75rem", textAlign: "left", fontWeight: "600",
+  fontSize: "0.7rem", color: "#64748b", textTransform: "uppercase",
 };
 
-const tdStyleSm = {
-  padding: "0.4rem 0.75rem",
-  fontSize: "0.8rem",
-};
-
-const breakdownBox = {
-  background: "#fff",
-  borderRadius: "6px",
-  border: "1px solid #e2e8f0",
-  overflow: "auto",
-};
-
-const breakdownHeader = {
-  padding: "0.5rem 0.75rem",
-  background: "#f8fafc",
-  fontWeight: 600,
-  fontSize: "0.8rem",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#374151",
-};
+const tdStyleSm = { padding: "0.4rem 0.75rem", fontSize: "0.8rem" };
 
 const actionBtn = (bg) => ({
-  padding: "4px 12px",
-  background: bg,
-  color: "#fff",
-  border: "none",
-  borderRadius: "4px",
-  fontSize: "0.75rem",
-  fontWeight: 600,
-  cursor: "pointer",
+  padding: "4px 12px", background: bg, color: "#fff",
+  border: "none", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
 });

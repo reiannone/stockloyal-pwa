@@ -6,7 +6,7 @@ import {
   Clock, DollarSign, Users, Building2, ChevronDown, ChevronRight, ArrowLeft,
   Loader2, ShieldAlert, Store, GitBranch,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { useCycleGate, PipelineGateBanner } from "../components/OrderPipeline";
 import { apiPost } from "../api";
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
@@ -79,6 +79,9 @@ export default function JournalAdmin() {
   // ── Merchant·broker filter ────────────────────────────────────────────────
   const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
   const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+
+  // ── Pipeline gate: requires Fund IB Sweep (stage_funding=completed) ───────
+  const gate = useCycleGate("journal", selectedPair);
 
   // ── Tabs ──────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState("active");
@@ -270,13 +273,13 @@ export default function JournalAdmin() {
             }}>{t.label}</button>
           ))}
         </div>
-        <button onClick={() => navigate("/pipeline-cycles")} style={{
+        <button onClick={() => navigate("/payments-processing")} style={{
           display: "inline-flex", alignItems: "center", gap: "0.4rem",
           padding: "0.4rem 0.75rem", background: "none",
           border: "1px solid #d1d5db", borderRadius: "6px",
           color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
         }}>
-          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+          <ArrowLeft size={13} /> Fund IB Sweep
         </button>
       </div>
 
@@ -299,6 +302,9 @@ export default function JournalAdmin() {
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {activeTab === "active" && (
         <>
+          {/* ── Gate: blocks if Fund IB Sweep not yet complete ── */}
+          <PipelineGateBanner gate={gate} />
+
           {/* Toolbar */}
           <div style={{
             display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",

@@ -349,21 +349,47 @@ class PrepareOrdersProcess
         $startTime = microtime(true);
 
         // ── Check for existing staged batch → refresh instead of creating new ──
+        // Scope to the current merchant so running one merchant's trial never
+        // accidentally refreshes a different merchant's staged batch.
         $existingBatch = null;
         $isRefresh = false;
         try {
-            $exStmt = $this->conn->prepare(
-                "SELECT batch_id, refresh_count, filter_merchant FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
-            );
-            $exStmt->execute();
-            $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
-        } catch (\Exception $e) {
-            // refresh_count column may not exist yet — treat as no existing batch
-            try {
+            if ($merchantId) {
+                // Scoped: find staged batch for this specific merchant
                 $exStmt = $this->conn->prepare(
-                    "SELECT batch_id, 0 AS refresh_count, filter_merchant FROM prepare_batches WHERE status = 'staged' ORDER BY created_at DESC LIMIT 1"
+                    "SELECT batch_id, refresh_count, filter_merchant FROM prepare_batches
+                     WHERE status = 'staged' AND filter_merchant = ?
+                     ORDER BY created_at DESC LIMIT 1"
+                );
+                $exStmt->execute([$merchantId]);
+            } else {
+                // Unscoped (all-merchant run): find staged batch with no merchant filter
+                $exStmt = $this->conn->prepare(
+                    "SELECT batch_id, refresh_count, filter_merchant FROM prepare_batches
+                     WHERE status = 'staged' AND filter_merchant IS NULL
+                     ORDER BY created_at DESC LIMIT 1"
                 );
                 $exStmt->execute();
+            }
+            $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
+        } catch (\Exception $e) {
+            // refresh_count column may not exist yet — try without it
+            try {
+                if ($merchantId) {
+                    $exStmt = $this->conn->prepare(
+                        "SELECT batch_id, 0 AS refresh_count, filter_merchant FROM prepare_batches
+                         WHERE status = 'staged' AND filter_merchant = ?
+                         ORDER BY created_at DESC LIMIT 1"
+                    );
+                    $exStmt->execute([$merchantId]);
+                } else {
+                    $exStmt = $this->conn->prepare(
+                        "SELECT batch_id, 0 AS refresh_count, filter_merchant FROM prepare_batches
+                         WHERE status = 'staged' AND filter_merchant IS NULL
+                         ORDER BY created_at DESC LIMIT 1"
+                    );
+                    $exStmt->execute();
+                }
                 $existingBatch = $exStmt->fetch(PDO::FETCH_ASSOC);
             } catch (\Exception $e2) {
                 $this->log("⚠️ Could not check for existing staged batch: " . $e2->getMessage());

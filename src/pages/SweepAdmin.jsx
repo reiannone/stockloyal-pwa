@@ -6,7 +6,7 @@ import {
   CalendarDays, ShoppingBasket, Play, CheckCircle2, XCircle, AlertTriangle,
   Package, Store, Building2, Clock, ChevronUp, ChevronDown, GitBranch, ArrowLeft,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { useCycleGate, PipelineGateBanner } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 import { LineageLink } from "../components/LineagePopup";
 
@@ -58,6 +58,9 @@ export default function SweepAdmin() {
   // ── Merchant·broker filter (shared across tabs) ───────────────────────────
   const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
   const filterMerchant = selectedPair.includes("|") ? selectedPair.split("|")[0] : selectedPair;
+
+  // ── Pipeline gate: requires Journal Funds (stage_journal=completed) ───────
+  const gate = useCycleGate("sweep", selectedPair);
 
   // Stable pipelineMerchants derived from cycleOptions
   const pipelineMerchants = useMemo(
@@ -489,15 +492,18 @@ export default function SweepAdmin() {
             </button>
           ))}
         </div>
-        <button onClick={() => navigate("/pipeline-cycles")} style={{
+        <button onClick={() => navigate("/journal-admin")} style={{
           display: "inline-flex", alignItems: "center", gap: "0.4rem",
           padding: "0.4rem 0.75rem", background: "none",
           border: "1px solid #d1d5db", borderRadius: "6px",
           color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
         }}>
-          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+          <ArrowLeft size={13} /> Journal Funds
         </button>
       </div>
+
+      {/* ── Gate: blocks if Journal Funds not yet complete ── */}
+      <PipelineGateBanner gate={gate} />
 
       {/* All Caught Up Message */}
       {!loading && overview && (overview.total_pending_orders || 0) === 0 && (

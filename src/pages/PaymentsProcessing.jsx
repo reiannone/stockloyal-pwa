@@ -8,7 +8,7 @@ import {
   ShoppingBasket, FileSpreadsheet, Download, Info, GitBranch,
   ArrowLeft,
 } from "lucide-react";
-import OrderPipeline from "../components/OrderPipeline";
+import OrderPipeline, { useCycleGate, PipelineGateBanner } from "../components/OrderPipeline";
 import ConfirmModal from "../components/ConfirmModal";
 
 function safeNum(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
@@ -26,6 +26,9 @@ export default function PaymentsProcessing() {
 
   // Selected merchant-broker pair
   const [selectedPair, setSelectedPair] = useState(makeKey(urlMerchantId, urlBrokerId));
+
+  // ── Pipeline gate: requires Prepare Orders (stage_orders=completed) ───────
+  const gate = useCycleGate("payment", selectedPair);
 
   // ── Pipeline cycle pairs (for dropdown) ──────────────────────────────────
   const [cycleOptions, setCycleOptions] = useState([]);
@@ -177,13 +180,13 @@ export default function PaymentsProcessing() {
             }}>{t.label}</button>
           ))}
         </div>
-        <button onClick={() => navigate("/pipeline-cycles")} style={{
+        <button onClick={() => navigate("/prepare-orders")} style={{
           display: "inline-flex", alignItems: "center", gap: "0.4rem",
           padding: "0.4rem 0.75rem", background: "none",
           border: "1px solid #d1d5db", borderRadius: "6px",
           color: "#6b7280", fontSize: "0.8rem", fontWeight: 500, cursor: "pointer",
         }}>
-          <ArrowLeft size={13} /> Pipeline Cycle Control Panel
+          <ArrowLeft size={13} /> Prepare Orders
         </button>
       </div>
 
@@ -206,6 +209,9 @@ export default function PaymentsProcessing() {
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {activeTab === "active" && (
         <>
+          {/* ── Gate: blocks if Prepare Orders not yet approved ── */}
+          <PipelineGateBanner gate={gate} />
+
           {/* Toolbar */}
           <div style={{
             display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap",
@@ -255,8 +261,7 @@ export default function PaymentsProcessing() {
             <div style={{ textAlign: "center", padding: "3rem", background: "#f8fafc", borderRadius: 8, border: "2px dashed #cbd5e1" }}>
               <GitBranch size={32} color="#94a3b8" style={{ marginBottom: 8 }} />
               <div style={{ fontSize: "1rem", fontWeight: 600, color: "#64748b" }}>No active pipeline cycles</div>
-              <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginTop: 4 }}>Open a cycle in Pipeline Management first.</div>
-              <button onClick={() => navigate("/pipeline-cycles")} style={{ marginTop: 12, padding: "8px 20px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: "0.85rem" }}>Pipeline Management</button>
+              <div style={{ fontSize: "0.85rem", color: "#94a3b8", marginTop: 4 }}>Open a pipeline cycle to begin processing payments.</div>
             </div>
           ) : visibleCycles.length === 0 ? (
             <div style={{ textAlign: "center", padding: "2rem", color: "#94a3b8", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0" }}>

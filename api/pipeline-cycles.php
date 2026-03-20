@@ -79,7 +79,7 @@ function req(array $body, array $fields): void {
 }
 
 // ── Valid enums ───────────────────────────────────────────────────────────────
-const STAGE_STATUSES  = ['pending','in_progress','completed','skipped','failed','blocked'];
+const STAGE_STATUSES  = ['pending','in_progress','staged','completed','skipped','failed','blocked'];
 const STAGE_KEYS      = [
     'baskets','orders','payment','funding','journal',
     'placement','submission','execution','settlement',
@@ -413,7 +413,7 @@ if ($action === 'run_stage') {
     $cycleId = (int)$body['cycle_id'];
     $stage   = $body['stage'];
 
-    $validStages = ['baskets_orders','baskets','orders','payment','funding','journal',
+    $validStages = ['baskets_orders','baskets','orders','orders_approve','payment','funding','journal',
                     'placement','submission','execution','settlement'];
     if (!in_array($stage, $validStages)) fail("Invalid stage: {$stage}");
 

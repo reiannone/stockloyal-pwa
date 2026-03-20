@@ -66,6 +66,7 @@ const STAGE_LINKS = {
 const STAGE_STATUS_COLORS = {
   pending:     { bg: "#f8fafc", fg: "#94a3b8", border: "#e2e8f0" },
   in_progress: { bg: "#eff6ff", fg: "#2563eb", border: "#bfdbfe" },
+  staged:      { bg: "#fff7ed", fg: "#c2410c", border: "#fed7aa" },  // awaiting admin approval
   completed:   { bg: "#f0fdf4", fg: "#16a34a", border: "#bbf7d0" },
   skipped:     { bg: "#f9fafb", fg: "#9ca3af", border: "#e5e7eb" },
   failed:      { bg: "#fef2f2", fg: "#dc2626", border: "#fecaca" },
@@ -107,7 +108,7 @@ function StagePill({ stageKey, status }) {
 
 // ── Stage progress bar ────────────────────────────────────────────────────────
 function StageProgressBar({ cycle }) {
-  const statusWeight = { completed: 1, skipped: 1, in_progress: 0.5, blocked: 0, failed: 0, pending: 0 };
+  const statusWeight = { completed: 1, skipped: 1, in_progress: 0.5, staged: 0.5, blocked: 0, failed: 0, pending: 0 };
 
   // Map logical stage keys to DB pipeline_cycles columns.
   // prepare   = worst of stage_baskets + stage_orders
@@ -116,7 +117,7 @@ function StageProgressBar({ cycle }) {
   // sweep     = worst of stage_placement + stage_submission
   // execution = worst of stage_execution + stage_settlement
   const worst = (...statuses) => {
-    const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, skipped: 4, completed: 5 };
+    const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, staged: 4, skipped: 4, completed: 5 };
     return statuses.reduce((a, b) => (rank[a] ?? 2) <= (rank[b] ?? 2) ? a : b);
   };
   const resolveStageStatus = (key) => {
@@ -299,7 +300,7 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 8 }}>
             {STAGES.map(stg => {
               const worst = (...ss) => {
-                const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, skipped: 4, completed: 5 };
+                const rank = { failed: 0, blocked: 1, pending: 2, in_progress: 3, staged: 4, skipped: 4, completed: 5 };
                 return ss.reduce((a, b) => (rank[a] ?? 2) <= (rank[b] ?? 2) ? a : b);
               };
               const stageStatus = (() => {
@@ -323,6 +324,7 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
               const NEXT_ACTIONS = {
                 pending:     [['in_progress', 'Start'], ['skipped', 'Skip']],
                 in_progress: [['completed', 'Done'], ['failed', 'Failed'], ['blocked', 'Block']],
+                staged:      [['in_progress', 'Re-stage'], ['skipped', 'Skip']],
                 blocked:     [['in_progress', 'Unblock'], ['failed', 'Failed']],
                 failed:      [['in_progress', 'Retry'], ['skipped', 'Skip']],
                 completed:   [],
@@ -330,8 +332,10 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
               };
               const manualActions = NEXT_ACTIONS[stageStatus] || [];
 
-              // Run button: show for any non-terminal stage on active cycles
-              const canRun = isActive && !['completed', 'skipped'].includes(stageStatus);
+              // canRun: show run button for non-terminal stages.
+              // For the prepare stage when orders are staged, we show custom approve buttons instead.
+              const ordersStaged = stg.key === 'prepare' && cycle.stage_orders === 'staged';
+              const canRun = isActive && !['completed', 'skipped'].includes(stageStatus) && !ordersStaged;
 
               return (
                 <div key={stg.key} style={{
@@ -435,6 +439,79 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
                     </div>
                   )}
 
+                  {/* ── Staged: batch awaiting admin approval (prepare stage only) ── */}
+                  {ordersStaged && isActive && (
+                    <div style={{ marginBottom: manualActions.length ? 6 : 0 }}>
+                      <div style={{
+                        marginBottom: 5, padding: "4px 7px", borderRadius: 5,
+                        background: "#fff7ed", border: "1px solid #fed7aa",
+                        fontSize: "0.61rem", color: "#c2410c", fontWeight: 600,
+                        display: "flex", alignItems: "center", gap: 4,
+                      }}>
+                        <ClipboardCheck size={10} />
+                        Batch staged — review on Prepare Orders page, then approve
+                      </div>
+                      <div style={{ display: "flex", gap: 5 }}>
+                        {/* Re-run Trial */}
+                        <button
+                          disabled={!!running || !!advancing}
+                          onClick={() => handleRun('prepare')}
+                          style={{
+                            flex: 1, padding: "5px 0", borderRadius: 6,
+                            fontSize: "0.66rem", fontWeight: 600,
+                            cursor: (running || advancing) ? "not-allowed" : "pointer",
+                            background: "transparent", color: "#8b5cf6",
+                            border: "1px solid #8b5cf6",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                            opacity: (running && running !== 'prepare') ? 0.5 : 1,
+                          }}
+                        >
+                          {running === 'prepare'
+                            ? <><Loader2 size={10} style={{ animation: "spin 1s linear infinite" }} /> Running…</>
+                            : <><RefreshCw size={10} /> Re-run Trial</>}
+                        </button>
+                        {/* Approve Orders */}
+                        <button
+                          disabled={!!running || !!advancing}
+                          onClick={() => handleRun('prepare_approve')}
+                          style={{
+                            flex: 2, padding: "5px 0", borderRadius: 6,
+                            fontSize: "0.72rem", fontWeight: 700,
+                            cursor: (running || advancing) ? "not-allowed" : "pointer",
+                            background: running === 'prepare_approve' ? "#d1fae5" : "#059669",
+                            color: running === 'prepare_approve' ? "#065f46" : "#fff",
+                            border: "none",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                            opacity: (running && running !== 'prepare_approve') ? 0.5 : 1,
+                          }}
+                        >
+                          {running === 'prepare_approve'
+                            ? <><Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> Approving…</>
+                            : <><CheckCircle2 size={11} /> Approve Orders</>}
+                        </button>
+                      </div>
+                      {/* Approve run result */}
+                      {runResults['prepare_approve'] && (() => {
+                        const r = runResults['prepare_approve'];
+                        return (
+                          <div style={{
+                            marginTop: 4, padding: "5px 8px", borderRadius: 5,
+                            fontSize: "0.63rem",
+                            background: r.success ? "#f0fdf4" : "#fef2f2",
+                            border: `1px solid ${r.success ? "#bbf7d0" : "#fecaca"}`,
+                            color: r.success ? "#15803d" : "#dc2626",
+                            display: "flex", alignItems: "flex-start", gap: 4,
+                          }}>
+                            {r.success
+                              ? <CheckCircle2 size={10} style={{ flexShrink: 0, marginTop: 1 }} />
+                              : <AlertCircle  size={10} style={{ flexShrink: 0, marginTop: 1 }} />}
+                            <span>{r.message || r.error}</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   {/* ── Run result panel ── */}
                   {runResult && (
                     <div style={{
@@ -458,6 +535,7 @@ function CycleCard({ cycle, onAdvance, onRun, onClose, onRefreshCounts, navigate
                         const r = runResult.result;
                         const pills = [
                           r.eligible_members && `${r.eligible_members} eligible`,
+                          r.orders_staged   && `${r.orders_staged} staged`,
                           r.orders_created  && `${r.orders_created} created`,
                           r.orders_skipped  && `${r.orders_skipped} skipped`,
                           r.orders_flagged  && `${r.orders_flagged} flagged`,
@@ -903,11 +981,12 @@ export default function PipelineCyclesAdmin() {
   // Map logical stage keys to the DB column names used by pipeline-cycles.php.
   // Compound stages advance their primary (last) DB column.
   const STAGE_DB_KEY = {
-    prepare:   'orders',      // stage_baskets done first, stage_orders is the gate
-    payment:   'funding',     // stage_payment done first, stage_funding is the gate
-    journal:   'journal',
-    sweep:     'submission',  // stage_placement done first, stage_submission is the gate
-    execution: 'settlement',  // stage_execution done first, stage_settlement is the gate
+    prepare:         'orders',         // stage_baskets done first, stage_orders is the gate
+    prepare_approve: 'orders_approve', // approve staged batch → stage_orders='completed'
+    payment:         'funding',        // stage_payment done first, stage_funding is the gate
+    journal:         'journal',
+    sweep:           'submission',     // stage_placement done first, stage_submission is the gate
+    execution:       'settlement',     // stage_execution done first, stage_settlement is the gate
   };
 
   const handleAdvanceStage = async (cycleId, stage, stageStatus) => {
